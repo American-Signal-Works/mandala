@@ -1,7 +1,23 @@
 "use server";
 import { createClient } from "@/lib/supabase/server";
+import { headers } from "next/headers";
 import { redirect } from "next/navigation";
 import { z } from "zod";
+
+/**
+ * Derive the public origin of the current request from headers.
+ *
+ * Vercel and most reverse proxies set x-forwarded-host + x-forwarded-proto.
+ * Local dev falls back to the raw Host header. Avoids depending on
+ * NEXT_PUBLIC_SITE_URL being configured per environment.
+ */
+async function getOrigin(): Promise<string> {
+  const h = await headers();
+  const host = h.get("x-forwarded-host") ?? h.get("host") ?? "localhost:3000";
+  const isLocal = host.startsWith("localhost") || host.startsWith("127.");
+  const proto = h.get("x-forwarded-proto") ?? (isLocal ? "http" : "https");
+  return `${proto}://${host}`;
+}
 
 const SignUpSchema = z.object({
   email: z.string().email(),
@@ -21,7 +37,7 @@ export async function signUp(formData: FormData) {
   const { error } = await supabase.auth.signUp({
     email: parsed.data.email,
     password: parsed.data.password,
-    options: { emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/callback` },
+    options: { emailRedirectTo: `${await getOrigin()}/callback` },
   });
 
   if (error) {
@@ -64,7 +80,7 @@ export async function requestPasswordReset(formData: FormData) {
 
   const supabase = await createClient();
   const { error } = await supabase.auth.resetPasswordForEmail(parsed.data.email, {
-    redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/callback?next=/settings/account`,
+    redirectTo: `${await getOrigin()}/callback?next=/settings/account`,
   });
   if (error) {
     return { ok: false as const, error: { code: "RESET_FAILED", message: error.message } };
@@ -87,7 +103,7 @@ export async function signInWithMagicLink(formData: FormData) {
     options: {
       // Auto-create the user on first magic link — no separate sign-up step required.
       shouldCreateUser: true,
-      emailRedirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/callback`,
+      emailRedirectTo: `${await getOrigin()}/callback`,
     },
   });
 
@@ -103,7 +119,7 @@ export async function signInWithGoogle() {
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider: "google",
     options: {
-      redirectTo: `${process.env.NEXT_PUBLIC_SITE_URL ?? "http://localhost:3000"}/callback`,
+      redirectTo: `${await getOrigin()}/callback`,
     },
   });
   if (error || !data.url) {
