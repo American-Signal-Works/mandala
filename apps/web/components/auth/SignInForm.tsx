@@ -14,6 +14,7 @@ import {
 } from "@workspace/ui/components/field";
 import { Separator } from "@workspace/ui/components/separator";
 import { signInWithMagicLink, signInWithGoogle } from "@/actions/auth";
+import { GoogleIcon } from "@/components/auth/GoogleIcon";
 
 type FormState =
   | { kind: "idle" }
@@ -163,7 +164,10 @@ export function SignInForm() {
             Redirecting…
           </>
         ) : (
-          "Continue with Google"
+          <>
+            <GoogleIcon className="size-4" />
+            Continue with Google
+          </>
         )}
       </Button>
 
