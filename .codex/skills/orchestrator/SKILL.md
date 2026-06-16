@@ -1,6 +1,6 @@
 ---
 name: orchestrator
-description: Run a Codex-owned product delivery orchestration workflow from a Figma design, feature brief, or bug report through design contract, user approval, Codex subagent implementation, QA review, fix pass, and merge or release. Use when the user asks for Orchestrator, a design-to-code workflow, Figma-to-implementation handoff, PRD/design contract generation, orchestrated subagents for feature implementation or bug fixing, QA review loops, or release-ready implementation from an approved contract.
+description: Run a Codex-owned product delivery orchestration workflow from a Figma design, shadcndesign/shadcn-backed UI kit, feature brief, or bug report through design contract, user approval, Codex subagent implementation, QA review, fix pass, and merge or release. Use when the user asks for Orchestrator, a design-to-code workflow, Figma-to-implementation handoff, PRD/design contract generation, orchestrated subagents for feature implementation or bug fixing, QA review loops, or release-ready implementation from an approved contract.
 ---
 
 # Orchestrator
@@ -65,6 +65,7 @@ Required inputs:
 
 - Source: Figma node URL, issue, bug report, or feature brief.
 - Component source links for Figma-backed work when available: direct component-set links, library component links, state-matrix frames, icon/library source links, or design-system docs.
+- Design-system kit or registry details when known, especially shadcndesign registry alias, registry URL, package docs, agent skill availability, and whether the license-key env var is configured.
 - Target surface: route, screen, component, flow, or package.
 - Mode: `feature`, `bugfix`, `design-polish`, or `release`.
 - Release expectation: local implementation, PR, merge, deploy, or release notes.
@@ -199,6 +200,36 @@ Required checks:
 - Use form primitives correctly: `FieldGroup`, `Field`, `FieldLabel`, `FieldDescription`, `FieldError`, validation with `data-invalid` on `Field` and `aria-invalid` on the control.
 - Use `Button`, `Separator`, `Skeleton`, `Empty`, `Badge`, `Card`, and related primitives instead of custom styled `div` replacements.
 - For icons inside shadcn buttons, follow the project icon-library conventions and component icon API.
+
+## Shadcndesign Kit Designs
+
+When the Figma source uses the shadcndesign.com Figma kit or registry, treat it as a two-source handoff:
+
+- Use Figma tooling/MCP for frame screenshots, layer structure, component-source links, library state matrices, and assets.
+- Use the shadcn skill, shadcn MCP/tooling when available, and shadcn CLI context for installed components, registry resolution, component APIs, variants, and generated code shape.
+- Treat the shadcndesign Codex skill as the preferred kit-specific helper when it is installed. The documented install command is `npx shadcn@latest add @shadcndesign/skills-codex`.
+- Record whether the kit-specific `generate-code` and `import-variables` capabilities are available. Use them only when the approved scope needs component generation or design-token sync, and keep Orchestrator as the top-level owner of contract, scope, QA, and release decisions.
+- Check the target workspace `components.json` files, commonly `apps/web/components.json` and `packages/ui/components.json` in this repo, before assuming a registry alias is configured.
+- Confirm Figma MCP and shadcn MCP/tooling access before relying on shadcndesign skill output. If either is unavailable, record the gap and use the best available Figma/shadcn fallback.
+- If the `@shadcndesign` registry is needed and absent, propose a registry entry that uses an env var placeholder, not a literal license key:
+
+```json
+{
+  "registries": {
+    "@shadcndesign": {
+      "url": "https://www.shadcndesign.com/api/registry/{name}",
+      "headers": {
+        "X-License-Key": "${SHADCNDESIGN_LICENSE_KEY}"
+      }
+    }
+  }
+}
+```
+
+- The expected local secret name is `SHADCNDESIGN_LICENSE_KEY`. Check whether it is available without printing the value.
+- Do not commit real license keys, registry tokens, generated `.env` files, or screenshots containing secrets.
+- Record whether the shadcndesign registry, license env var, Figma access, and shadcn MCP/tooling were available. If any are missing, mark the affected registry/component lookup as blocked or fallback in the design contract.
+- For implementation, prefer `shadcn add/view/search` against the configured workspace and registry before recreating kit components manually. If a registry component cannot be fetched because the license or MCP access is unavailable, stop before custom-building it unless the user approves a repo-native fallback.
 
 ## Phase 1: Design Contract
 

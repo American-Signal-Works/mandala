@@ -21,6 +21,7 @@ Mode: feature | bugfix | design-polish | release
 - Issue/brief: <URL or description>
 - Screenshots inspected: <paths or URLs>
 - Design system/kit: <shadcn, shadcndesign.com, custom, or n/a>
+- Kit-specific skills/tools: <shadcndesign skills-codex, Figma MCP, shadcn MCP, shadcn CLI, or n/a>
 
 ## Subagent Discovery
 
@@ -134,6 +135,22 @@ Map Figma visual states to repo runtime behavior. If the Figma library cannot be
 - Installed components:
 - Missing components:
 - Docs/search/view commands used:
+
+## Shadcndesign Context
+
+- Applies: yes | no
+- Docs inspected: https://www.shadcndesign.com/docs/agent-skills | n/a
+- Figma MCP available: yes | no | unknown
+- shadcn MCP/tooling available: yes | no | unknown
+- Kit-specific Codex skill available: yes | no | unknown
+- Kit capabilities used: generate-code | import-variables | none
+- Registry alias: @shadcndesign | n/a
+- Registry configured in: <components.json path or n/a>
+- License env var present: yes | no | unknown
+- License env var name: SHADCNDESIGN_LICENSE_KEY | n/a
+- Registry commands run:
+- Component/variable generation output:
+- Blockers or fallbacks:
 
 ## UX Contract
 

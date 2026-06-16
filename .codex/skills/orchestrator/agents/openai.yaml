@@ -19,6 +19,7 @@ subagent_policy:
       - "Figma asset and icon inventory"
       - "Figma library component state discovery"
       - "direct component-set or state-matrix source inspection"
+      - "shadcndesign kit, registry, MCP, and skill preflight"
       - "auth, permissions, user data, email, payments, or external services"
       - "component primitive mapping"
       - "security and privacy risk enumeration"
@@ -60,6 +61,24 @@ figma_asset_policy:
   rule: "do not silently substitute icon families or image assets"
   preferred_icon_source: "matching repo icon package or exported SVG from Figma"
   fallback_record: "approved substitution, exported asset, dependency decision, or deferred asset"
+
+shadcndesign_policy:
+  required_when_kit_is_source: true
+  docs: "https://www.shadcndesign.com/docs/agent-skills"
+  required_record:
+    - "design-contract.md Shadcndesign Context"
+    - "implementation-plan.md Component Plan"
+  prerequisites:
+    - "Figma MCP"
+    - "shadcn MCP or shadcn CLI tooling"
+    - "@shadcndesign registry in target components.json when registry components are needed"
+    - "SHADCNDESIGN_LICENSE_KEY present without printing the value"
+  codex_skill_install_command: "npx shadcn@latest add @shadcndesign/skills-codex"
+  capabilities:
+    - "generate-code for Figma frame to React component generation"
+    - "import-variables for Figma style-guide token sync"
+  secret_rule: "never commit real license keys, registry tokens, generated .env files, or screenshots containing secrets"
+  fallback: "record blocked MCP/license/registry access and get approval before custom-building a registry component"
 
 scope_sizing_policy:
   required_before_implementation_plan: true
