@@ -40,10 +40,22 @@ describe("LoginAuthFlow", () => {
   it("shows visible but unavailable social buttons", () => {
     render(<LoginAuthFlow />)
 
-    expect(screen.getByRole("button", { name: "Login with Google" })).toBeDisabled()
-    expect(
-      screen.getByRole("button", { name: "Login with Microsoft" })
-    ).toBeDisabled()
+    const googleButton = screen.getByRole("button", {
+      name: "Login with Google",
+    })
+    const microsoftButton = screen.getByRole("button", {
+      name: "Login with Microsoft",
+    })
+
+    expect(googleButton).toHaveAttribute("aria-disabled", "true")
+    expect(microsoftButton).toHaveAttribute("aria-disabled", "true")
+    expect(googleButton).not.toBeDisabled()
+    expect(microsoftButton).not.toBeDisabled()
+
+    fireEvent.click(googleButton)
+    fireEvent.click(microsoftButton)
+
+    expect(requestEmailOtpMock).not.toHaveBeenCalled()
   })
 
   it("validates email before sending an OTP", async () => {

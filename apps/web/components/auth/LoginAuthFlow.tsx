@@ -36,6 +36,7 @@ import {
   InputOTPSlot,
 } from "@workspace/ui/components/input-otp"
 import { Separator } from "@workspace/ui/components/separator"
+import { Spinner } from "@workspace/ui/components/spinner"
 import { cn } from "@workspace/ui/lib/utils"
 
 type AuthStep = "email" | "otp" | "success"
@@ -307,9 +308,9 @@ function EmailStep({
               {SOCIAL_LOGIN_BUTTONS.map((button) => (
                 <Button
                   aria-disabled="true"
-                  className="w-full disabled:opacity-100"
-                  disabled
+                  className="w-full"
                   key={button.label}
+                  onClick={(event) => event.preventDefault()}
                   title={button.title}
                   type="button"
                   variant="outline"
@@ -340,6 +341,7 @@ function EmailStep({
               <FieldError>{emailError}</FieldError>
             </Field>
             <Button className="w-full" disabled={isSending} type="submit">
+              {isSending && <Spinner data-icon="inline-start" />}
               {isSending ? "Sending..." : "Login"}
             </Button>
           </FieldGroup>
@@ -428,6 +430,7 @@ function OtpStep({
               disabled={!canVerify}
               type="submit"
             >
+              {isVerifying && <Spinner data-icon="inline-start" />}
               {isVerifying ? "Verifying..." : "Verify"}
             </Button>
             <p className="text-center text-sm text-muted-foreground">
@@ -439,6 +442,7 @@ function OtpStep({
                 type="button"
                 variant="link"
               >
+                {isResending && <Spinner data-icon="inline-start" />}
                 {isResending
                   ? "Resending..."
                   : resendCooldown > 0
@@ -477,6 +481,7 @@ function SuccessStep({
             onClick={onLogout}
             type="button"
           >
+            {isSigningOut && <Spinner data-icon="inline-start" />}
             {isSigningOut ? "Logging out..." : "Logout"}
           </Button>
           {formMessage && (
