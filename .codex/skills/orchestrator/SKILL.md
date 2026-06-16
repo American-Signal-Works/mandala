@@ -205,8 +205,8 @@ Recommended roles:
 
 - `contract-explorer`: answer specific codebase or Figma questions before implementation.
 - `prd-writer`: produce or revise the design contract and acceptance criteria.
-- `ui-worker`: implement component and styling changes.
-- `data-worker`: implement server actions, API, schema, or data-flow changes.
+- `frontend-worker`: implement routes, components, visual styling, client interactions, responsive behavior, and accessibility details.
+- `backend-worker`: implement server actions, API routes, schema, auth/session behavior, data flow, and external-service integrations.
 - `test-worker`: add or update focused tests.
 - `qa-reviewer`: review the integrated result against the contract.
 - `security-reviewer`: review auth, data, secrets, external services, and dependency risk.
@@ -221,8 +221,8 @@ Default routing:
 - `prd-writer`, contract approval analysis, and final QA: strongest available model, `xhigh` effort.
 - `qa-reviewer` and `security-reviewer`: strongest available model, `xhigh` effort.
 - `contract-explorer`: strong model, `high` effort; use `xhigh` only for ambiguous product, Figma, security, or architecture questions.
-- `ui-worker`, `test-worker`, and routine implementation: workhorse model, `medium` effort.
-- `data-worker`: workhorse model with `high` effort when touching auth, permissions, database, migrations, external services, or irreversible data changes; otherwise `medium`.
+- `frontend-worker`, `test-worker`, and routine implementation: workhorse model, `medium` effort.
+- `backend-worker`: workhorse model with `high` effort when touching auth, permissions, database, migrations, external services, or irreversible data changes; otherwise `medium`.
 - `release-manager`: workhorse model, `medium` effort unless release risk is high.
 
 Escalate planning and review to strongest model with `xhigh` effort when the feature touches authentication, authorization, secrets, PII, email delivery, payments, RLS, database migrations, dependency changes, public routes, generated content, or external APIs. Do not downgrade QA to save cost when the implementation affects security, privacy, data integrity, or release readiness.

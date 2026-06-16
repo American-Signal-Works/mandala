@@ -200,7 +200,7 @@ Status: Draft | In progress | Complete
 
 | Agent | Role | Task | Model | Effort | Write scope | Verification |
 |---|---|---|---|---|---|---|
-| <A1> | <prd-writer/ui-worker/etc.> | <task> | <model or inherited> | <medium/high/xhigh> | <paths or read-only> | <checks> |
+| <A1> | <prd-writer/frontend-worker/backend-worker/etc.> | <task> | <model or inherited> | <medium/high/xhigh> | <paths or read-only> | <checks> |
 
 ## Definition Of Done
 
@@ -216,7 +216,7 @@ Status: Draft | In progress | Complete
 
 ### Package 1: <name>
 
-- Owner: main agent | ui-worker | data-worker | test-worker
+- Owner: main agent | frontend-worker | backend-worker | test-worker
 - Write scope:
 - Read scope:
 - Must not edit:
