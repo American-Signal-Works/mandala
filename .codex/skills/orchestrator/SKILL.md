@@ -64,11 +64,20 @@ Collect only the missing facts needed for the next gate. Prefer using available 
 Required inputs:
 
 - Source: Figma node URL, issue, bug report, or feature brief.
+- Component source links for Figma-backed work when available: direct component-set links, library component links, state-matrix frames, icon/library source links, or design-system docs.
 - Target surface: route, screen, component, flow, or package.
 - Mode: `feature`, `bugfix`, `design-polish`, or `release`.
 - Release expectation: local implementation, PR, merge, deploy, or release notes.
 
 If a Figma URL is provided, use available Figma tooling to inspect the node and screenshot. If the URL is not node-specific, ask for a node-specific link before producing the final contract.
+
+For library-backed Figma designs, prefer this handoff shape:
+
+- Flow frames: each user-facing state or step, such as Login, OTP, Success, Error, or Settings.
+- Component sources: direct links to component sets or state-matrix frames for buttons, inputs, OTP inputs, menus, tabs, links, toggles, and other interactive primitives.
+- Asset/icon sources: direct links to icon, logo, illustration, or library source frames when the target flow uses external assets.
+
+Treat component-source links as authoritative for state discovery when nested library components cannot be fully resolved from the consuming frames.
 
 ## Scope Sizing And Issue Split
 
@@ -104,7 +113,7 @@ For Figma-backed work, structure intake in this order:
 1. **Figma**: list frames, node IDs, screenshots inspected, frame names, and the state each frame represents.
 2. **Visible controls**: list every visible interactive control, even when functionally out of scope, including social login buttons, secondary links, menus, toggles, and footer/legal links.
 3. **Assets and icons**: inventory logos, icons, illustrations, photos, SVGs, raster assets, and vector nodes; identify their source library or export path.
-4. **Library states**: inspect nested instances and linked library components for component sets, variants, component properties, and interaction states.
+4. **Library states**: inspect nested instances, direct component-source links, and linked library components for component sets, variants, component properties, and interaction states.
 5. **Components**: inventory Figma blocks, primitives, component variants, design-system docs links, repo component matches, and missing repo components.
 6. **Flow**: describe the user actions, transitions, validation paths, and success/error states between frames.
 
@@ -152,6 +161,8 @@ Required discovery:
 
 - Collect representative nested instances for each interactive primitive, such as buttons, inputs, OTP slots, selects, toggles, menu items, links, tabs, and destructive controls.
 - Resolve each instance to its main component with Figma Plugin API access, for example `instance.getMainComponentAsync()`.
+- Inspect direct component-set, state-matrix, or library component links supplied by the user when the consuming frame does not expose the full component state matrix.
+- Record the source path for each component: consuming frame, direct component-set link, library component link, design-system docs, repo primitive, or fallback.
 - Record whether the component is local or remote, its component key, parent component set, variant properties, component property definitions, exposed nested properties, and relevant documentation links.
 - Extract available visual states such as default, hover, focus, active/pressed, disabled, invalid, loading, selected, checked, open, and destructive variants.
 - Add the results to `Component State Matrix` in the design contract.
@@ -160,15 +171,17 @@ For remote libraries:
 
 - If the main component or component set can be resolved from the consuming file, use that metadata directly.
 - If a component key is available and importing is needed for read access, use Figma Plugin API import methods only for read-only inspection and record that import was used.
-- If access is blocked by Figma permissions, Developer-seat requirements, missing published library access, or a stale node link, record the limitation and ask for a component-set link or library access only if the repo fallback is not enough.
+- If the consuming file cannot resolve nested library states, ask for direct component-set or state-matrix links before finalizing the contract unless the repo fallback is explicitly enough for the approved scope.
+- If access is blocked by Figma permissions, Developer-seat requirements, missing published library access, or a stale node link, record the limitation and ask for a component-set link, state-matrix frame, or library access only if the repo fallback is not enough.
 
 Fallback:
 
-- When library states cannot be resolved, use the repo component primitive as the behavior source and cite shadcn/repo docs or code.
+- When library states cannot be resolved from either consuming frames or direct component-source links, use the repo component primitive as the behavior source and cite shadcn/repo docs or code.
 - Never drop expected web interactions because Figma state metadata is unavailable. Buttons and links still need pointer behavior, hover, focus-visible, active/pressed, disabled handling, keyboard access, and click/submit behavior from the repo primitives.
 
 The design contract must distinguish:
 
+- **Component source link inspected**: the consuming frame, direct component set, state-matrix frame, library component, docs, or repo fallback used.
 - **Figma visual state source**: what the design library explicitly provides.
 - **Repo behavior source**: what the implemented component provides at runtime.
 - **Fallback or gap**: states inferred from repo primitives because Figma library metadata was inaccessible or incomplete.

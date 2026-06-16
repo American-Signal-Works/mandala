@@ -15,6 +15,9 @@ Mode: feature | bugfix | design-polish | release
 ## Source
 
 - Figma: <node URL or n/a>
+- Flow frames inspected: <frame links or n/a>
+- Component sources inspected: <component-set, state-matrix, library component, docs, or repo fallback links>
+- Asset/icon sources inspected: <icon/library/asset links or n/a>
 - Issue/brief: <URL or description>
 - Screenshots inspected: <paths or URLs>
 - Design system/kit: <shadcn, shadcndesign.com, custom, or n/a>
@@ -72,13 +75,16 @@ Mode: feature | bugfix | design-polish | release
 
 - Access status: Resolved | Partial | Blocked | Not needed
 - Method: get_design_context | get_metadata | Figma Plugin API probe | component-set link | repo fallback
+- Consuming frame source:
+- Direct component-set or state-matrix source:
 - Library/component-set links inspected:
+- Component source fallback needed: yes | no
 - Permission or runtime limitation:
 - Fallback source when unresolved:
 
-| Instance/control | Instance node | Main component | Component set | Remote | Key available | Variant/property metadata | Source/result |
-|---|---|---|---|---|---|---|---|
-| <Button> | <node id> | <name> | <set name> | yes/no | yes/no | <State, Variant, Size, etc.> | <resolved/partial/blocked> |
+| Instance/control | Instance node | Source link | Discovery path | Main component | Component set | Remote | Key available | Variant/property metadata | Source/result |
+|---|---|---|---|---|---|---|---|---|---|
+| <Button> | <node id> | <frame/component/doc/repo link> | consuming frame/direct component link/repo fallback | <name> | <set name> | yes/no | yes/no | <State, Variant, Size, etc.> | <resolved/partial/blocked> |
 
 ## Asset And Icon Inventory
 
@@ -90,9 +96,9 @@ List every icon, logo, brand mark, illustration, photo, SVG/vector, bitmap, and 
 
 ## Component Primitive Inventory
 
-| Figma primitive/block | Figma node/doc | Repo component | Status | Notes |
-|---|---|---|---|---|
-| <Button> | <node/doc link> | `<Button>` | Installed/Missing/Custom | <variant, size, state> |
+| Figma primitive/block | Figma node/doc | Component source link | Repo component | Status | Notes |
+|---|---|---|---|---|---|
+| <Button> | <node/doc link> | <component-set/state-matrix/repo fallback> | `<Button>` | Installed/Missing/Custom | <variant, size, state> |
 
 ## Design-Visible Controls
 
@@ -106,9 +112,9 @@ List every visible interactive control from the design, even when it is not func
 
 Map Figma visual states to repo runtime behavior. If the Figma library cannot be resolved, use repo primitives as the behavior source and state the limitation.
 
-| Component/control | Figma visual states | Repo behavior source | Required runtime states | Fallback/gaps | Acceptance impact |
-|---|---|---|---|---|---|
-| <Button primary> | <default/hover/pressed/disabled or unresolved> | `<Button>` / shadcn docs | hover, focus-visible, active, disabled, pointer, click/submit | <none or limitation> | <criterion or n/a> |
+| Component/control | Figma state source link | Figma visual states | Repo behavior source | Required runtime states | Fallback/gaps | Acceptance impact |
+|---|---|---|---|---|---|---|
+| <Button primary> | <component-set/state-matrix/repo fallback> | <default/hover/pressed/disabled or unresolved> | `<Button>` / shadcn docs | hover, focus-visible, active, disabled, pointer, click/submit | <none or limitation> | <criterion or n/a> |
 
 ## Flow Map
 

@@ -18,6 +18,7 @@ subagent_policy:
       - "Figma plus repo discovery"
       - "Figma asset and icon inventory"
       - "Figma library component state discovery"
+      - "direct component-set or state-matrix source inspection"
       - "auth, permissions, user data, email, payments, or external services"
       - "component primitive mapping"
       - "security and privacy risk enumeration"
@@ -46,6 +47,8 @@ figma_library_state_policy:
     - "design-contract.md Figma Library State Discovery"
     - "design-contract.md Component State Matrix"
   probe: "walk nested instances, resolve main components, inspect component sets and variant properties"
+  component_source_links: "ask for direct component-set, state-matrix, or library component links when nested library resolution is partial or blocked"
+  authoritative_sources: "prefer direct component source links for state matrices when consuming frames do not expose nested library states"
   fallback: "repo primitive behavior plus shadcn or local component docs when remote library metadata is inaccessible"
   blocked_record: "permission, stale node, missing library access, or Developer-seat limitation"
 
