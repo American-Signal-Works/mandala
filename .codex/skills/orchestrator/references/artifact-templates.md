@@ -196,16 +196,28 @@ Status: Draft | In progress | Complete
 - External services and env vars:
 - Security review owner:
 
+## Simplification Plan
+
+- Required: yes | no
+- Owner: main agent | simplification-engineer
+- Timing: after initial checks, before QA
+- Frontend review scope:
+- Backend review scope:
+- Test review scope:
+- Behavior-preservation checks:
+- Result: Pending | Applied | No simplification needed | Blocked
+
 ## Agent Roster
 
 | Agent | Role | Task | Model | Effort | Write scope | Verification |
 |---|---|---|---|---|---|---|
-| <A1> | <prd-writer/frontend-engineer/backend-engineer/etc.> | <task> | <model or inherited> | <medium/high/xhigh> | <paths or read-only> | <checks> |
+| <A1> | <prd-writer/frontend-engineer/backend-engineer/simplification-engineer/etc.> | <task> | <model or inherited> | <medium/high/xhigh> | <paths or read-only> | <checks> |
 
 ## Definition Of Done
 
 - [ ] Acceptance criteria pass.
 - [ ] Required verification commands pass or are documented as unavailable.
+- [ ] Simplification pass completed or explicitly marked unnecessary.
 - [ ] QA has no unresolved required findings.
 - [ ] Security/privacy gate passes.
 - [ ] Required external services are verified or explicitly blocked/deferred with approval.
@@ -216,7 +228,7 @@ Status: Draft | In progress | Complete
 
 ### Package 1: <name>
 
-- Owner: main agent | frontend-engineer | backend-engineer | test-engineer
+- Owner: main agent | frontend-engineer | backend-engineer | test-engineer | simplification-engineer
 - Write scope:
 - Read scope:
 - Must not edit:
@@ -228,6 +240,14 @@ Status: Draft | In progress | Complete
 ## Integration Notes
 
 - <Cross-package coordination, migrations, or sequencing>
+
+## Simplification Result
+
+- Frontend:
+- Backend:
+- Tests:
+- Checks rerun:
+- Behavior changes: none | <describe approved deviation>
 
 ## Deviations From Contract
 
@@ -254,6 +274,7 @@ Status: Pass | Pass with notes | Fail
 - Figma comparison:
 - Component primitive mapping:
 - Flow transitions:
+- Simplification pass:
 - Security/privacy:
 
 ## Findings

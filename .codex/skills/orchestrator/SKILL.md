@@ -15,11 +15,12 @@ Use this skill to convert a design or feature request into an auditable repo wor
 4. Generate a design contract.
 5. Stop for user approval or edits.
 6. Implement from the approved contract.
-7. Run QA against the contract.
-8. Fix QA notes.
-9. Repeat implementation and QA until done or blocked.
-10. Clean up temporary workflow artifacts.
-11. Prepare merge or release artifacts.
+7. Run verification and simplify the integrated code without changing behavior.
+8. Run QA against the contract.
+9. Fix QA notes.
+10. Repeat implementation, simplification, QA, and fixes until done or blocked.
+11. Clean up temporary workflow artifacts.
+12. Prepare merge or release artifacts.
 
 The skill is Codex-discoverable, but the repo copy remains the team-reviewed source of truth. Write generated artifacts under `docs/codex/runs/<yyyy-mm-dd-feature-slug>/` unless the user specifies another location.
 
@@ -208,6 +209,7 @@ Recommended roles:
 - `frontend-engineer`: implement routes, components, visual styling, client interactions, responsive behavior, and accessibility details.
 - `backend-engineer`: implement server actions, API routes, schema, auth/session behavior, data flow, and external-service integrations.
 - `test-engineer`: add or update focused tests.
+- `simplification-engineer`: perform behavior-preserving frontend, backend, test, and integration cleanup after initial checks pass.
 - `qa-reviewer`: review the integrated result against the contract.
 - `security-reviewer`: review auth, data, secrets, external services, and dependency risk.
 - `release-manager`: prepare PR description, release notes, or deployment checklist.
@@ -221,7 +223,7 @@ Default routing:
 - `prd-writer`, contract approval analysis, and final QA: strongest available model, `xhigh` effort.
 - `qa-reviewer` and `security-reviewer`: strongest available model, `xhigh` effort.
 - `contract-explorer`: strong model, `high` effort; use `xhigh` only for ambiguous product, Figma, security, or architecture questions.
-- `frontend-engineer`, `test-engineer`, and routine implementation: workhorse model, `medium` effort.
+- `frontend-engineer`, `test-engineer`, `simplification-engineer`, and routine implementation: workhorse model, `medium` effort.
 - `backend-engineer`: workhorse model with `high` effort when touching auth, permissions, database, migrations, external services, or irreversible data changes; otherwise `medium`.
 - `release-manager`: workhorse model, `medium` effort unless release risk is high.
 
@@ -240,6 +242,45 @@ Rules:
 - Preserve user or unrelated worktree changes.
 - Update the plan checklist as tasks complete.
 - Record material deviations in `implementation-plan.md`.
+
+## Phase 3.5: Simplification Pass
+
+After initial implementation and the smallest meaningful lint, typecheck, or test checks pass, run a simplification pass before formal QA.
+
+Use a `simplification-engineer` subagent when the diff is non-trivial, touches both frontend and backend, or includes duplicated patterns across files. Keep the main agent responsible for accepting, editing, or rejecting simplification changes.
+
+Rules:
+
+- Preserve behavior, acceptance criteria, visual contract, security boundaries, and public APIs.
+- Do not perform broad refactors, renames, architecture changes, dependency swaps, or stylistic rewrites.
+- Do not simplify code that is still failing basic checks; fix correctness first.
+- Prefer existing repo helpers, framework conventions, shadcn primitives, and typed APIs over new abstractions.
+- If a simplification changes behavior or scope, stop and update the contract for approval.
+- If no simplification is warranted, record "No simplification needed" with the reason.
+
+Frontend checks:
+
+- Remove copied Figma CSS or raw styling that can use semantic tokens or installed primitives.
+- Collapse duplicate component state, effects, handlers, loading flags, and validation branches.
+- Reuse shadcn and repo components instead of custom `div` or one-off controls.
+- Keep accessibility labels, focus behavior, keyboard behavior, and responsive constraints intact.
+- Use available React/shadcn best-practice skills or guidance when many TSX files changed.
+
+Backend checks:
+
+- Remove duplicate server actions, API logic, validation, Supabase calls, env parsing, and error mapping.
+- Keep auth/session, authorization, RLS, tenant isolation, and secret-handling boundaries explicit.
+- Prefer existing server helpers and typed Supabase/schema APIs over ad hoc request or response code.
+- Preserve idempotency, rate-limit assumptions, retry behavior, transaction boundaries, and external-service failure handling.
+- Do not log secrets, OTPs, tokens, raw PII, or provider error payloads while simplifying.
+
+Test checks:
+
+- Remove redundant assertions only when coverage remains clear.
+- Prefer focused tests around accepted behavior over broad snapshots or brittle visual guesses.
+- Update mocks only to match behavior-preserving code changes.
+
+Record simplification results in `implementation-plan.md`. Rerun the smallest checks affected by the simplification before QA.
 
 ## Security And Privacy Gate
 

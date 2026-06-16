@@ -27,6 +27,12 @@ subagent_policy:
     owner: "main-agent"
     split_by: "disjoint write scope"
     required_record: "implementation-plan.md Agent Roster"
+  simplification_phase:
+    owner: "main-agent"
+    timing: "after initial implementation checks pass and before formal QA"
+    default_for_complex_scope: "spawn simplification-engineer for behavior-preserving frontend and backend cleanup"
+    required_record: "implementation-plan.md Simplification Pass"
+    backend_required: true
   qa_phase:
     owner: "main-agent"
     default_for_complex_scope: "spawn independent read-only QA or security reviewer"
@@ -50,6 +56,9 @@ model_policy:
       model: "gpt-5.4"
       reasoning_effort: "high"
     test-engineer:
+      model: "gpt-5.4"
+      reasoning_effort: "medium"
+    simplification-engineer:
       model: "gpt-5.4"
       reasoning_effort: "medium"
     qa-reviewer:
