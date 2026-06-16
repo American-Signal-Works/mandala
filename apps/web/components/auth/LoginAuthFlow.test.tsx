@@ -38,6 +38,16 @@ describe("LoginAuthFlow", () => {
     expect(shell).not.toHaveClass("dark")
   })
 
+  it("uses the Figma primary token in light mode and keeps a dark mode override", () => {
+    const { container } = render(<LoginAuthFlow />)
+
+    const shell = container.querySelector("main")
+    expect(shell).toHaveClass("[--primary:oklch(0.205_0_0)]")
+    expect(shell).toHaveClass("[--primary-foreground:oklch(0.985_0_0)]")
+    expect(shell).toHaveClass("dark:[--primary:oklch(0.922_0_0)]")
+    expect(shell).toHaveClass("dark:[--primary-foreground:oklch(0.205_0_0)]")
+  })
+
   it("shows visible but unavailable social buttons", () => {
     render(<LoginAuthFlow />)
 

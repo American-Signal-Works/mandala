@@ -1,12 +1,6 @@
 "use client"
 
-import {
-  useEffect,
-  useRef,
-  useState,
-  type CSSProperties,
-  type FormEvent,
-} from "react"
+import { useEffect, useRef, useState, type FormEvent } from "react"
 import Image from "next/image"
 
 import { requestEmailMagicLink, signOutCurrentSession } from "@/lib/auth/client"
@@ -45,11 +39,8 @@ const SOCIAL_LOGIN_BUTTONS = [
   },
 ]
 
-const AUTH_THEME_STYLE = {
-  "--primary": "oklch(0.922 0 0)",
-  "--primary-foreground": "oklch(0.205 0 0)",
-  "--ring": "oklch(0.922 0 0)",
-} as CSSProperties
+const AUTH_THEME_CLASS =
+  "[--primary:oklch(0.205_0_0)] [--primary-foreground:oklch(0.985_0_0)] [--ring:oklch(0.205_0_0)] dark:[--primary:oklch(0.922_0_0)] dark:[--primary-foreground:oklch(0.205_0_0)] dark:[--ring:oklch(0.922_0_0)]"
 
 export function LoginAuthFlow({
   initialStep = "email",
@@ -168,8 +159,7 @@ export function LoginAuthFlow({
 
   return (
     <main
-      className="min-h-svh bg-muted text-foreground"
-      style={AUTH_THEME_STYLE}
+      className={cn("min-h-svh bg-muted text-foreground", AUTH_THEME_CLASS)}
     >
       <section className="flex min-h-svh items-center justify-center px-4 py-10">
         <div className="flex w-full flex-col items-center gap-6">
