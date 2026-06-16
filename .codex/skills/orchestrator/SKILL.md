@@ -175,8 +175,8 @@ Contract phase default:
 
 Implementation phase default:
 
-- Split workers by disjoint write scope.
-- Tell workers they are not alone in the codebase, must not revert others' edits, and must list changed paths.
+- Split engineers by disjoint write scope.
+- Tell engineers they are not alone in the codebase, must not revert others' edits, and must list changed paths.
 - Keep integration, conflict resolution, and verification orchestration in the main agent.
 
 QA phase default:
@@ -191,23 +191,23 @@ After approval, create `implementation-plan.md` using the template in `reference
 
 Plan work as small packages with clear ownership:
 
-- Files or modules each worker may edit.
-- Files or modules each worker must not edit.
+- Files or modules each engineer may edit.
+- Files or modules each engineer must not edit.
 - Installed component primitives to reuse.
 - Missing components to add, update, or intentionally avoid.
 - Security-sensitive files, flows, data, permissions, and dependencies.
 - Dependencies between tasks.
 - Verification expected from each task.
 
-Use subagents when useful and available for disjoint work. The main agent remains the orchestrator and owns integration. Tell workers they are not alone in the codebase, must not revert others' edits, and must list changed paths in their final response.
+Use subagents when useful and available for disjoint work. The main agent remains the orchestrator and owns integration. Tell engineers they are not alone in the codebase, must not revert others' edits, and must list changed paths in their final response.
 
 Recommended roles:
 
 - `contract-explorer`: answer specific codebase or Figma questions before implementation.
 - `prd-writer`: produce or revise the design contract and acceptance criteria.
-- `frontend-worker`: implement routes, components, visual styling, client interactions, responsive behavior, and accessibility details.
-- `backend-worker`: implement server actions, API routes, schema, auth/session behavior, data flow, and external-service integrations.
-- `test-worker`: add or update focused tests.
+- `frontend-engineer`: implement routes, components, visual styling, client interactions, responsive behavior, and accessibility details.
+- `backend-engineer`: implement server actions, API routes, schema, auth/session behavior, data flow, and external-service integrations.
+- `test-engineer`: add or update focused tests.
 - `qa-reviewer`: review the integrated result against the contract.
 - `security-reviewer`: review auth, data, secrets, external services, and dependency risk.
 - `release-manager`: prepare PR description, release notes, or deployment checklist.
@@ -221,8 +221,8 @@ Default routing:
 - `prd-writer`, contract approval analysis, and final QA: strongest available model, `xhigh` effort.
 - `qa-reviewer` and `security-reviewer`: strongest available model, `xhigh` effort.
 - `contract-explorer`: strong model, `high` effort; use `xhigh` only for ambiguous product, Figma, security, or architecture questions.
-- `frontend-worker`, `test-worker`, and routine implementation: workhorse model, `medium` effort.
-- `backend-worker`: workhorse model with `high` effort when touching auth, permissions, database, migrations, external services, or irreversible data changes; otherwise `medium`.
+- `frontend-engineer`, `test-engineer`, and routine implementation: workhorse model, `medium` effort.
+- `backend-engineer`: workhorse model with `high` effort when touching auth, permissions, database, migrations, external services, or irreversible data changes; otherwise `medium`.
 - `release-manager`: workhorse model, `medium` effort unless release risk is high.
 
 Escalate planning and review to strongest model with `xhigh` effort when the feature touches authentication, authorization, secrets, PII, email delivery, payments, RLS, database migrations, dependency changes, public routes, generated content, or external APIs. Do not downgrade QA to save cost when the implementation affects security, privacy, data integrity, or release readiness.

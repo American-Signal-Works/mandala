@@ -43,13 +43,13 @@ model_policy:
     prd-writer:
       model: "gpt-5.5"
       reasoning_effort: "xhigh"
-    frontend-worker:
+    frontend-engineer:
       model: "gpt-5.4"
       reasoning_effort: "medium"
-    backend-worker:
+    backend-engineer:
       model: "gpt-5.4"
       reasoning_effort: "high"
-    test-worker:
+    test-engineer:
       model: "gpt-5.4"
       reasoning_effort: "medium"
     qa-reviewer:
