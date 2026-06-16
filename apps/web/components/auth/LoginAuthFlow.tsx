@@ -1,19 +1,16 @@
 "use client"
 
-import { useEffect, useRef, useState, type FormEvent } from "react"
-import { GalleryVerticalEnd } from "lucide-react"
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type FormEvent,
+} from "react"
+import Image from "next/image"
 
-import {
-  requestEmailOtp,
-  signOutCurrentSession,
-  verifyEmailOtp,
-} from "@/lib/auth/client"
-import {
-  getEmailValidationError,
-  getOtpValidationError,
-  normalizeEmail,
-  normalizeOtp,
-} from "@/lib/auth/validation"
+import { requestEmailMagicLink, signOutCurrentSession } from "@/lib/auth/client"
+import { getEmailValidationError, normalizeEmail } from "@/lib/auth/validation"
 import { Button } from "@workspace/ui/components/button"
 import {
   Card,
@@ -30,19 +27,13 @@ import {
   FieldLabel,
 } from "@workspace/ui/components/field"
 import { Input } from "@workspace/ui/components/input"
-import {
-  InputOTP,
-  InputOTPGroup,
-  InputOTPSlot,
-} from "@workspace/ui/components/input-otp"
 import { Separator } from "@workspace/ui/components/separator"
 import { Spinner } from "@workspace/ui/components/spinner"
 import { cn } from "@workspace/ui/lib/utils"
 
-type AuthStep = "email" | "otp" | "success"
-type PendingAction = "send" | "verify" | "resend" | "logout" | null
+type AuthStep = "email" | "link" | "success"
+type PendingAction = "send" | "resend" | "logout" | null
 
-const OTP_SLOT_INDEXES = [0, 1, 2, 3, 4, 5]
 const SOCIAL_LOGIN_BUTTONS = [
   {
     label: "Login with Google",
@@ -54,14 +45,22 @@ const SOCIAL_LOGIN_BUTTONS = [
   },
 ]
 
-export function LoginAuthFlow() {
-  const [step, setStep] = useState<AuthStep>("email")
+const AUTH_THEME_STYLE = {
+  "--primary": "oklch(0.922 0 0)",
+  "--primary-foreground": "oklch(0.205 0 0)",
+  "--ring": "oklch(0.922 0 0)",
+} as CSSProperties
+
+export function LoginAuthFlow({
+  initialStep = "email",
+}: {
+  initialStep?: AuthStep
+} = {}) {
+  const [step, setStep] = useState<AuthStep>(initialStep)
   const [pendingAction, setPendingAction] = useState<PendingAction>(null)
   const [email, setEmail] = useState("")
   const [submittedEmail, setSubmittedEmail] = useState("")
-  const [otp, setOtp] = useState("")
   const [emailError, setEmailError] = useState<string | null>(null)
-  const [otpError, setOtpError] = useState<string | null>(null)
   const [formMessage, setFormMessage] = useState<string | null>(null)
   const [resendCooldown, setResendCooldown] = useState(0)
 
@@ -86,10 +85,8 @@ export function LoginAuthFlow() {
   }, [resendCooldown])
 
   const isSending = pendingAction === "send"
-  const isVerifying = pendingAction === "verify"
   const isResending = pendingAction === "resend"
   const isSigningOut = pendingAction === "logout"
-  const canVerify = otp.length === 6 && !isVerifying
 
   async function handleEmailSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -108,49 +105,18 @@ export function LoginAuthFlow() {
     setEmailError(null)
     setFormMessage(null)
 
-    const { error } = await requestEmailOtp(nextEmail)
+    const { error } = await requestEmailMagicLink(nextEmail)
 
     setPendingAction(null)
 
     if (error) {
-      setEmailError("We couldn't send a code. Try again in a moment.")
+      setEmailError("We couldn't send a sign-in link. Try again in a moment.")
       emailInputRef.current?.focus()
       return
     }
 
     setSubmittedEmail(nextEmail)
-    setOtp("")
-    setOtpError(null)
-    setStep("otp")
-  }
-
-  async function handleVerifySubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-
-    const validationError = getOtpValidationError(otp)
-    if (validationError) {
-      setOtpError(validationError)
-      setFormMessage(null)
-      return
-    }
-
-    setPendingAction("verify")
-    setOtpError(null)
-    setFormMessage(null)
-
-    const { error } = await verifyEmailOtp(submittedEmail, otp)
-
-    setPendingAction(null)
-
-    if (error) {
-      setOtpError(
-        "That code is invalid or expired. Request a new code and try again."
-      )
-      return
-    }
-
-    setOtp("")
-    setStep("success")
+    setStep("link")
   }
 
   async function handleResend() {
@@ -159,21 +125,26 @@ export function LoginAuthFlow() {
     }
 
     setPendingAction("resend")
-    setOtpError(null)
     setFormMessage(null)
 
-    const { error } = await requestEmailOtp(submittedEmail)
+    const { error } = await requestEmailMagicLink(submittedEmail)
 
     setPendingAction(null)
 
     if (error) {
-      setOtpError("We couldn't resend a code. Try again shortly.")
+      setFormMessage("We couldn't resend the link. Try again shortly.")
       return
     }
 
-    setOtp("")
     setResendCooldown(30)
-    setFormMessage("A new code was sent.")
+    setFormMessage("A new sign-in link was sent.")
+  }
+
+  function handleUseAnotherEmail() {
+    setSubmittedEmail("")
+    setFormMessage(null)
+    setResendCooldown(0)
+    setStep("email")
   }
 
   async function handleLogout() {
@@ -191,14 +162,15 @@ export function LoginAuthFlow() {
 
     setSubmittedEmail("")
     setEmail("")
-    setOtp("")
     setEmailError(null)
-    setOtpError(null)
     setStep("email")
   }
 
   return (
-    <main className="min-h-svh bg-muted text-foreground">
+    <main
+      className="min-h-svh bg-muted text-foreground"
+      style={AUTH_THEME_STYLE}
+    >
       <section className="flex min-h-svh items-center justify-center px-4 py-10">
         <div className="flex w-full flex-col items-center gap-6">
           <BrandMark />
@@ -216,21 +188,14 @@ export function LoginAuthFlow() {
                 inputRef={emailInputRef}
               />
             )}
-            {step === "otp" && (
-              <OtpStep
-                canVerify={canVerify}
+            {step === "link" && (
+              <MagicLinkStep
                 formMessage={formMessage}
                 isResending={isResending}
-                isVerifying={isVerifying}
-                otp={otp}
-                otpError={otpError}
                 resendCooldown={resendCooldown}
-                onChangeOtp={(value) => {
-                  setOtp(normalizeOtp(value))
-                  setOtpError(null)
-                }}
                 onResend={handleResend}
-                onSubmit={handleVerifySubmit}
+                onUseAnotherEmail={handleUseAnotherEmail}
+                submittedEmail={submittedEmail}
               />
             )}
             {step === "success" && (
@@ -251,9 +216,15 @@ export function LoginAuthFlow() {
 function BrandMark() {
   return (
     <div className="flex items-center gap-2 text-sm font-medium">
-      <span className="flex size-6 items-center justify-center rounded-md bg-primary text-primary-foreground">
-        <GalleryVerticalEnd aria-hidden="true" data-icon="inline-start" />
-      </span>
+      <Image
+        alt=""
+        aria-hidden="true"
+        className="size-6 shrink-0"
+        height={24}
+        priority
+        src="/backdesk-mark.png"
+        width={24}
+      />
       Backdesk
     </div>
   )
@@ -353,28 +324,20 @@ function EmailStep({
   )
 }
 
-function OtpStep({
-  canVerify,
+function MagicLinkStep({
   formMessage,
   isResending,
-  isVerifying,
-  onChangeOtp,
   onResend,
-  onSubmit,
-  otp,
-  otpError,
+  onUseAnotherEmail,
   resendCooldown,
+  submittedEmail,
 }: {
-  canVerify: boolean
   formMessage: string | null
   isResending: boolean
-  isVerifying: boolean
-  onChangeOtp: (value: string) => void
   onResend: () => void
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void
-  otp: string
-  otpError: string | null
+  onUseAnotherEmail: () => void
   resendCooldown: number
+  submittedEmail: string
 }) {
   const resendDisabled = isResending || resendCooldown > 0
 
@@ -382,72 +345,49 @@ function OtpStep({
     <>
       <CardHeader className="items-center px-6 pt-6 pb-5 text-center">
         <CardTitle className="text-xl leading-tight font-semibold">
-          Enter verification code
+          Check your email
         </CardTitle>
-        <CardDescription>We sent a 6-digit code to your email.</CardDescription>
+        <CardDescription>
+          We sent a sign-in link to {submittedEmail}.
+        </CardDescription>
       </CardHeader>
       <CardContent className="px-6 pb-6">
-        <form className="flex flex-col gap-6" noValidate onSubmit={onSubmit}>
-          <FieldGroup className="gap-6">
-            <Field data-invalid={!!otpError}>
-              <FieldLabel className="sr-only" htmlFor="verification-code">
-                Verification code
-              </FieldLabel>
-              <InputOTP
-                aria-invalid={!!otpError}
-                autoComplete="one-time-code"
-                autoFocus
-                containerClassName="justify-center"
-                disabled={isVerifying}
-                id="verification-code"
-                inputMode="numeric"
-                maxLength={6}
-                onChange={onChangeOtp}
-                value={otp}
-              >
-                <InputOTPGroup className="gap-2 rounded-none">
-                  {OTP_SLOT_INDEXES.map((index) => (
-                    <InputOTPSlot
-                      className="size-8 rounded-md border-l text-base"
-                      index={index}
-                      key={index}
-                    />
-                  ))}
-                </InputOTPGroup>
-              </InputOTP>
-              <FieldDescription className="text-center">
-                Enter the 6-digit code sent to your email.
+        <FieldGroup className="gap-6">
+          <Field>
+            <FieldDescription className="text-center">
+              Open the link from this device to finish signing in.
+            </FieldDescription>
+            {formMessage && (
+              <FieldDescription className="text-center text-foreground">
+                {formMessage}
               </FieldDescription>
-              <FieldError className="text-center">{otpError}</FieldError>
-              {formMessage && !otpError && (
-                <FieldDescription className="text-center text-foreground">
-                  {formMessage}
-                </FieldDescription>
-              )}
-            </Field>
-            <Button className="w-full" disabled={!canVerify} type="submit">
-              {isVerifying && <Spinner data-icon="inline-start" />}
-              {isVerifying ? "Verifying..." : "Verify"}
+            )}
+          </Field>
+          <div className="flex flex-col gap-3">
+            <Button
+              className="w-full"
+              disabled={resendDisabled}
+              onClick={onResend}
+              type="button"
+              variant="outline"
+            >
+              {isResending && <Spinner data-icon="inline-start" />}
+              {isResending
+                ? "Resending..."
+                : resendCooldown > 0
+                  ? `Resend in ${resendCooldown}s`
+                  : "Resend link"}
             </Button>
-            <p className="text-center text-sm text-muted-foreground">
-              Didn&apos;t receive the code?{" "}
-              <Button
-                className="h-auto p-0 align-baseline text-muted-foreground underline disabled:opacity-60"
-                disabled={resendDisabled}
-                onClick={onResend}
-                type="button"
-                variant="link"
-              >
-                {isResending && <Spinner data-icon="inline-start" />}
-                {isResending
-                  ? "Resending..."
-                  : resendCooldown > 0
-                    ? `Resend in ${resendCooldown}s`
-                    : "Resend"}
-              </Button>
-            </p>
-          </FieldGroup>
-        </form>
+            <Button
+              className="w-full"
+              onClick={onUseAnotherEmail}
+              type="button"
+              variant="link"
+            >
+              Use another email
+            </Button>
+          </div>
+        </FieldGroup>
       </CardContent>
     </>
   )

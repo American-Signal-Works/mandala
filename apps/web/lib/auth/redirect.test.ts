@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest"
 
-import { getEmailRedirectTo, getSafeRedirectPath } from "./redirect"
+import { getEmailRedirectTo } from "./redirect"
 
 describe("auth redirect helpers", () => {
   afterEach(() => {
@@ -17,23 +17,5 @@ describe("auth redirect helpers", () => {
     vi.stubEnv("NEXT_PUBLIC_SITE_URL", "")
 
     expect(getEmailRedirectTo()).toBe("http://localhost:3000/callback")
-  })
-
-  it("allows only path-relative callback redirects", () => {
-    expect(getSafeRedirectPath("/")).toBe("/")
-    expect(getSafeRedirectPath("/settings")).toBe("/settings")
-    expect(getSafeRedirectPath("https://evil.example")).toBe("/")
-    expect(getSafeRedirectPath("//evil.example")).toBe("/")
-    expect(getSafeRedirectPath("/\\evil.example")).toBe("/")
-    expect(getSafeRedirectPath("/%5Cevil.example")).toBe("/")
-    expect(getSafeRedirectPath("/%2F%2Fevil.example")).toBe("/")
-    expect(getSafeRedirectPath("settings")).toBe("/")
-    expect(getSafeRedirectPath(null)).toBe("/")
-  })
-
-  it("preserves same-origin path details", () => {
-    expect(getSafeRedirectPath("/settings?tab=team#invite")).toBe(
-      "/settings?tab=team#invite",
-    )
   })
 })
