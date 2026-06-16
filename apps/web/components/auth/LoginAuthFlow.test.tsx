@@ -2,20 +2,14 @@ import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { LoginAuthFlow } from "./LoginAuthFlow"
-import {
-  requestEmailOtp,
-  signOutCurrentSession,
-  verifyEmailOtp,
-} from "@/lib/auth/client"
+import { requestEmailMagicLink, signOutCurrentSession } from "@/lib/auth/client"
 
 vi.mock("@/lib/auth/client", () => ({
-  requestEmailOtp: vi.fn(),
+  requestEmailMagicLink: vi.fn(),
   signOutCurrentSession: vi.fn(),
-  verifyEmailOtp: vi.fn(),
 }))
 
-const requestEmailOtpMock = vi.mocked(requestEmailOtp)
-const verifyEmailOtpMock = vi.mocked(verifyEmailOtp)
+const requestEmailMagicLinkMock = vi.mocked(requestEmailMagicLink)
 const signOutCurrentSessionMock = vi.mocked(signOutCurrentSession)
 
 beforeAll(() => {
@@ -32,8 +26,7 @@ beforeAll(() => {
 
 describe("LoginAuthFlow", () => {
   beforeEach(() => {
-    requestEmailOtpMock.mockReset()
-    verifyEmailOtpMock.mockReset()
+    requestEmailMagicLinkMock.mockReset()
     signOutCurrentSessionMock.mockReset()
   })
 
@@ -55,20 +48,23 @@ describe("LoginAuthFlow", () => {
     fireEvent.click(googleButton)
     fireEvent.click(microsoftButton)
 
-    expect(requestEmailOtpMock).not.toHaveBeenCalled()
+    expect(requestEmailMagicLinkMock).not.toHaveBeenCalled()
   })
 
-  it("validates email before sending an OTP", async () => {
+  it("validates email before sending a magic link", async () => {
     render(<LoginAuthFlow />)
 
     fireEvent.click(screen.getByRole("button", { name: "Login" }))
 
     expect(await screen.findByText("Enter your email address.")).toBeVisible()
-    expect(requestEmailOtpMock).not.toHaveBeenCalled()
+    expect(requestEmailMagicLinkMock).not.toHaveBeenCalled()
   })
 
-  it("sends a normalized email and advances to OTP entry", async () => {
-    requestEmailOtpMock.mockResolvedValue({ data: {}, error: null } as never)
+  it("sends a normalized email and advances to magic link instructions", async () => {
+    requestEmailMagicLinkMock.mockResolvedValue({
+      data: {},
+      error: null,
+    } as never)
 
     render(<LoginAuthFlow />)
 
@@ -78,40 +74,50 @@ describe("LoginAuthFlow", () => {
     fireEvent.click(screen.getByRole("button", { name: "Login" }))
 
     await waitFor(() => {
-      expect(requestEmailOtpMock).toHaveBeenCalledWith("person@example.com")
+      expect(requestEmailMagicLinkMock).toHaveBeenCalledWith(
+        "person@example.com"
+      )
     })
-    expect(await screen.findByText("Enter verification code")).toBeVisible()
+    expect(await screen.findByText("Check your email")).toBeVisible()
+    expect(
+      screen.getByText("We sent a sign-in link to person@example.com.")
+    ).toBeVisible()
   })
 
-  it("verifies a six-digit OTP, shows success, and logs out back to sign in", async () => {
-    requestEmailOtpMock.mockResolvedValue({ data: {}, error: null } as never)
-    verifyEmailOtpMock.mockResolvedValue({ data: {}, error: null } as never)
-    signOutCurrentSessionMock.mockResolvedValue({ error: null } as never)
+  it("resends a magic link from the email instructions", async () => {
+    requestEmailMagicLinkMock.mockResolvedValue({
+      data: {},
+      error: null,
+    } as never)
 
-    const { container } = render(<LoginAuthFlow />)
+    render(<LoginAuthFlow />)
 
     fireEvent.change(screen.getByLabelText("Email"), {
       target: { value: "person@example.com" },
     })
     fireEvent.click(screen.getByRole("button", { name: "Login" }))
 
-    await screen.findByText("Enter verification code")
+    await screen.findByText("Check your email")
 
-    const otpInput = container.querySelector(
-      'input[autocomplete="one-time-code"]'
-    ) as HTMLInputElement
-    expect(otpInput).toBeTruthy()
-
-    fireEvent.change(otpInput, { target: { value: "123456" } })
-    fireEvent.click(screen.getByRole("button", { name: "Verify" }))
+    fireEvent.click(screen.getByRole("button", { name: "Resend link" }))
 
     await waitFor(() => {
-      expect(verifyEmailOtpMock).toHaveBeenCalledWith(
-        "person@example.com",
-        "123456"
-      )
+      expect(requestEmailMagicLinkMock).toHaveBeenCalledTimes(2)
     })
-    expect(await screen.findByText("Login successful")).toBeVisible()
+    expect(requestEmailMagicLinkMock).toHaveBeenLastCalledWith(
+      "person@example.com"
+    )
+    expect(
+      await screen.findByText("A new sign-in link was sent.")
+    ).toBeVisible()
+  })
+
+  it("shows success from callback state and logs out back to sign in", async () => {
+    signOutCurrentSessionMock.mockResolvedValue({ error: null } as never)
+
+    render(<LoginAuthFlow initialStep="success" />)
+
+    expect(screen.getByText("Login successful")).toBeVisible()
 
     fireEvent.click(screen.getByRole("button", { name: "Logout" }))
 
@@ -119,35 +125,5 @@ describe("LoginAuthFlow", () => {
       expect(signOutCurrentSessionMock).toHaveBeenCalled()
     })
     expect(await screen.findByRole("button", { name: "Login" })).toBeVisible()
-  })
-
-  it("keeps users on OTP entry after invalid verification", async () => {
-    requestEmailOtpMock.mockResolvedValue({ data: {}, error: null } as never)
-    verifyEmailOtpMock.mockResolvedValue({
-      data: {},
-      error: { message: "Token has expired" },
-    } as never)
-
-    const { container } = render(<LoginAuthFlow />)
-
-    fireEvent.change(screen.getByLabelText("Email"), {
-      target: { value: "person@example.com" },
-    })
-    fireEvent.click(screen.getByRole("button", { name: "Login" }))
-
-    await screen.findByText("Enter verification code")
-
-    const otpInput = container.querySelector(
-      'input[autocomplete="one-time-code"]'
-    ) as HTMLInputElement
-    fireEvent.change(otpInput, { target: { value: "123456" } })
-    fireEvent.click(screen.getByRole("button", { name: "Verify" }))
-
-    expect(
-      await screen.findByText(
-        "That code is invalid or expired. Request a new code and try again."
-      )
-    ).toBeVisible()
-    expect(screen.getByText("Enter verification code")).toBeVisible()
   })
 })
