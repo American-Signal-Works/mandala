@@ -46,12 +46,6 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  if (isLoginSuccessRoute && !user) {
-    const url = request.nextUrl.clone()
-    url.searchParams.delete("auth")
-    return NextResponse.redirect(url)
-  }
-
   if (isAuthRoute && user && !isLoginSuccessRoute) {
     const url = request.nextUrl.clone()
     url.pathname = "/"
