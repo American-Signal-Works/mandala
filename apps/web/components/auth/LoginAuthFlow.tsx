@@ -10,6 +10,7 @@ import {
   type ReactNode,
   type RefObject,
 } from "react"
+import Image from "next/image"
 import Link from "next/link"
 import { AiMagicIcon } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
@@ -256,13 +257,35 @@ function AuthHeader({
   title: string
 }) {
   return (
-    <div className="flex w-full flex-col items-start gap-2 text-left">
-      <h1 className="text-2xl leading-none font-normal">{title}</h1>
-      {children && (
-        <div className={cn("text-sm leading-5", authTextSecondaryClass)}>
-          {children}
-        </div>
-      )}
+    <div className="flex w-full flex-col items-start gap-6 text-left">
+      <div className="relative size-9 shrink-0" data-auth-mark="true">
+        <Image
+          alt=""
+          aria-hidden="true"
+          className="size-9 dark:hidden"
+          height={36}
+          priority
+          src="/auth-icon-light.svg"
+          width={36}
+        />
+        <Image
+          alt=""
+          aria-hidden="true"
+          className="hidden size-9 dark:block"
+          height={36}
+          priority
+          src="/auth-icon-dark.svg"
+          width={36}
+        />
+      </div>
+      <div className="flex w-full flex-col items-start gap-2">
+        <h1 className="text-2xl leading-none font-normal">{title}</h1>
+        {children && (
+          <div className={cn("text-sm leading-5", authTextSecondaryClass)}>
+            {children}
+          </div>
+        )}
+      </div>
     </div>
   )
 }
@@ -303,9 +326,7 @@ function EmailStep({
 
   return (
     <>
-      <AuthHeader
-        title={mode === "sign-up" ? "Sign up for Mandala" : "Sign in"}
-      >
+      <AuthHeader title={actionLabel}>
         {mode === "sign-up"
           ? "Already have an account? "
           : "Don't have an account? "}

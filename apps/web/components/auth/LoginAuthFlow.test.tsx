@@ -67,7 +67,12 @@ describe("LoginAuthFlow", () => {
     expect(shell).not.toHaveAttribute("style")
     expect(stack).toHaveClass("max-w-96", "items-start")
     expect(stack).not.toHaveClass("max-w-xs")
-    expect(container.querySelector("img")).not.toBeInTheDocument()
+    const mark = container.querySelector('[data-auth-mark="true"]')
+    const markImages = mark?.querySelectorAll("img")
+    expect(mark).toHaveClass("size-9", "shrink-0")
+    expect(markImages).toHaveLength(2)
+    expect(markImages?.[0]).toHaveClass("size-9", "dark:hidden")
+    expect(markImages?.[1]).toHaveClass("hidden", "size-9", "dark:block")
     expect(screen.getByRole("heading", { name: "Sign in" })).toHaveClass(
       "text-2xl",
       "leading-none",
@@ -282,9 +287,7 @@ describe("LoginAuthFlow", () => {
 
     render(<LoginAuthFlow mode="sign-up" />)
 
-    expect(
-      screen.getByRole("heading", { name: "Sign up for Mandala" })
-    ).toBeVisible()
+    expect(screen.getByRole("heading", { name: "Sign up" })).toBeVisible()
     expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute(
       "href",
       "/login"
@@ -309,9 +312,7 @@ describe("LoginAuthFlow", () => {
       )
     })
     expect(await screen.findByText("Magic Link Sent")).toBeVisible()
-    expect(
-      screen.getByRole("heading", { name: "Sign up for Mandala" })
-    ).toBeVisible()
+    expect(screen.getByRole("heading", { name: "Sign up" })).toBeVisible()
   })
 
   it("shows success from callback state and signs out back to sign in", async () => {
