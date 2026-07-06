@@ -69,7 +69,7 @@ describe("LoginAuthFlow", () => {
     expect(stack).not.toHaveClass("max-w-xs")
     expect(container.querySelector("img")).not.toBeInTheDocument()
     expect(
-      screen.getByRole("heading", { name: "Sign in to Backdesk" })
+      screen.getByRole("heading", { name: "Sign in" })
     ).toHaveClass("text-2xl", "leading-none", "font-normal")
     expect(screen.getByRole("link", { name: "Sign up" })).toHaveAttribute(
       "href",
@@ -210,7 +210,7 @@ describe("LoginAuthFlow", () => {
       )
     })
     expect(
-      screen.getByRole("heading", { name: "Sign in to Backdesk" })
+      screen.getByRole("heading", { name: "Sign in" })
     ).toBeVisible()
     expect(screen.queryByText("Check your email")).not.toBeInTheDocument()
     expect(screen.getByLabelText("Or continue with email")).toHaveValue(

@@ -10,7 +10,7 @@ import { cn } from "@workspace/ui/lib/utils"
 import { createClient } from "@/lib/supabase/server"
 
 export const metadata: Metadata = {
-  title: { default: "Backdesk", template: "%s · Backdesk" },
+  title: { default: "Mandala", template: "%s · Mandala" },
   description:
     "A workspace for your data. Pages of blocks, collections, connections.",
 }

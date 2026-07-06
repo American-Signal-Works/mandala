@@ -305,7 +305,7 @@ function EmailStep({
     <>
       <AuthHeader
         title={
-          mode === "sign-up" ? "Sign up for Backdesk" : "Sign in to Backdesk"
+          mode === "sign-up" ? "Sign up for Backdesk" : "Sign in"
         }
       >
         {mode === "sign-up"
