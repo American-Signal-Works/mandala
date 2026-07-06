@@ -68,9 +68,11 @@ describe("LoginAuthFlow", () => {
     expect(stack).toHaveClass("max-w-96", "items-start")
     expect(stack).not.toHaveClass("max-w-xs")
     expect(container.querySelector("img")).not.toBeInTheDocument()
-    expect(
-      screen.getByRole("heading", { name: "Sign in to Mandala" })
-    ).toHaveClass("text-2xl", "leading-none", "font-normal")
+    expect(screen.getByRole("heading", { name: "Sign in" })).toHaveClass(
+      "text-2xl",
+      "leading-none",
+      "font-normal"
+    )
     expect(screen.getByRole("link", { name: "Sign up" })).toHaveAttribute(
       "href",
       "/sign-up"
@@ -209,9 +211,7 @@ describe("LoginAuthFlow", () => {
         { shouldCreateUser: false }
       )
     })
-    expect(
-      screen.getByRole("heading", { name: "Sign in to Mandala" })
-    ).toBeVisible()
+    expect(screen.getByRole("heading", { name: "Sign in" })).toBeVisible()
     expect(screen.queryByText("Check your email")).not.toBeInTheDocument()
     expect(screen.getByLabelText("Or continue with email")).toHaveValue(
       "person@example.com"

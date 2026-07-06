@@ -304,9 +304,7 @@ function EmailStep({
   return (
     <>
       <AuthHeader
-        title={
-          mode === "sign-up" ? "Sign up for Mandala" : "Sign in to Mandala"
-        }
+        title={mode === "sign-up" ? "Sign up for Mandala" : "Sign in"}
       >
         {mode === "sign-up"
           ? "Already have an account? "
