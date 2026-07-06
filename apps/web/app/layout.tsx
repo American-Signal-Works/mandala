@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import { Geist_Mono, Geist } from "next/font/google"
+import { Figtree, Geist_Mono } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 
 import "@workspace/ui/globals.css"
@@ -21,11 +21,11 @@ function isThemeMode(value: string | null | undefined): value is ThemeMode {
   return value === "light" || value === "dark" || value === "system"
 }
 
-const geist = Geist({ subsets: ["latin"], variable: "--font-sans" })
+const figtree = Figtree({ subsets: ["latin"], variable: "--font-figtree" })
 
 const fontMono = Geist_Mono({
   subsets: ["latin"],
-  variable: "--font-mono",
+  variable: "--font-geist-mono",
 })
 
 export default async function RootLayout({
@@ -58,7 +58,7 @@ export default async function RootLayout({
         "antialiased",
         fontMono.variable,
         "font-sans",
-        geist.variable
+        figtree.variable
       )}
     >
       <body>

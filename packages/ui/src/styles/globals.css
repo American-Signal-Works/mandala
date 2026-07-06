@@ -52,7 +52,8 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
-  --font-sans: var(--font-sans);
+  --font-sans: var(--font-figtree);
+  --font-mono: var(--font-geist-mono);
   --color-highlight: var(--highlight);
 }
 
@@ -63,8 +64,8 @@
   --card-foreground: #1b1b19;
   --popover: #fbfaf7;
   --popover-foreground: #1b1b19;
-  --primary: #1b1b19;
-  --primary-foreground: #f5f3ee;
+  --primary: #4182ff;
+  --primary-foreground: #ffffff;
   --secondary: #fbfaf7;
   --secondary-foreground: #1b1b19;
   --muted: #fbfaf7;
@@ -83,7 +84,7 @@
   --chart-3: #1b1b19;
   --chart-4: #cac6bd;
   --chart-5: #e6e0d6;
-  --radius: 0.75rem;
+  --radius: 0.625rem;
   --sidebar: #fbfaf7;
   --sidebar-foreground: #1b1b19;
   --sidebar-primary: #1b1b19;
@@ -102,7 +103,7 @@
   --card-foreground: #f0ece6;
   --popover: #18191a;
   --popover-foreground: #f0ece6;
-  --primary: #f0ece6;
+  --primary: #74a7ff;
   --primary-foreground: #111111;
   --secondary: #18191a;
   --secondary-foreground: #f0ece6;
