@@ -134,6 +134,9 @@ max_namespaces = 5
 max_tables = 10
 max_catalogs = 2
 
+[functions.send-auth-email]
+verify_jwt = false
+
 # Analytics Buckets is available to Supabase Pro plan.
 # [storage.analytics.buckets.my-warehouse]
 
@@ -224,7 +227,7 @@ max_frequency = "1s"
 # Number of characters used in the email OTP.
 otp_length = 6
 # Number of seconds before the email OTP expires (defaults to 1 hour).
-otp_expiry = 3600
+otp_expiry = 300
 
 # Use a production-ready SMTP server.
 # For Resend, production sending requires a verified sending domain/subdomain.
@@ -278,6 +281,13 @@ max_frequency = "5s"
 # [auth.hook.custom_access_token]
 # enabled = true
 # uri = "pg-functions://<database>/<schema>/<hook_name>"
+
+# Enable this after `send-auth-email` is deployed and the hook secret is set.
+# The hosted project can also be configured from the Supabase dashboard.
+# [auth.hook.send_email]
+# enabled = true
+# uri = "env(SUPABASE_AUTH_SEND_EMAIL_HOOK_URI)"
+# secrets = "env(SEND_EMAIL_HOOK_SECRET)"
 
 # Configure one of the supported SMS providers: `twilio`, `twilio_verify`, `messagebird`, `textlocal`, `vonage`.
 [auth.sms.twilio]
