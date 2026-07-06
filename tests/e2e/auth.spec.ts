@@ -22,9 +22,7 @@ test("/login matches the approved desktop auth frame", async ({ page }) => {
   const emailSurface = page.locator('[data-auth-email-input="true"]')
   const primaryButton = page.getByRole("button", { name: "Send Magic Link" })
 
-  await expect(
-    page.getByRole("heading", { name: "Sign in to Mandala" })
-  ).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible()
   await expect(page.getByText("Don't have an account? Sign up")).toBeVisible()
   await expect(googleButton).toBeEnabled()
   await expect(microsoftButton).toBeEnabled()
@@ -81,10 +79,10 @@ test("/login matches the approved desktop auth frame", async ({ page }) => {
   expect(metrics.stack.width).toBeCloseTo(384, 0)
   expect(metrics.stack.x).toBeCloseTo(528, 0)
   expect(metrics.stack.y).toBeCloseTo(336, 0)
-  expect(metrics.googleButton.y).toBeCloseTo(408, 0)
-  expect(metrics.microsoftButton.y).toBeCloseTo(456, 0)
-  expect(metrics.emailSurface.y).toBeCloseTo(548, 0)
-  expect(metrics.primaryButton.y).toBeCloseTo(596, 0)
+  expect(metrics.googleButton.y).toBeCloseTo(468, 0)
+  expect(metrics.microsoftButton.y).toBeCloseTo(516, 0)
+  expect(metrics.emailSurface.y).toBeCloseTo(608, 0)
+  expect(metrics.primaryButton.y).toBeCloseTo(656, 0)
   for (const control of [
     metrics.googleButton,
     metrics.microsoftButton,
@@ -117,7 +115,7 @@ test("/login follows system light and dark theme", async ({ browser }) => {
   const lightPage = await lightContext.newPage()
   await lightPage.goto(authUrl("/login"))
   await expect(
-    lightPage.getByRole("heading", { name: "Sign in to Mandala" })
+    lightPage.getByRole("heading", { name: "Sign in" })
   ).toBeVisible()
 
   const lightMetrics = await lightPage.evaluate(() => {
@@ -139,8 +137,8 @@ test("/login follows system light and dark theme", async ({ browser }) => {
   expect(lightMetrics.htmlClass).toContain("light")
   expect(lightMetrics.shellBg).toBe("rgb(245, 243, 238)")
   expect(lightMetrics.shellColor).toBe("rgb(27, 27, 25)")
-  expect(lightMetrics.primaryBg).toBe("rgb(27, 27, 25)")
-  expect(lightMetrics.primaryColor).toBe("rgb(245, 243, 238)")
+  expect(lightMetrics.primaryBg).toBe("rgb(65, 130, 255)")
+  expect(lightMetrics.primaryColor).toBe("rgb(255, 255, 255)")
   await lightContext.close()
 
   const darkContext = await browser.newContext({
@@ -150,9 +148,7 @@ test("/login follows system light and dark theme", async ({ browser }) => {
   })
   const darkPage = await darkContext.newPage()
   await darkPage.goto(authUrl("/login"))
-  await expect(
-    darkPage.getByRole("heading", { name: "Sign in to Mandala" })
-  ).toBeVisible()
+  await expect(darkPage.getByRole("heading", { name: "Sign in" })).toBeVisible()
 
   const darkMetrics = await darkPage.evaluate(() => {
     const shell = document.querySelector('[data-auth-shell="true"]')
@@ -186,9 +182,7 @@ test("/sign-up matches the approved desktop sign-up frame", async ({
   await page.getByRole("link", { name: "Sign up" }).click()
 
   await expect(page).toHaveURL(/\/sign-up$/)
-  await expect(
-    page.getByRole("heading", { name: "Sign up for Mandala" })
-  ).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Sign up" })).toBeVisible()
   await expect(page.getByText("Already have an account? Sign in")).toBeVisible()
   await expect(
     page.getByRole("button", { name: "Sign up with Google" })
@@ -246,9 +240,7 @@ test("/login keeps magic-link sent on the 384px auth stack", async ({
   await page.getByLabel("Or continue with email").fill("person@example.com")
   await page.getByRole("button", { name: "Send Magic Link" }).click()
 
-  await expect(
-    page.getByRole("heading", { name: "Sign in to Mandala" })
-  ).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible()
   await expect(
     page.getByRole("button", { name: "Magic Link Sent" })
   ).toHaveAttribute("aria-disabled", "true")
@@ -273,9 +265,7 @@ test("/login renders auth controls without overlap on mobile", async ({
 
   const stack = page.locator('[data-auth-stack="true"]')
 
-  await expect(
-    page.getByRole("heading", { name: "Sign in to Mandala" })
-  ).toBeVisible()
+  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible()
   await expect(
     page.getByRole("button", { name: "Sign in with Google" })
   ).toBeVisible()
