@@ -133,6 +133,7 @@ describe("LoginAuthFlow", () => {
     expect(googleButton).toHaveClass(
       "h-10",
       "rounded-[10px]",
+      "border-transparent",
       "bg-secondary",
       "text-secondary-foreground",
       "dark:bg-[#18191A]",
@@ -141,6 +142,7 @@ describe("LoginAuthFlow", () => {
     expect(microsoftButton).toHaveClass(
       "h-10",
       "rounded-[10px]",
+      "border-transparent",
       "bg-secondary",
       "text-secondary-foreground",
       "dark:bg-[#18191A]",

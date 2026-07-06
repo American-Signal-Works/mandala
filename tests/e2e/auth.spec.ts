@@ -120,14 +120,16 @@ test("/login follows system light and dark theme", async ({ browser }) => {
 
   const lightMetrics = await lightPage.evaluate(() => {
     const shell = document.querySelector('[data-auth-shell="true"]')
+    const google = document.querySelector('button[title="Sign in with Google"]')
     const primary = document.querySelector('[data-auth-primary-action="true"]')
 
-    if (!shell || !primary) {
+    if (!shell || !google || !primary) {
       throw new Error("Missing auth shell or primary action.")
     }
 
     return {
       htmlClass: document.documentElement.className,
+      googleBorderColor: getComputedStyle(google).borderColor,
       shellBg: getComputedStyle(shell).backgroundColor,
       shellColor: getComputedStyle(shell).color,
       primaryBg: getComputedStyle(primary).backgroundColor,
@@ -135,6 +137,7 @@ test("/login follows system light and dark theme", async ({ browser }) => {
     }
   })
   expect(lightMetrics.htmlClass).toContain("light")
+  expect(lightMetrics.googleBorderColor).toBe("rgba(0, 0, 0, 0)")
   expect(lightMetrics.shellBg).toBe("rgb(245, 243, 238)")
   expect(lightMetrics.shellColor).toBe("rgb(27, 27, 25)")
   expect(lightMetrics.primaryBg).toBe("rgb(65, 130, 255)")
