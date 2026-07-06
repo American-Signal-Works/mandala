@@ -23,7 +23,7 @@ test("/login matches the approved desktop auth frame", async ({ page }) => {
   const primaryButton = page.getByRole("button", { name: "Send Magic Link" })
 
   await expect(
-    page.getByRole("heading", { name: "Sign in to Backdesk" })
+    page.getByRole("heading", { name: "Sign in to Mandala" })
   ).toBeVisible()
   await expect(page.getByText("Don't have an account? Sign up")).toBeVisible()
   await expect(googleButton).toBeEnabled()
@@ -117,7 +117,7 @@ test("/login follows system light and dark theme", async ({ browser }) => {
   const lightPage = await lightContext.newPage()
   await lightPage.goto(authUrl("/login"))
   await expect(
-    lightPage.getByRole("heading", { name: "Sign in to Backdesk" })
+    lightPage.getByRole("heading", { name: "Sign in to Mandala" })
   ).toBeVisible()
 
   const lightMetrics = await lightPage.evaluate(() => {
@@ -151,7 +151,7 @@ test("/login follows system light and dark theme", async ({ browser }) => {
   const darkPage = await darkContext.newPage()
   await darkPage.goto(authUrl("/login"))
   await expect(
-    darkPage.getByRole("heading", { name: "Sign in to Backdesk" })
+    darkPage.getByRole("heading", { name: "Sign in to Mandala" })
   ).toBeVisible()
 
   const darkMetrics = await darkPage.evaluate(() => {
@@ -187,7 +187,7 @@ test("/sign-up matches the approved desktop sign-up frame", async ({
 
   await expect(page).toHaveURL(/\/sign-up$/)
   await expect(
-    page.getByRole("heading", { name: "Sign up for Backdesk" })
+    page.getByRole("heading", { name: "Sign up for Mandala" })
   ).toBeVisible()
   await expect(page.getByText("Already have an account? Sign in")).toBeVisible()
   await expect(
@@ -247,7 +247,7 @@ test("/login keeps magic-link sent on the 384px auth stack", async ({
   await page.getByRole("button", { name: "Send Magic Link" }).click()
 
   await expect(
-    page.getByRole("heading", { name: "Sign in to Backdesk" })
+    page.getByRole("heading", { name: "Sign in to Mandala" })
   ).toBeVisible()
   await expect(
     page.getByRole("button", { name: "Magic Link Sent" })
@@ -274,7 +274,7 @@ test("/login renders auth controls without overlap on mobile", async ({
   const stack = page.locator('[data-auth-stack="true"]')
 
   await expect(
-    page.getByRole("heading", { name: "Sign in to Backdesk" })
+    page.getByRole("heading", { name: "Sign in to Mandala" })
   ).toBeVisible()
   await expect(
     page.getByRole("button", { name: "Sign in with Google" })

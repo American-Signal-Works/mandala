@@ -24,7 +24,7 @@ export default async function Home() {
     <div className="max-w-2xl mx-auto py-12">
       <Card>
         <CardHeader>
-          <CardTitle>Welcome to Backdesk</CardTitle>
+          <CardTitle>Welcome to Mandala</CardTitle>
           <CardDescription>
             Pages are how you organize your work. Use <strong>+ New page</strong> in the sidebar to create
             a dashboard or a collection.

@@ -1,4 +1,4 @@
-# Backdesk
+# Mandala
 
 A workspace for your data. Pages of blocks, collections, connections.
 
@@ -47,7 +47,7 @@ Visit http://localhost:3000.
 
 ## Codex workflow
 
-Backdesk keeps shared Codex workflow instructions in the repo. For Figma-to-implementation work, use `.codex/skills/orchestrator/SKILL.md`.
+Mandala keeps shared Codex workflow instructions in the repo. For Figma-to-implementation work, use `.codex/skills/orchestrator/SKILL.md`.
 
 Install or update the skill for local Codex discovery:
 

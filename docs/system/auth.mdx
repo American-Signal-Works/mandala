@@ -77,7 +77,7 @@ Provider completion uses the same `/callback` route and then redirects to the au
 
 Production Google and Microsoft sign-on requires the external OAuth apps to be configured before Supabase can complete the flow.
 
-For the Backdesk Supabase project, add this callback URL to each external OAuth app:
+For the Mandala Supabase project, add this callback URL to each external OAuth app:
 
 ```text
 https://lbftopppjjdejvmwuxmq.supabase.co/auth/v1/callback
@@ -86,6 +86,8 @@ https://lbftopppjjdejvmwuxmq.supabase.co/auth/v1/callback
 In Supabase Auth URL Configuration, the production allowlist must include:
 
 ```text
+https://mandala.md/callback
+https://www.mandala.md/callback
 https://usebackdesk.com/callback
 ```
 
@@ -98,7 +100,7 @@ http://localhost:3000/callback
 Google Cloud setup:
 
 - Create a Web OAuth client.
-- Add `https://usebackdesk.com` as an authorized JavaScript origin.
+- Add `https://mandala.md` as an authorized JavaScript origin.
 - Add the Supabase callback URL above as an authorized redirect URI.
 - Enable the Supabase Google provider with the Google client ID and client secret.
 

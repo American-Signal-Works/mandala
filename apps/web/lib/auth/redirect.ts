@@ -24,8 +24,8 @@ export function getSafePostAuthPath(value: string | null | undefined) {
   }
 
   try {
-    const parsed = new URL(value, "https://usebackdesk.local")
-    const isInternalPath = parsed.origin === "https://usebackdesk.local"
+    const parsed = new URL(value, "https://mandala.local")
+    const isInternalPath = parsed.origin === "https://mandala.local"
     const normalizedPath = `${parsed.pathname}${parsed.search}`
 
     if (isInternalPath && SAFE_POST_AUTH_PATHS.has(normalizedPath)) {

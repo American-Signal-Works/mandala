@@ -69,7 +69,7 @@ describe("LoginAuthFlow", () => {
     expect(stack).not.toHaveClass("max-w-xs")
     expect(container.querySelector("img")).not.toBeInTheDocument()
     expect(
-      screen.getByRole("heading", { name: "Sign in to Backdesk" })
+      screen.getByRole("heading", { name: "Sign in to Mandala" })
     ).toHaveClass("text-2xl", "leading-none", "font-normal")
     expect(screen.getByRole("link", { name: "Sign up" })).toHaveAttribute(
       "href",
@@ -210,7 +210,7 @@ describe("LoginAuthFlow", () => {
       )
     })
     expect(
-      screen.getByRole("heading", { name: "Sign in to Backdesk" })
+      screen.getByRole("heading", { name: "Sign in to Mandala" })
     ).toBeVisible()
     expect(screen.queryByText("Check your email")).not.toBeInTheDocument()
     expect(screen.getByLabelText("Or continue with email")).toHaveValue(
@@ -283,7 +283,7 @@ describe("LoginAuthFlow", () => {
     render(<LoginAuthFlow mode="sign-up" />)
 
     expect(
-      screen.getByRole("heading", { name: "Sign up for Backdesk" })
+      screen.getByRole("heading", { name: "Sign up for Mandala" })
     ).toBeVisible()
     expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute(
       "href",
@@ -310,7 +310,7 @@ describe("LoginAuthFlow", () => {
     })
     expect(await screen.findByText("Magic Link Sent")).toBeVisible()
     expect(
-      screen.getByRole("heading", { name: "Sign up for Backdesk" })
+      screen.getByRole("heading", { name: "Sign up for Mandala" })
     ).toBeVisible()
   })
 

@@ -24,7 +24,7 @@ export async function AppSidebar() {
   return (
     <Sidebar>
       <SidebarHeader>
-        <Link href="/" className="px-3 py-2 font-semibold text-sm">Backdesk</Link>
+        <Link href="/" className="px-3 py-2 font-semibold text-sm">Mandala</Link>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>

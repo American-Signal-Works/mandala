@@ -21,7 +21,7 @@ function mockUser(user: { id: string } | null) {
 }
 
 function request(path: string) {
-  return new NextRequest(new URL(path, "https://usebackdesk.com"))
+  return new NextRequest(new URL(path, "https://mandala.md"))
 }
 
 describe("middleware auth redirects", () => {
@@ -37,7 +37,7 @@ describe("middleware auth redirects", () => {
     const response = await middleware(request("/settings"))
 
     expect(response.headers.get("location")).toBe(
-      "https://usebackdesk.com/login"
+      "https://mandala.md/login"
     )
   })
 
@@ -47,7 +47,7 @@ describe("middleware auth redirects", () => {
     const response = await middleware(request("/settings?token=secret"))
 
     expect(response.headers.get("location")).toBe(
-      "https://usebackdesk.com/login"
+      "https://mandala.md/login"
     )
   })
 
@@ -72,7 +72,7 @@ describe("middleware auth redirects", () => {
 
     const response = await middleware(request("/login"))
 
-    expect(response.headers.get("location")).toBe("https://usebackdesk.com/")
+    expect(response.headers.get("location")).toBe("https://mandala.md/")
   })
 
   it("redirects authenticated users away from sign-up", async () => {
@@ -80,7 +80,7 @@ describe("middleware auth redirects", () => {
 
     const response = await middleware(request("/sign-up"))
 
-    expect(response.headers.get("location")).toBe("https://usebackdesk.com/")
+    expect(response.headers.get("location")).toBe("https://mandala.md/")
   })
 
   it("drops query params when redirecting authenticated auth routes", async () => {
@@ -88,7 +88,7 @@ describe("middleware auth redirects", () => {
 
     const response = await middleware(request("/sign-up?invite=secret"))
 
-    expect(response.headers.get("location")).toBe("https://usebackdesk.com/")
+    expect(response.headers.get("location")).toBe("https://mandala.md/")
   })
 
   it("keeps authenticated users on the callback success screen", async () => {

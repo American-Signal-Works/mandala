@@ -29,10 +29,10 @@ describe("auth redirect helpers", () => {
   })
 
   it("keeps callback URLs on the success screen by default", () => {
-    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://usebackdesk.com")
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://mandala.md")
 
     expect(getAuthCallbackUrl()).toBe(
-      "https://usebackdesk.com/callback?next=%2Flogin%3Fauth%3Dsuccess"
+      "https://mandala.md/callback?next=%2Flogin%3Fauth%3Dsuccess"
     )
   })
 

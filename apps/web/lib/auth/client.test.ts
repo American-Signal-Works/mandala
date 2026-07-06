@@ -43,7 +43,7 @@ describe("auth client helpers", () => {
   })
 
   it("requests email magic links with callback and sign-up intent", async () => {
-    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://usebackdesk.com")
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://mandala.md")
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://project.supabase.co")
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "anon-key")
     const signInWithOtp = vi.fn().mockResolvedValue({
@@ -64,7 +64,7 @@ describe("auth client helpers", () => {
       email: "person@example.com",
       options: {
         emailRedirectTo:
-          "https://usebackdesk.com/callback?next=%2Flogin%3Fauth%3Dsuccess",
+          "https://mandala.md/callback?next=%2Flogin%3Fauth%3Dsuccess",
         shouldCreateUser: true,
       },
     })
@@ -83,7 +83,7 @@ describe("auth client helpers", () => {
   })
 
   it("starts Google sign-on through Supabase OAuth", async () => {
-    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://usebackdesk.com")
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://mandala.md")
     const signInWithOAuth = vi.fn().mockResolvedValue({
       data: { url: "https://provider.example.com" },
       error: null,
@@ -100,13 +100,13 @@ describe("auth client helpers", () => {
       provider: "google",
       options: {
         redirectTo:
-          "https://usebackdesk.com/callback?next=%2Flogin%3Fauth%3Dsuccess",
+          "https://mandala.md/callback?next=%2Flogin%3Fauth%3Dsuccess",
       },
     })
   })
 
   it("requests email scope for Microsoft sign-on", async () => {
-    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://usebackdesk.com")
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://mandala.md")
     const signInWithOAuth = vi.fn().mockResolvedValue({
       data: { url: "https://provider.example.com" },
       error: null,
@@ -123,7 +123,7 @@ describe("auth client helpers", () => {
       provider: "azure",
       options: {
         redirectTo:
-          "https://usebackdesk.com/callback?next=%2Flogin%3Fauth%3Dsuccess",
+          "https://mandala.md/callback?next=%2Flogin%3Fauth%3Dsuccess",
         scopes: "email",
       },
     })
