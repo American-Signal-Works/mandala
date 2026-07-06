@@ -184,9 +184,7 @@ describe("LoginAuthFlow", () => {
       "h-10",
       "rounded-[10px]",
       "bg-primary",
-      "text-primary-foreground",
-      "dark:bg-[#F0ECE6]",
-      "dark:text-[#111111]"
+      "text-primary-foreground"
     )
 
     fireEvent.click(magicLinkButton)

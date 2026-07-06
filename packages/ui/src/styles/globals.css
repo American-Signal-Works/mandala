@@ -103,8 +103,8 @@
   --card-foreground: #f0ece6;
   --popover: #18191a;
   --popover-foreground: #f0ece6;
-  --primary: #74a7ff;
-  --primary-foreground: #111111;
+  --primary: #4182ff;
+  --primary-foreground: #ffffff;
   --secondary: #18191a;
   --secondary-foreground: #f0ece6;
   --muted: #18191a;
@@ -115,8 +115,8 @@
   --border: #3b3d3f;
   --input: #18191a;
   --ring: #3b3d3f;
-  --signal: #74a7ff;
-  --signal-foreground: #111111;
+  --signal: #4182ff;
+  --signal-foreground: #ffffff;
   --signal-muted: #1c2a42;
   --chart-1: var(--signal);
   --chart-2: #a8a29a;
@@ -145,8 +145,8 @@
   --highlight: #d7e5ff;
 }
 .dark[data-accent="blue"] {
-  --signal: #74a7ff;
-  --signal-foreground: #111111;
+  --signal: #4182ff;
+  --signal-foreground: #ffffff;
   --signal-muted: #1c2a42;
   --chart-1: var(--signal);
   --highlight: #264566;
@@ -221,12 +221,5 @@
   }
   html {
     @apply font-sans;
-  }
-}
-
-@layer components {
-  .dark .auth-primary-button:not(:disabled):not([aria-disabled="true"]):hover {
-    background-color: #e7e1d8;
-    color: #111111;
   }
 }

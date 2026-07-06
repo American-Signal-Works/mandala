@@ -61,7 +61,7 @@ const authSurfaceClass =
   "h-10 rounded-[10px] border-border bg-secondary text-secondary-foreground shadow-none hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:ring-ring/45 dark:border-transparent dark:bg-[#18191A] dark:text-[#F0ECE6] dark:hover:bg-[#202123] dark:hover:text-[#F0ECE6] dark:focus-visible:border-[#3B3D3F] dark:focus-visible:ring-[#F0ECE6]/25"
 
 const authPrimaryClass =
-  "auth-primary-button h-10 rounded-[10px] bg-primary text-primary-foreground shadow-none hover:bg-primary/90 hover:text-primary-foreground focus-visible:border-ring focus-visible:ring-ring/45 dark:bg-[#F0ECE6] dark:text-[#111111] dark:hover:bg-[#E7E1D8] dark:hover:text-[#111111] dark:focus-visible:border-[#F0ECE6] dark:focus-visible:ring-[#F0ECE6]/25"
+  "auth-primary-button h-10 rounded-[10px] bg-primary text-primary-foreground shadow-none hover:bg-primary/90 hover:text-primary-foreground focus-visible:border-ring focus-visible:ring-ring/45"
 
 const authTextSecondaryClass = "text-muted-foreground dark:text-[#A8A29E]"
 

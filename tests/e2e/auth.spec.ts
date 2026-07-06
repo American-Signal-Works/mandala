@@ -97,8 +97,8 @@ test("/login matches the approved desktop auth frame", async ({ page }) => {
   expect(metrics.microsoftButton.backgroundColor).toBe("rgb(24, 25, 26)")
   expect(metrics.emailSurface.backgroundColor).toBe("rgb(24, 25, 26)")
   expect(metrics.emailSurface.borderColor).toBe("rgb(59, 61, 63)")
-  expect(metrics.primaryButton.backgroundColor).toBe("rgb(240, 236, 230)")
-  expect(metrics.primaryButton.color).toBe("rgb(17, 17, 17)")
+  expect(metrics.primaryButton.backgroundColor).toBe("rgb(65, 130, 255)")
+  expect(metrics.primaryButton.color).toBe("rgb(255, 255, 255)")
 
   await primaryButton.click()
   await expect(page.getByText("Enter your email address.")).not.toBeVisible()
@@ -169,8 +169,8 @@ test("/login follows system light and dark theme", async ({ browser }) => {
   expect(darkMetrics.htmlClass).toContain("dark")
   expect(darkMetrics.shellBg).toBe("rgb(17, 17, 17)")
   expect(darkMetrics.shellColor).toBe("rgb(240, 236, 230)")
-  expect(darkMetrics.primaryBg).toBe("rgb(240, 236, 230)")
-  expect(darkMetrics.primaryColor).toBe("rgb(17, 17, 17)")
+  expect(darkMetrics.primaryBg).toBe("rgb(65, 130, 255)")
+  expect(darkMetrics.primaryColor).toBe("rgb(255, 255, 255)")
   await darkContext.close()
 })
 
