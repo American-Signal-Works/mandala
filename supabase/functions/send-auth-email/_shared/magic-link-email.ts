@@ -10,7 +10,7 @@ type MagicLinkEmailPalette = {
   border: string
   buttonBackground: string
   buttonText: string
-  mark: string
+  iconUrl: string
 }
 
 type MagicLinkEmailTheme = {
@@ -38,7 +38,7 @@ export const MANDALA_MAGIC_LINK_EMAIL_THEME: MagicLinkEmailTheme = {
     border: "#ded8cf",
     buttonBackground: "#3376f7",
     buttonText: "#ffffff",
-    mark: "#171717",
+    iconUrl: "https://mandala.md/auth-icon-light.png",
   },
   dark: {
     background: "#111111",
@@ -48,7 +48,7 @@ export const MANDALA_MAGIC_LINK_EMAIL_THEME: MagicLinkEmailTheme = {
     border: "#202123",
     buttonBackground: "#3376f7",
     buttonText: "#ffffff",
-    mark: "#f0ece6",
+    iconUrl: "https://mandala.md/auth-icon-dark.png",
   },
 }
 
@@ -282,10 +282,6 @@ export function renderMandalaMagicLinkHtml(magicLink: string) {
         supported-color-schemes: light dark;
       }
       @media (prefers-color-scheme: dark) {
-        .mandala-email-body,
-        .mandala-email-root {
-          background: ${dark.background} !important;
-        }
         .mandala-email-shell {
           background: ${dark.shellBackground} !important;
         }
@@ -322,18 +318,18 @@ export function renderMandalaMagicLinkHtml(magicLink: string) {
       }
     </style>
   </head>
-  <body class="mandala-email-body" style="margin:0;padding:0;background:${light.background};">
+  <body class="mandala-email-body" style="margin:0;padding:0;background:#ffffff;">
     <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
       Click the link below to sign in. After ${MAGIC_LINK_EXPIRY_MINUTES} minutes you will need to request a new one.
     </div>
-    <table class="mandala-email-root" role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;background:${light.background};margin:0;padding:0;">
+    <table class="mandala-email-root" role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;background:#ffffff;margin:0;padding:0;">
       <tr>
         <td align="center" style="padding:0;">
           <table class="mandala-email-shell" role="presentation" width="${theme.width}" height="${theme.height}" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;width:${theme.width}px;max-width:${theme.width}px;height:${theme.height}px;background:${light.shellBackground};">
             <tr>
               <td class="mandala-email-pad" valign="top" style="padding:64px 48px 0 48px;">
-                ${renderMandalaMarkSvg(light.mark, "mandala-email-mark-light", "block")}
-                ${renderMandalaMarkSvg(dark.mark, "mandala-email-mark-dark", "none")}
+                ${renderMandalaMarkImage(light.iconUrl, "mandala-email-mark-light", "block")}
+                ${renderMandalaMarkImage(dark.iconUrl, "mandala-email-mark-dark", "none")}
                 <h1 class="mandala-email-heading" style="margin:24px 0 0 0;color:${light.text};font-family:${theme.fontFamily};font-size:24px;line-height:24px;font-weight:500;letter-spacing:0;">
                   Here&rsquo;s your magic link
                 </h1>
@@ -343,7 +339,7 @@ export function renderMandalaMagicLinkHtml(magicLink: string) {
                 <div style="margin-top:36px;">
                   <a class="mandala-email-button" href="${href}" target="_blank" style="display:inline-block;background:${light.buttonBackground};border-radius:8px;color:${light.buttonText};font-family:${theme.fontFamily};font-size:14px;line-height:20px;font-weight:500;text-decoration:none;padding:10px 10px;">
                     <span style="display:inline-block;vertical-align:middle;">Sign in</span>
-                    <span style="display:inline-block;width:16px;height:16px;margin-left:6px;vertical-align:-3px;">${ARROW_UP_RIGHT_SVG}</span>
+                    <span aria-hidden="true" style="display:inline-block;width:16px;height:16px;margin-left:6px;vertical-align:-1px;font-size:14px;line-height:16px;text-align:center;">${ARROW_UP_RIGHT_ENTITY}</span>
                   </a>
                 </div>
               </td>
@@ -408,22 +404,15 @@ function escapeHtml(value: string) {
     .replace(/>/g, "&gt;")
 }
 
-function renderMandalaMarkSvg(
-  color: string,
+function renderMandalaMarkImage(
+  src: string,
   className: string,
   display: "block" | "none"
 ) {
-  return MANDALA_MARK_SVG
-    .replace('<svg ', `<svg class="${className}" `)
-    .replace(
-      'style="display:block;"',
-      `style="display:${display};color:${escapeAttribute(color)};"`
-    )
-    .replaceAll('fill="#f0ece6"', 'fill="currentColor"')
+  const hiddenStyle =
+    display === "none" ? "max-height:0;overflow:hidden;" : ""
+
+  return `<img class="${className}" src="${escapeAttribute(src)}" width="36" height="36" alt="" aria-hidden="true" style="border:0;display:${display};height:36px;outline:none;text-decoration:none;width:36px;${hiddenStyle}">`
 }
 
-const ARROW_UP_RIGHT_SVG =
-  '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true"><path d="M6 4.43355C6 4.43355 10.6256 4.07173 11.2769 4.72309C11.9283 5.37445 11.5664 10 11.5664 10M11 5L4.33333 11.6667" stroke="#ffffff" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>'
-
-const MANDALA_MARK_SVG =
-  '<svg width="36" height="36" viewBox="0 0 36 36" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" style="display:block;"><path d="M18 10.2857L20.5714 7.71429L23.1429 10.2857L20.5714 12.8571L18 10.2857Z" fill="#f0ece6"/><path d="M20.5714 7.71429L23.1429 5.14286L25.7143 7.71428L23.1429 10.2857L20.5714 7.71429Z" fill="#f0ece6"/><path d="M7.71428 15.4286L10.2857 12.8571L12.8571 15.4286L10.2857 18L7.71428 15.4286Z" fill="#f0ece6"/><path d="M23.1429 15.4286L25.7143 12.8571L28.2857 15.4286L25.7143 18L23.1429 15.4286Z" fill="#f0ece6"/><path d="M25.7143 18L28.2857 15.4286L30.8571 18L28.2857 20.5714L25.7143 18Z" fill="#f0ece6"/><path d="M10.2857 7.71429L12.8571 5.14286L15.4286 7.71429L12.8571 10.2857L10.2857 7.71429Z" fill="#f0ece6"/><path d="M25.7143 12.8571L28.2857 10.2857L30.8571 12.8571L28.2857 15.4286L25.7143 12.8571Z" fill="#f0ece6"/><path d="M25.7143 23.1429L28.2857 20.5714L30.8571 23.1429L28.2857 25.7143L25.7143 23.1429Z" fill="#f0ece6"/><path d="M20.5714 28.2857L23.1429 25.7143L25.7143 28.2857L23.1429 30.8571L20.5714 28.2857Z" fill="#f0ece6"/><path d="M5.14286 12.8571L7.71428 10.2857L10.2857 12.8571L7.71428 15.4286L5.14286 12.8571Z" fill="#f0ece6"/><path d="M7.71428 20.5714L10.2857 18L12.8571 20.5714L10.2857 23.1429L7.71428 20.5714Z" fill="#f0ece6"/><path d="M5.14286 23.1429L7.71428 20.5714L10.2857 23.1429L7.71428 25.7143L5.14286 23.1429Z" fill="#f0ece6"/><path d="M12.8571 25.7143L15.4286 23.1429L18 25.7143L15.4286 28.2857L12.8571 25.7143Z" fill="#f0ece6"/><path d="M10.2857 28.2857L12.8571 25.7143L15.4286 28.2857L12.8571 30.8571L10.2857 28.2857Z" fill="#f0ece6"/><path d="M2.57143 30.8571L5.14286 28.2857L7.71428 30.8571L5.14286 33.4286L2.57143 30.8571Z" fill="#f0ece6"/><path d="M5.14286 28.2857L7.71428 25.7143L10.2857 28.2857L7.71428 30.8571L5.14286 28.2857Z" fill="#f0ece6"/><path d="M2.57143 5.14286L5.14286 2.57143L7.71428 5.14286L5.14286 7.71429L2.57143 5.14286Z" fill="#f0ece6"/><path d="M5.14286 7.71429L7.71428 5.14286L10.2857 7.71429L7.71428 10.2857L5.14286 7.71429Z" fill="#f0ece6"/><path d="M25.7143 7.71428L28.2857 5.14286L30.8571 7.71428L28.2857 10.2857L25.7143 7.71428Z" fill="#f0ece6"/><path d="M28.2857 5.14286L30.8571 2.57143L33.4286 5.14286L30.8571 7.71428L28.2857 5.14286Z" fill="#f0ece6"/><path d="M25.7143 28.2857L28.2857 25.7143L30.8571 28.2857L28.2857 30.8571L25.7143 28.2857Z" fill="#f0ece6"/><path d="M28.2857 30.8571L30.8571 28.2857L33.4286 30.8571L30.8571 33.4286L28.2857 30.8571Z" fill="#f0ece6"/><path d="M15.4286 18L18 15.4286L20.5714 18L18 20.5714L15.4286 18Z" fill="#f0ece6"/><path d="M12.8571 10.2857L15.4286 7.71429L18 10.2857L15.4286 12.8571L12.8571 10.2857Z" fill="#f0ece6"/><path d="M15.4286 7.71429L18 5.14286L20.5714 7.71429L18 10.2857L15.4286 7.71429Z" fill="#f0ece6"/><path d="M23.1429 20.5714L25.7143 18L28.2857 20.5714L25.7143 23.1429L23.1429 20.5714Z" fill="#f0ece6"/><path d="M15.4286 33.4286L18 30.8571L20.5714 33.4286L18 36L15.4286 33.4286Z" fill="#f0ece6"/><path d="M0 18L2.57143 15.4286L5.14286 18L2.57143 20.5714L0 18Z" fill="#f0ece6"/><path d="M15.4286 2.57143L18 0L20.5714 2.57143L18 5.14286L15.4286 2.57143Z" fill="#f0ece6"/><path d="M30.8571 18L33.4286 15.4286L36 18L33.4286 20.5714L30.8571 18Z" fill="#f0ece6"/><path d="M15.4286 28.2857L18 25.7143L20.5714 28.2857L18 30.8571L15.4286 28.2857Z" fill="#f0ece6"/><path d="M18 25.7143L20.5715 23.1429L23.1429 25.7143L20.5714 28.2857L18 25.7143Z" fill="#f0ece6"/><path d="M5.14286 18L7.71428 15.4286L10.2857 18L7.71428 20.5714L5.14286 18Z" fill="#f0ece6"/></svg>'
+const ARROW_UP_RIGHT_ENTITY = "&#8599;"
