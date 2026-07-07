@@ -52,7 +52,7 @@
   --radius-2xl: calc(var(--radius) * 1.8);
   --radius-3xl: calc(var(--radius) * 2.2);
   --radius-4xl: calc(var(--radius) * 2.6);
-  --font-sans: var(--font-figtree);
+  --font-sans: var(--font-inter);
   --font-mono: var(--font-geist-mono);
   --color-highlight: var(--highlight);
 }

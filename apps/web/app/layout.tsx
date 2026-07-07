@@ -1,5 +1,5 @@
 import type { Metadata } from "next"
-import { Figtree, Geist_Mono } from "next/font/google"
+import { Geist_Mono, Inter } from "next/font/google"
 import { Analytics } from "@vercel/analytics/next"
 
 import "@workspace/ui/globals.css"
@@ -21,7 +21,7 @@ function isThemeMode(value: string | null | undefined): value is ThemeMode {
   return value === "light" || value === "dark" || value === "system"
 }
 
-const figtree = Figtree({ subsets: ["latin"], variable: "--font-figtree" })
+const inter = Inter({ subsets: ["latin"], variable: "--font-inter" })
 
 const fontMono = Geist_Mono({
   subsets: ["latin"],
@@ -58,7 +58,7 @@ export default async function RootLayout({
         "antialiased",
         fontMono.variable,
         "font-sans",
-        figtree.variable
+        inter.variable
       )}
     >
       <body>
