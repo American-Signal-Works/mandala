@@ -72,10 +72,20 @@ describe("Mandala magic-link email", () => {
     expect(payload.html).toContain("@media (prefers-color-scheme: dark)")
     expect(payload.html).toContain("mandala-email-mark-light")
     expect(payload.html).toContain("mandala-email-mark-dark")
-    expect(payload.html).toContain("https://mandala.md/auth-icon-light.png")
-    expect(payload.html).toContain("https://mandala.md/auth-icon-dark.png")
+    expect(payload.html).toContain("cid:mandala-auth-icon-light")
+    expect(payload.html).toContain("cid:mandala-auth-icon-dark")
     expect(payload.html).toContain("&#8599;")
     expect(payload.html).not.toContain("<svg")
+    expect(payload.attachments).toEqual([
+      expect.objectContaining({
+        contentId: "mandala-auth-icon-light",
+        filename: "auth-icon-light.png",
+      }),
+      expect.objectContaining({
+        contentId: "mandala-auth-icon-dark",
+        filename: "auth-icon-dark.png",
+      }),
+    ])
     expect(payload.html).toContain(
       `background:${MANDALA_MAGIC_LINK_EMAIL_THEME.light.shellBackground}`
     )

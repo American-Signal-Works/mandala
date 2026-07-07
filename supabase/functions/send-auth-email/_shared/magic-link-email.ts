@@ -2,6 +2,12 @@ export const MAGIC_LINK_EMAIL_SUBJECT = "Sign in with magic link"
 export const MAGIC_LINK_SENDER_NAME = "Mandala"
 export const MAGIC_LINK_EXPIRY_MINUTES = 5
 
+const MANDALA_ICON_ASSET_REVISION =
+  "b8d27daac8f84123eb589cc6b4d6da4f8546b2e3"
+const MANDALA_ICON_LIGHT_CID = "mandala-auth-icon-light"
+const MANDALA_ICON_DARK_CID = "mandala-auth-icon-dark"
+const MANDALA_ICON_ASSET_BASE_URL = `https://raw.githubusercontent.com/American-Signal-Works/mandala/${MANDALA_ICON_ASSET_REVISION}/apps/web/public`
+
 type MagicLinkEmailPalette = {
   background: string
   shellBackground: string
@@ -38,7 +44,7 @@ export const MANDALA_MAGIC_LINK_EMAIL_THEME: MagicLinkEmailTheme = {
     border: "#ded8cf",
     buttonBackground: "#3376f7",
     buttonText: "#ffffff",
-    iconUrl: "https://mandala.md/auth-icon-light.png",
+    iconUrl: `cid:${MANDALA_ICON_LIGHT_CID}`,
   },
   dark: {
     background: "#111111",
@@ -48,7 +54,7 @@ export const MANDALA_MAGIC_LINK_EMAIL_THEME: MagicLinkEmailTheme = {
     border: "#202123",
     buttonBackground: "#3376f7",
     buttonText: "#ffffff",
-    iconUrl: "https://mandala.md/auth-icon-dark.png",
+    iconUrl: `cid:${MANDALA_ICON_DARK_CID}`,
   },
 }
 
@@ -84,6 +90,7 @@ export type SupabaseAuthEmailHookPayload = {
 }
 
 export type ResendEmailPayload = {
+  attachments: ResendEmailAttachment[]
   from: string
   to: string[]
   subject: string
@@ -93,6 +100,12 @@ export type ResendEmailPayload = {
     name: string
     value: string
   }>
+}
+
+type ResendEmailAttachment = {
+  contentId: string
+  filename: string
+  path: string
 }
 
 type VerifyWebhook = (
@@ -174,6 +187,7 @@ export function createResendEmailPayload(
   })
 
   return {
+    attachments: createMandalaIconAttachments(),
     from: formatSender(config.fromAddress),
     html: renderMandalaMagicLinkHtml(magicLink),
     subject: MAGIC_LINK_EMAIL_SUBJECT,
@@ -413,6 +427,21 @@ function renderMandalaMarkImage(
     display === "none" ? "max-height:0;overflow:hidden;" : ""
 
   return `<img class="${className}" src="${escapeAttribute(src)}" width="36" height="36" alt="" aria-hidden="true" style="border:0;display:${display};height:36px;outline:none;text-decoration:none;width:36px;${hiddenStyle}">`
+}
+
+function createMandalaIconAttachments(): ResendEmailAttachment[] {
+  return [
+    {
+      contentId: MANDALA_ICON_LIGHT_CID,
+      filename: "auth-icon-light.png",
+      path: `${MANDALA_ICON_ASSET_BASE_URL}/auth-icon-light.png`,
+    },
+    {
+      contentId: MANDALA_ICON_DARK_CID,
+      filename: "auth-icon-dark.png",
+      path: `${MANDALA_ICON_ASSET_BASE_URL}/auth-icon-dark.png`,
+    },
+  ]
 }
 
 const ARROW_UP_RIGHT_ENTITY = "&#8599;"
