@@ -115,9 +115,9 @@ export function AppearanceForm({
 // "default" uses the preset's primary token directly.
 const SWATCHES: Record<Accent, string> = {
   default: "var(--signal)",
-  blue: "oklch(0.60 0.20 260)",
-  emerald: "oklch(0.65 0.15 160)",
-  rose: "oklch(0.66 0.22 15)",
-  amber: "oklch(0.74 0.16 70)",
-  violet: "oklch(0.62 0.22 290)",
+  blue: "oklch(0.587 0.193 252)",
+  emerald: "oklch(0.579 0.179 145)",
+  rose: "oklch(0.599 0.191 343)",
+  amber: "oklch(0.534 0.141 75)",
+  violet: "oklch(0.594 0.191 295)",
 }
