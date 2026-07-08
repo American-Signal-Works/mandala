@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs"
+import { resolve } from "node:path"
 import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import {
   afterEach,
@@ -50,6 +52,21 @@ describe("LoginAuthFlow", () => {
     vi.useRealTimers()
   })
 
+  it("keeps auth colors bound to semantic theme tokens", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "components/auth/LoginAuthFlow.tsx"),
+      "utf8"
+    )
+
+    expect(source).not.toMatch(/\b(?:bg|text|border|ring)-\[#/)
+    expect(source).toContain("bg-background")
+    expect(source).toContain("text-foreground")
+    expect(source).toContain("bg-primary")
+    expect(source).toContain("bg-secondary")
+    expect(source).toContain("text-muted-foreground")
+    expect(source).toContain("border-destructive")
+  })
+
   it("renders a theme-aware auth stack with Mandala tokens", () => {
     const { container } = render(<LoginAuthFlow />)
 
@@ -59,9 +76,14 @@ describe("LoginAuthFlow", () => {
     const stack = container.querySelector('[data-auth-stack="true"]')
     const visual = container.querySelector('[data-auth-visual="true"]')
 
-    expect(shell).toHaveClass("min-h-svh", "bg-[#151617]", "text-[#f0ece3]")
+    expect(shell).toHaveClass("min-h-svh", "bg-background", "text-foreground")
     expect(shell).not.toHaveAttribute("style")
-    expect(frame).toHaveClass("flex", "min-h-svh", "overflow-hidden")
+    expect(frame).toHaveClass(
+      "flex",
+      "min-h-svh",
+      "overflow-hidden",
+      "bg-background"
+    )
     expect(frame?.firstElementChild).toHaveAttribute("data-auth-visual", "true")
     expect(frame?.lastElementChild).toHaveAttribute("data-auth-panel", "true")
     expect(panel).toHaveClass(
@@ -75,10 +97,16 @@ describe("LoginAuthFlow", () => {
     const mark = container.querySelector('[data-auth-mark="true"]')
     const markImages = mark?.querySelectorAll("img")
     expect(mark).toHaveClass("size-10", "shrink-0")
-    expect(markImages).toHaveLength(1)
+    expect(markImages).toHaveLength(2)
+    expect(markImages?.[0]).toHaveClass("dark:hidden")
     expect(markImages?.[0]).toHaveAttribute(
       "src",
-      expect.stringContaining("auth-icon-mandala-dark.svg")
+      expect.stringContaining("auth-icon-light.svg")
+    )
+    expect(markImages?.[1]).toHaveClass("hidden", "dark:block")
+    expect(markImages?.[1]).toHaveAttribute(
+      "src",
+      expect.stringContaining("auth-icon-dark.svg")
     )
     expect(visual).toHaveClass("hidden", "md:block", "flex-1")
     expect(visual?.querySelector("img")).toHaveAttribute(
@@ -95,7 +123,7 @@ describe("LoginAuthFlow", () => {
     expect(screen.getByText("Sign in or make an account")).toHaveClass(
       "text-sm",
       "leading-5",
-      "text-[#cbced0]"
+      "text-muted-foreground"
     )
     expect(
       screen.queryByRole("link", { name: "Sign up" })
@@ -113,13 +141,17 @@ describe("LoginAuthFlow", () => {
     ).toBeInTheDocument()
     expect(
       container.querySelector('[data-auth-email-input="true"]')
-    ).toHaveClass("rounded-[10px]", "border-[#45484a]", "bg-[#2c2e30]")
+    ).toHaveClass("rounded-[10px]", "border-border", "bg-input")
     expect(emailInput).toHaveAttribute("type", "email")
     expect(emailInput).toHaveAttribute("placeholder", "user@example.com")
     expect(emailInput).toHaveAccessibleDescription("A link will be sent to you")
     expect(emailInput).not.toHaveFocus()
     expect(screen.queryByText("Email")).not.toBeInTheDocument()
-    expect(termsCopy).toHaveClass("text-[#cbced0]", "text-sm", "leading-5")
+    expect(termsCopy).toHaveClass(
+      "text-muted-foreground",
+      "text-sm",
+      "leading-5"
+    )
     expect(termsCopy).toHaveTextContent("Terms and Privacy Policy")
     expect(screen.getByRole("link", { name: "Terms" })).toBeVisible()
     expect(screen.getByRole("link", { name: "Privacy Policy" })).toBeVisible()
@@ -146,16 +178,16 @@ describe("LoginAuthFlow", () => {
       "h-9",
       "rounded-[10px]",
       "border-transparent",
-      "bg-[#2c2e30]",
-      "text-[#f8f8f9]",
+      "bg-secondary",
+      "text-secondary-foreground",
       "flex-1"
     )
     expect(microsoftButton).toHaveClass(
       "h-9",
       "rounded-[10px]",
       "border-transparent",
-      "bg-[#2c2e30]",
-      "text-[#f8f8f9]",
+      "bg-secondary",
+      "text-secondary-foreground",
       "flex-1"
     )
     expect(googleButton).toHaveAttribute("title", "Sign in with Google")
@@ -237,8 +269,8 @@ describe("LoginAuthFlow", () => {
       "auth-primary-button",
       "h-10",
       "rounded-[10px]",
-      "bg-[#4b60ff]",
-      "text-[#f8f8f9]"
+      "bg-primary",
+      "text-primary-foreground"
     )
 
     fireEvent.click(magicLinkButton)
@@ -253,7 +285,7 @@ describe("LoginAuthFlow", () => {
     ).toHaveFocus()
     expect(
       container.querySelector('[data-auth-email-input="true"]')
-    ).toHaveClass("border-[#e55767]")
+    ).toHaveClass("border-destructive")
     expect(magicLinkButton).toBeDisabled()
     expect(requestEmailMagicLinkMock).not.toHaveBeenCalled()
   })
@@ -275,7 +307,7 @@ describe("LoginAuthFlow", () => {
     )
     expect(
       container.querySelector('[data-auth-email-input="true"]')
-    ).toHaveClass("border-[#e55767]")
+    ).toHaveClass("border-destructive")
     expect(
       screen.getByRole("button", { name: "Send magic link" })
     ).toBeDisabled()

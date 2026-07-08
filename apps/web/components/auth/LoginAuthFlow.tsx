@@ -56,13 +56,13 @@ const SOCIAL_LOGIN_BUTTONS = [
 ] satisfies SocialLoginButtonConfig[]
 
 const authSurfaceClass =
-  "h-9 rounded-[10px] border-transparent bg-[#2c2e30] text-[#f8f8f9] shadow-none hover:bg-[#35383a] hover:text-[#f8f8f9] focus-visible:border-[#45484a] focus-visible:ring-[#f0ece3]/25"
+  "h-9 rounded-[10px] border-transparent bg-secondary text-secondary-foreground shadow-none hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:ring-ring/45"
 
 const authPrimaryClass =
-  "auth-primary-button h-10 rounded-[10px] bg-[#4b60ff] text-[#f8f8f9] shadow-none hover:bg-[#4054f4] hover:text-[#f8f8f9] focus-visible:border-[#6f7cff] focus-visible:ring-[#f0ece3]/25"
+  "auth-primary-button h-10 rounded-[10px] bg-primary text-primary-foreground shadow-none hover:bg-primary/90 hover:text-primary-foreground focus-visible:border-ring focus-visible:ring-ring/45"
 
-const authTextSecondaryClass = "text-[#cbced0]"
-const authErrorClass = "text-[#e55767]"
+const authTextSecondaryClass = "text-muted-foreground"
+const authErrorClass = "text-destructive"
 
 function getAuthEmailErrorMessage(validationError: string) {
   if (validationError === "Enter your email address.") {
@@ -201,11 +201,11 @@ export function LoginAuthFlow({
 
   return (
     <main
-      className="min-h-svh bg-[#151617] text-[#f0ece3]"
+      className="min-h-svh bg-background text-foreground"
       data-auth-shell="true"
     >
       <section
-        className="flex min-h-svh w-full overflow-hidden bg-[#151617]"
+        className="flex min-h-svh w-full overflow-hidden bg-background"
         data-auth-frame="true"
       >
         <AuthVisual />
@@ -259,10 +259,19 @@ function AuthMark() {
       <Image
         alt=""
         aria-hidden="true"
-        className="size-10"
+        className="size-10 dark:hidden"
         height={40}
         priority
-        src="/auth-icon-mandala-dark.svg"
+        src="/auth-icon-light.svg"
+        width={40}
+      />
+      <Image
+        alt=""
+        aria-hidden="true"
+        className="hidden size-10 dark:block"
+        height={40}
+        priority
+        src="/auth-icon-dark.svg"
         width={40}
       />
     </div>
@@ -357,7 +366,7 @@ function EmailStep({
             <FieldLabel
               className={cn(
                 "text-sm leading-5 font-medium",
-                emailError ? authErrorClass : "text-[#f8f8f9]"
+                emailError ? authErrorClass : "text-foreground"
               )}
               htmlFor="email"
             >
@@ -365,9 +374,9 @@ function EmailStep({
             </FieldLabel>
             <InputGroup
               className={cn(
-                "rounded-[10px] border-[#45484a] bg-[#2c2e30] shadow-none has-[[data-slot=input-group-control]:focus-visible]:border-[#6b7074] has-[[data-slot=input-group-control]:focus-visible]:ring-[#f0ece3]/25",
+                "rounded-[10px] border-border bg-input shadow-none has-[[data-slot=input-group-control]:focus-visible]:border-ring has-[[data-slot=input-group-control]:focus-visible]:ring-ring/45",
                 emailError &&
-                  "border-[#e55767] has-[[data-slot=input-group-control]:focus-visible]:border-[#e55767] has-[[data-slot=input-group-control]:focus-visible]:ring-0 has-[[data-slot][aria-invalid=true]]:border-[#e55767] has-[[data-slot][aria-invalid=true]]:ring-0"
+                  "border-destructive has-[[data-slot=input-group-control]:focus-visible]:border-destructive has-[[data-slot=input-group-control]:focus-visible]:ring-0 has-[[data-slot][aria-invalid=true]]:border-destructive has-[[data-slot][aria-invalid=true]]:ring-0"
               )}
               data-auth-email-input="true"
             >
@@ -379,7 +388,7 @@ function EmailStep({
                   emailError ? "email-error" : "email-description"
                 }
                 autoComplete="email"
-                className="px-3 text-[#f0ece3] placeholder:text-[#cbced0] disabled:cursor-default disabled:opacity-100"
+                className="px-3 text-foreground placeholder:text-muted-foreground disabled:cursor-default disabled:opacity-100"
                 disabled={isFormBusy || isMagicLinkSent}
                 id="email"
                 inputMode="email"
@@ -402,7 +411,7 @@ function EmailStep({
           {isMagicLinkSent ? (
             <button
               aria-disabled="true"
-              className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-[10px] border border-transparent bg-[#2c2e30] px-2.5 py-2 text-sm font-medium whitespace-nowrap text-[#cbced0] shadow-none"
+              className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-[10px] border border-transparent bg-secondary px-2.5 py-2 text-sm font-medium whitespace-nowrap text-muted-foreground shadow-none"
               data-auth-primary-action="true"
               disabled
               type="button"
@@ -442,7 +451,7 @@ function EmailStep({
             </Button>
           )}
           {formMessage && (
-            <p className="text-sm leading-5 text-[#f0ece3]" role="alert">
+            <p className="text-sm leading-5 text-foreground" role="alert">
               {formMessage}
             </p>
           )}
@@ -551,14 +560,14 @@ function TermsCopy() {
       data-auth-terms="true"
     >
       <a
-        className="text-[#f8f8f9] underline underline-offset-4 hover:text-[#f8f8f9]"
+        className="text-foreground underline underline-offset-4 hover:text-foreground"
         href="#"
       >
         Terms
       </a>{" "}
       <span>and</span>{" "}
       <a
-        className="text-[#f8f8f9] underline underline-offset-4 hover:text-[#f8f8f9]"
+        className="text-foreground underline underline-offset-4 hover:text-foreground"
         href="#"
       >
         Privacy Policy
