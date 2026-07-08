@@ -50,19 +50,13 @@ describe("LoginAuthFlow", () => {
     vi.useRealTimers()
   })
 
-  it("renders a theme-aware auth stack with dark Figma overrides", () => {
+  it("renders a theme-aware auth stack with Mandala tokens", () => {
     const { container } = render(<LoginAuthFlow />)
 
     const shell = container.querySelector("main")
     const stack = container.querySelector('[data-auth-stack="true"]')
 
-    expect(shell).toHaveClass(
-      "min-h-svh",
-      "bg-background",
-      "text-foreground",
-      "dark:bg-[#111111]",
-      "dark:text-[#F0ECE6]"
-    )
+    expect(shell).toHaveClass("min-h-svh", "bg-background", "text-foreground")
     expect(shell).not.toHaveClass("dark")
     expect(shell).not.toHaveAttribute("style")
     expect(stack).toHaveClass("max-w-96", "items-start")
@@ -95,13 +89,7 @@ describe("LoginAuthFlow", () => {
     ).toBeInTheDocument()
     expect(
       container.querySelector('[data-auth-email-input="true"]')
-    ).toHaveClass(
-      "rounded-[10px]",
-      "border-border",
-      "bg-input",
-      "dark:border-[#3B3D3F]",
-      "dark:bg-[#18191A]"
-    )
+    ).toHaveClass("rounded-[10px]", "border-border", "bg-input")
     expect(emailInput).toHaveAttribute("type", "email")
     expect(emailInput).toHaveAttribute("placeholder", "user@example.com")
     expect(emailInput).toHaveAccessibleDescription("A link will be sent to you")
@@ -135,25 +123,21 @@ describe("LoginAuthFlow", () => {
       "rounded-[10px]",
       "border-transparent",
       "bg-secondary",
-      "text-secondary-foreground",
-      "dark:bg-[#18191A]",
-      "dark:text-[#F0ECE6]"
+      "text-secondary-foreground"
     )
     expect(microsoftButton).toHaveClass(
       "h-10",
       "rounded-[10px]",
       "border-transparent",
       "bg-secondary",
-      "text-secondary-foreground",
-      "dark:bg-[#18191A]",
-      "dark:text-[#F0ECE6]"
+      "text-secondary-foreground"
     )
     expect(
       googleButton.querySelector('[data-auth-provider-icon="google"]')
-    ).toBeInTheDocument()
+    ).toHaveClass("size-5")
     expect(
       microsoftButton.querySelector('[data-auth-provider-icon="microsoft"]')
-    ).toBeInTheDocument()
+    ).toHaveClass("size-5")
 
     fireEvent.click(googleButton)
 

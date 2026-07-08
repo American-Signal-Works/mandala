@@ -36,6 +36,12 @@ type AuthStep = "email" | "link" | "success"
 type AuthMode = "sign-in" | "sign-up"
 type SocialProvider = "google" | "microsoft"
 type PendingAction = "send" | "logout" | SocialProvider | null
+type SocialLoginButtonConfig = {
+  icon: ComponentType<ComponentProps<"svg">>
+  provider: SocialProvider
+  oauthProvider: OAuthProvider
+  providerLabel: string
+}
 
 const SOCIAL_LOGIN_BUTTONS = [
   {
@@ -50,20 +56,15 @@ const SOCIAL_LOGIN_BUTTONS = [
     oauthProvider: "azure",
     providerLabel: "Microsoft",
   },
-] satisfies Array<{
-  icon: ComponentType<ComponentProps<"svg">>
-  provider: SocialProvider
-  oauthProvider: OAuthProvider
-  providerLabel: string
-}>
+] satisfies SocialLoginButtonConfig[]
 
 const authSurfaceClass =
-  "h-10 rounded-[10px] border-transparent bg-secondary text-secondary-foreground shadow-none hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:ring-ring/45 dark:bg-[#18191A] dark:text-[#F0ECE6] dark:hover:bg-[#202123] dark:hover:text-[#F0ECE6] dark:focus-visible:border-[#3B3D3F] dark:focus-visible:ring-[#F0ECE6]/25"
+  "h-10 rounded-[10px] border-transparent bg-secondary text-secondary-foreground shadow-none hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:ring-ring/45"
 
 const authPrimaryClass =
   "auth-primary-button h-10 rounded-[10px] bg-primary text-primary-foreground shadow-none hover:bg-primary/90 hover:text-primary-foreground focus-visible:border-ring focus-visible:ring-ring/45"
 
-const authTextSecondaryClass = "text-muted-foreground dark:text-[#A8A29E]"
+const authTextSecondaryClass = "text-muted-foreground"
 
 export function LoginAuthFlow({
   initialStep = "email",
@@ -193,7 +194,7 @@ export function LoginAuthFlow({
 
   return (
     <main
-      className="min-h-svh bg-background text-foreground dark:bg-[#111111] dark:text-[#F0ECE6]"
+      className="min-h-svh bg-background text-foreground"
       data-auth-shell="true"
     >
       <section
@@ -331,7 +332,7 @@ function EmailStep({
           ? "Already have an account? "
           : "Don't have an account? "}
         <Link
-          className="font-medium text-signal underline underline-offset-4 hover:text-signal/80 dark:text-[#7DD3FC] dark:hover:text-[#A5E4FF]"
+          className="font-medium text-signal underline underline-offset-4 hover:text-signal/80"
           href={mode === "sign-up" ? "/login" : "/sign-up"}
         >
           {mode === "sign-up" ? "Sign in" : "Sign up"}
@@ -340,51 +341,26 @@ function EmailStep({
       <form className="flex flex-col gap-6" noValidate onSubmit={onSubmit}>
         <FieldGroup className="gap-2">
           <div className="mb-4 flex flex-col gap-2">
-            {SOCIAL_LOGIN_BUTTONS.map((button) => {
-              const Icon = button.icon
-              const isProviderPending = pendingAction === button.provider
-              const label = `${actionLabel} with ${button.providerLabel}`
-
-              return (
-                <Button
-                  className={cn("w-full", authSurfaceClass)}
-                  disabled={isFormBusy}
-                  key={button.provider}
-                  onClick={() =>
-                    onProviderSignIn(
-                      button.oauthProvider,
-                      button.provider,
-                      button.providerLabel
-                    )
-                  }
-                  title={label}
-                  type="button"
-                  variant="outline"
-                >
-                  {isProviderPending ? (
-                    <Spinner data-icon="inline-start" />
-                  ) : (
-                    <Icon
-                      aria-hidden="true"
-                      className="size-4"
-                      data-auth-provider-icon={button.provider}
-                      data-icon="inline-start"
-                    />
-                  )}
-                  {isProviderPending ? "Redirecting..." : label}
-                </Button>
-              )
-            })}
+            {SOCIAL_LOGIN_BUTTONS.map((button) => (
+              <ProviderSignInButton
+                actionLabel={actionLabel}
+                button={button}
+                disabled={isFormBusy}
+                isPending={pendingAction === button.provider}
+                key={button.provider}
+                onProviderSignIn={onProviderSignIn}
+              />
+            ))}
           </div>
           <Field className="gap-2" data-invalid={!!emailError}>
             <FieldLabel
-              className="text-sm leading-5 font-medium text-foreground dark:text-[#F0ECE6]"
+              className="text-sm leading-5 font-medium text-foreground"
               htmlFor="email"
             >
               Or continue with email
             </FieldLabel>
             <InputGroup
-              className="rounded-[10px] border-border bg-input shadow-none has-[[data-slot=input-group-control]:focus-visible]:border-ring has-[[data-slot=input-group-control]:focus-visible]:ring-ring/45 has-[[data-slot][aria-invalid=true]]:border-destructive dark:border-[#3B3D3F] dark:bg-[#18191A] dark:has-[[data-slot=input-group-control]:focus-visible]:border-[#3B3D3F] dark:has-[[data-slot=input-group-control]:focus-visible]:ring-[#F0ECE6]/25"
+              className="rounded-[10px] border-border bg-input shadow-none has-[[data-slot=input-group-control]:focus-visible]:border-ring has-[[data-slot=input-group-control]:focus-visible]:ring-ring/45 has-[[data-slot][aria-invalid=true]]:border-destructive"
               data-auth-email-input="true"
             >
               <InputGroupInput
@@ -395,7 +371,7 @@ function EmailStep({
                   emailError ? "email-error" : "email-description"
                 }
                 autoComplete="email"
-                className="px-3 text-foreground placeholder:text-muted-foreground disabled:cursor-default disabled:opacity-100 dark:text-[#F0ECE6] dark:placeholder:text-[#777777]"
+                className="px-3 text-foreground placeholder:text-muted-foreground disabled:cursor-default disabled:opacity-100"
                 disabled={isFormBusy || isMagicLinkSent}
                 id="email"
                 inputMode="email"
@@ -418,7 +394,7 @@ function EmailStep({
           {isMagicLinkSent ? (
             <button
               aria-disabled="true"
-              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-[10px] border border-transparent bg-secondary px-3 text-sm font-medium whitespace-nowrap text-muted-foreground shadow-none dark:bg-[#18191A] dark:text-[#777777]"
+              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-[10px] border border-transparent bg-secondary px-3 text-sm font-medium whitespace-nowrap text-muted-foreground shadow-none"
               data-auth-primary-action="true"
               disabled
               type="button"
@@ -458,10 +434,7 @@ function EmailStep({
             </Button>
           )}
           {formMessage && (
-            <p
-              className="text-sm leading-5 text-foreground dark:text-[#F0ECE6]"
-              role="alert"
-            >
+            <p className="text-sm leading-5 text-foreground" role="alert">
               {formMessage}
             </p>
           )}
@@ -504,6 +477,56 @@ function SuccessStep({
         )}
       </div>
     </>
+  )
+}
+
+function ProviderSignInButton({
+  actionLabel,
+  button,
+  disabled,
+  isPending,
+  onProviderSignIn,
+}: {
+  actionLabel: string
+  button: SocialLoginButtonConfig
+  disabled: boolean
+  isPending: boolean
+  onProviderSignIn: (
+    provider: OAuthProvider,
+    providerId: SocialProvider,
+    providerLabel: string
+  ) => void
+}) {
+  const Icon = button.icon
+  const label = `${actionLabel} with ${button.providerLabel}`
+
+  return (
+    <Button
+      className={cn("w-full", authSurfaceClass)}
+      disabled={disabled}
+      onClick={() =>
+        onProviderSignIn(
+          button.oauthProvider,
+          button.provider,
+          button.providerLabel
+        )
+      }
+      title={label}
+      type="button"
+      variant="outline"
+    >
+      {isPending ? (
+        <Spinner data-icon="inline-start" />
+      ) : (
+        <Icon
+          aria-hidden="true"
+          className="size-5"
+          data-auth-provider-icon={button.provider}
+          data-icon="inline-start"
+        />
+      )}
+      {isPending ? "Redirecting..." : label}
+    </Button>
   )
 }
 
@@ -552,14 +575,14 @@ function TermsCopy({ mode }: { mode: AuthMode }) {
     >
       By signing {mode === "sign-up" ? "up" : "in"} you agree to our{" "}
       <a
-        className="text-foreground underline underline-offset-4 hover:text-foreground dark:text-[#F0ECE6] dark:hover:text-[#F0ECE6]"
+        className="text-foreground underline underline-offset-4 hover:text-foreground"
         href="#"
       >
         terms
       </a>
       <br className="hidden md:block" /> and{" "}
       <a
-        className="text-foreground underline underline-offset-4 hover:text-foreground dark:text-[#F0ECE6] dark:hover:text-[#F0ECE6]"
+        className="text-foreground underline underline-offset-4 hover:text-foreground"
         href="#"
       >
         privacy policy
