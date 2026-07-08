@@ -14,7 +14,7 @@ export function FootnoteReferenceElementStatic(
     <SlateElement
       {...props}
       as="sup"
-      className="mx-0.5 align-super text-xs font-medium text-link"
+      className="mx-0.5 align-super text-xs font-medium text-primary"
     >
       {props.children}[{element.identifier ?? ""}]
     </SlateElement>

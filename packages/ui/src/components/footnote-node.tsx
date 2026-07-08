@@ -158,7 +158,7 @@ export function FootnoteReferenceElement(
           <button
             type="button"
             className={cn(
-              "cursor-pointer rounded-xs text-xs font-medium text-link group-data-[nav-target=true]/footnote-ref:bg-(--color-highlight) focus:ring-2 focus:ring-ring focus:ring-offset-1",
+              "cursor-pointer rounded-xs text-xs font-medium text-primary group-data-[nav-target=true]/footnote-ref:bg-(--color-highlight) focus:ring-2 focus:ring-ring focus:ring-offset-1",
               (selected && focused) || isSelectionInsideAtom
                 ? "ring-2 ring-ring ring-offset-1"
                 : null

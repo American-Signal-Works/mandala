@@ -14,7 +14,7 @@ export function LinkElementStatic(props: SlateElementProps<TLinkElement>) {
       {...props}
       as="a"
       className={cn(
-        "font-medium text-link underline decoration-link underline-offset-4",
+        "font-medium text-primary underline decoration-primary underline-offset-4",
         inlineSuggestionVariants()
       )}
       attributes={{

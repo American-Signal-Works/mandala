@@ -58,12 +58,12 @@ const SOCIAL_LOGIN_BUTTONS = [
 }>
 
 const authSurfaceClass =
-  "h-10 rounded-[10px] border-transparent bg-secondary text-secondary-foreground shadow-none hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:ring-ring/45 dark:bg-[#18191A] dark:text-[#F0ECE6] dark:hover:bg-[#202123] dark:hover:text-[#F0ECE6] dark:focus-visible:border-[#3B3D3F] dark:focus-visible:ring-[#F0ECE6]/25"
+  "h-10 rounded-[10px] border-transparent bg-secondary text-secondary-foreground shadow-none hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:ring-ring/45"
 
 const authPrimaryClass =
   "auth-primary-button h-10 rounded-[10px] bg-primary text-primary-foreground shadow-none hover:bg-primary/90 hover:text-primary-foreground focus-visible:border-ring focus-visible:ring-ring/45"
 
-const authTextSecondaryClass = "text-muted-foreground dark:text-[#A8A29E]"
+const authTextSecondaryClass = "text-muted-foreground"
 
 export function LoginAuthFlow({
   initialStep = "email",
@@ -193,7 +193,7 @@ export function LoginAuthFlow({
 
   return (
     <main
-      className="min-h-svh bg-background text-foreground dark:bg-[#111111] dark:text-[#F0ECE6]"
+      className="min-h-svh bg-background text-foreground"
       data-auth-shell="true"
     >
       <section
@@ -331,7 +331,7 @@ function EmailStep({
           ? "Already have an account? "
           : "Don't have an account? "}
         <Link
-          className="font-medium text-link underline underline-offset-4 hover:text-link/80"
+          className="font-medium text-primary underline underline-offset-4 hover:text-primary/80"
           href={mode === "sign-up" ? "/login" : "/sign-up"}
         >
           {mode === "sign-up" ? "Sign in" : "Sign up"}
@@ -378,13 +378,13 @@ function EmailStep({
           </div>
           <Field className="gap-2" data-invalid={!!emailError}>
             <FieldLabel
-              className="text-sm leading-5 font-medium text-foreground dark:text-[#F0ECE6]"
+              className="text-sm leading-5 font-medium text-foreground"
               htmlFor="email"
             >
               Or continue with email
             </FieldLabel>
             <InputGroup
-              className="rounded-[10px] border-border bg-input shadow-none has-[[data-slot=input-group-control]:focus-visible]:border-ring has-[[data-slot=input-group-control]:focus-visible]:ring-ring/45 has-[[data-slot][aria-invalid=true]]:border-destructive dark:border-[#3B3D3F] dark:bg-[#18191A] dark:has-[[data-slot=input-group-control]:focus-visible]:border-[#3B3D3F] dark:has-[[data-slot=input-group-control]:focus-visible]:ring-[#F0ECE6]/25"
+              className="rounded-[10px] border-border bg-input shadow-none has-[[data-slot=input-group-control]:focus-visible]:border-ring has-[[data-slot=input-group-control]:focus-visible]:ring-ring/45 has-[[data-slot][aria-invalid=true]]:border-destructive"
               data-auth-email-input="true"
             >
               <InputGroupInput
@@ -395,7 +395,7 @@ function EmailStep({
                   emailError ? "email-error" : "email-description"
                 }
                 autoComplete="email"
-                className="px-3 text-foreground placeholder:text-muted-foreground disabled:cursor-default disabled:opacity-100 dark:text-[#F0ECE6] dark:placeholder:text-[#777777]"
+                className="px-3 text-foreground placeholder:text-muted-foreground disabled:cursor-default disabled:opacity-100"
                 disabled={isFormBusy || isMagicLinkSent}
                 id="email"
                 inputMode="email"
@@ -418,7 +418,7 @@ function EmailStep({
           {isMagicLinkSent ? (
             <button
               aria-disabled="true"
-              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-[10px] border border-transparent bg-secondary px-3 text-sm font-medium whitespace-nowrap text-muted-foreground shadow-none dark:bg-[#18191A] dark:text-[#777777]"
+              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-[10px] border border-transparent bg-secondary px-3 text-sm font-medium whitespace-nowrap text-muted-foreground shadow-none"
               data-auth-primary-action="true"
               disabled
               type="button"
@@ -458,10 +458,7 @@ function EmailStep({
             </Button>
           )}
           {formMessage && (
-            <p
-              className="text-sm leading-5 text-foreground dark:text-[#F0ECE6]"
-              role="alert"
-            >
+            <p className="text-sm leading-5 text-foreground" role="alert">
               {formMessage}
             </p>
           )}
@@ -552,14 +549,14 @@ function TermsCopy({ mode }: { mode: AuthMode }) {
     >
       By signing {mode === "sign-up" ? "up" : "in"} you agree to our{" "}
       <a
-        className="text-foreground underline underline-offset-4 hover:text-foreground dark:text-[#F0ECE6] dark:hover:text-[#F0ECE6]"
+        className="text-foreground underline underline-offset-4 hover:text-foreground"
         href="#"
       >
         terms
       </a>
       <br className="hidden md:block" /> and{" "}
       <a
-        className="text-foreground underline underline-offset-4 hover:text-foreground dark:text-[#F0ECE6] dark:hover:text-[#F0ECE6]"
+        className="text-foreground underline underline-offset-4 hover:text-foreground"
         href="#"
       >
         privacy policy
