@@ -54,34 +54,56 @@ describe("LoginAuthFlow", () => {
     const { container } = render(<LoginAuthFlow />)
 
     const shell = container.querySelector("main")
+    const frame = container.querySelector('[data-auth-frame="true"]')
+    const panel = container.querySelector('[data-auth-panel="true"]')
     const stack = container.querySelector('[data-auth-stack="true"]')
+    const visual = container.querySelector('[data-auth-visual="true"]')
 
-    expect(shell).toHaveClass("min-h-svh", "bg-background", "text-foreground")
-    expect(shell).not.toHaveClass("dark")
+    expect(shell).toHaveClass("min-h-svh", "bg-[#151617]", "text-[#f0ece3]")
     expect(shell).not.toHaveAttribute("style")
-    expect(stack).toHaveClass("max-w-96", "items-start")
+    expect(frame).toHaveClass("flex", "min-h-svh", "overflow-hidden")
+    expect(panel).toHaveClass(
+      "md:w-[560px]",
+      "md:px-16",
+      "md:py-24",
+      "justify-between"
+    )
+    expect(stack).toHaveClass("max-w-[432px]", "items-start")
     expect(stack).not.toHaveClass("max-w-xs")
     const mark = container.querySelector('[data-auth-mark="true"]')
     const markImages = mark?.querySelectorAll("img")
-    expect(mark).toHaveClass("size-9", "shrink-0")
-    expect(markImages).toHaveLength(2)
-    expect(markImages?.[0]).toHaveClass("size-9", "dark:hidden")
-    expect(markImages?.[1]).toHaveClass("hidden", "size-9", "dark:block")
-    expect(screen.getByRole("heading", { name: "Sign in" })).toHaveClass(
-      "text-2xl",
-      "leading-none",
-      "font-normal"
+    expect(mark).toHaveClass("size-10", "shrink-0")
+    expect(markImages).toHaveLength(1)
+    expect(markImages?.[0]).toHaveAttribute(
+      "src",
+      expect.stringContaining("auth-icon-mandala-dark.svg")
     )
-    expect(screen.getByRole("link", { name: "Sign up" })).toHaveAttribute(
-      "href",
-      "/sign-up"
+    expect(visual).toHaveClass("hidden", "md:block", "flex-1")
+    expect(visual?.querySelector("img")).toHaveAttribute(
+      "src",
+      expect.stringContaining("auth-visual-dark.jpg")
     )
+    expect(visual?.querySelector("img")).toHaveClass(
+      "object-cover",
+      "opacity-[0.03]"
+    )
+    expect(
+      screen.getByRole("heading", { name: "Welcome to Mandala" })
+    ).toHaveClass("text-2xl", "leading-none", "font-medium")
+    expect(screen.getByText("Sign in or make an account")).toHaveClass(
+      "text-sm",
+      "leading-5",
+      "text-[#cbced0]"
+    )
+    expect(
+      screen.queryByRole("link", { name: "Sign up" })
+    ).not.toBeInTheDocument()
   })
 
   it("uses the Figma email field structure and exact terms copy", () => {
     const { container } = render(<LoginAuthFlow />)
 
-    const emailInput = screen.getByLabelText("Or continue with email")
+    const emailInput = screen.getByLabelText("Continue with email")
     const termsCopy = container.querySelector('[data-auth-terms="true"]')
 
     expect(
@@ -89,16 +111,16 @@ describe("LoginAuthFlow", () => {
     ).toBeInTheDocument()
     expect(
       container.querySelector('[data-auth-email-input="true"]')
-    ).toHaveClass("rounded-[10px]", "border-border", "bg-input")
+    ).toHaveClass("rounded-[10px]", "border-[#45484a]", "bg-[#2c2e30]")
     expect(emailInput).toHaveAttribute("type", "email")
     expect(emailInput).toHaveAttribute("placeholder", "user@example.com")
     expect(emailInput).toHaveAccessibleDescription("A link will be sent to you")
+    expect(emailInput).not.toHaveFocus()
     expect(screen.queryByText("Email")).not.toBeInTheDocument()
-    expect(termsCopy).toHaveTextContent(
-      "By signing in you agree to our terms and privacy policy"
-    )
-    expect(screen.getByRole("link", { name: "terms" })).toBeVisible()
-    expect(screen.getByRole("link", { name: "privacy policy" })).toBeVisible()
+    expect(termsCopy).toHaveClass("text-[#cbced0]", "text-sm", "leading-5")
+    expect(termsCopy).toHaveTextContent("Terms and Privacy Policy")
+    expect(screen.getByRole("link", { name: "Terms" })).toBeVisible()
+    expect(screen.getByRole("link", { name: "Privacy Policy" })).toBeVisible()
   })
 
   it("starts Supabase OAuth from the social buttons", async () => {
@@ -119,25 +141,41 @@ describe("LoginAuthFlow", () => {
     expect(googleButton).not.toBeDisabled()
     expect(microsoftButton).not.toBeDisabled()
     expect(googleButton).toHaveClass(
-      "h-10",
+      "h-9",
       "rounded-[10px]",
       "border-transparent",
-      "bg-secondary",
-      "text-secondary-foreground"
+      "bg-[#2c2e30]",
+      "text-[#f8f8f9]",
+      "flex-1"
     )
     expect(microsoftButton).toHaveClass(
-      "h-10",
+      "h-9",
       "rounded-[10px]",
       "border-transparent",
-      "bg-secondary",
-      "text-secondary-foreground"
+      "bg-[#2c2e30]",
+      "text-[#f8f8f9]",
+      "flex-1"
     )
+    expect(googleButton).toHaveAttribute("title", "Sign in with Google")
+    expect(microsoftButton).toHaveAttribute("title", "Sign in with Microsoft")
     expect(
       googleButton.querySelector('[data-auth-provider-icon="google"]')
-    ).toHaveClass("size-5")
+    ).toHaveClass("size-4")
+    expect(
+      googleButton.querySelector('[data-auth-provider-icon="google"]')
+    ).toHaveAttribute(
+      "src",
+      expect.stringContaining("auth-provider-google.svg")
+    )
     expect(
       microsoftButton.querySelector('[data-auth-provider-icon="microsoft"]')
-    ).toHaveClass("size-5")
+    ).toHaveClass("size-4")
+    expect(
+      microsoftButton.querySelector('[data-auth-provider-icon="microsoft"]')
+    ).toHaveAttribute(
+      "src",
+      expect.stringContaining("auth-provider-microsoft-teams.svg")
+    )
 
     fireEvent.click(googleButton)
 
@@ -159,7 +197,7 @@ describe("LoginAuthFlow", () => {
     render(<LoginAuthFlow />)
 
     const magicLinkButton = screen.getByRole("button", {
-      name: "Send Magic Link",
+      name: "Send magic link",
     })
 
     expect(
@@ -169,8 +207,8 @@ describe("LoginAuthFlow", () => {
       "auth-primary-button",
       "h-10",
       "rounded-[10px]",
-      "bg-primary",
-      "text-primary-foreground"
+      "bg-[#4b60ff]",
+      "text-[#f8f8f9]"
     )
 
     fireEvent.click(magicLinkButton)
@@ -189,10 +227,10 @@ describe("LoginAuthFlow", () => {
 
     const { container } = render(<LoginAuthFlow />)
 
-    fireEvent.change(screen.getByLabelText("Or continue with email"), {
+    fireEvent.change(screen.getByLabelText("Continue with email"), {
       target: { value: "  PERSON@Example.COM " },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Send Magic Link" }))
+    fireEvent.click(screen.getByRole("button", { name: "Send magic link" }))
 
     await waitFor(() => {
       expect(requestEmailMagicLinkMock).toHaveBeenCalledWith(
@@ -200,24 +238,26 @@ describe("LoginAuthFlow", () => {
         { shouldCreateUser: false }
       )
     })
-    expect(screen.getByRole("heading", { name: "Sign in" })).toBeVisible()
+    expect(
+      screen.getByRole("heading", { name: "Welcome to Mandala" })
+    ).toBeVisible()
     expect(screen.queryByText("Check your email")).not.toBeInTheDocument()
-    expect(screen.getByLabelText("Or continue with email")).toHaveValue(
+    expect(screen.getByLabelText("Continue with email")).toHaveValue(
       "person@example.com"
     )
-    expect(screen.getByLabelText("Or continue with email")).toBeDisabled()
-    expect(screen.getByLabelText("Or continue with email")).not.toHaveFocus()
+    expect(screen.getByLabelText("Continue with email")).toBeDisabled()
+    expect(screen.getByLabelText("Continue with email")).not.toHaveFocus()
     expect(
-      screen.getByRole("button", { name: "Magic Link Sent" })
+      screen.getByRole("button", { name: "Magic link sent" })
     ).toHaveAttribute("aria-disabled", "true")
     expect(
-      screen.getByRole("button", { name: "Magic Link Sent" })
+      screen.getByRole("button", { name: "Magic link sent" })
     ).toBeDisabled()
     expect(
       screen.queryByText("Didn't receive email?", { exact: false })
     ).not.toBeInTheDocument()
     expect(container.querySelector('[data-auth-stack="true"]')).toHaveClass(
-      "max-w-96"
+      "max-w-[432px]"
     )
     expect(container.querySelector('[data-auth-stack="true"]')).not.toHaveClass(
       "max-w-xs"
@@ -233,17 +273,17 @@ describe("LoginAuthFlow", () => {
 
     render(<LoginAuthFlow />)
 
-    fireEvent.change(screen.getByLabelText("Or continue with email"), {
+    fireEvent.change(screen.getByLabelText("Continue with email"), {
       target: { value: "person@example.com" },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Send Magic Link" }))
+    fireEvent.click(screen.getByRole("button", { name: "Send magic link" }))
 
     await act(async () => {
       await Promise.resolve()
     })
 
     expect(
-      screen.getByRole("button", { name: "Magic Link Sent" })
+      screen.getByRole("button", { name: "Magic link sent" })
     ).toBeDisabled()
     expect(
       screen.queryByText("Didn't receive email?", { exact: false })
@@ -254,10 +294,10 @@ describe("LoginAuthFlow", () => {
     })
 
     expect(
-      screen.getByRole("button", { name: "Send Magic Link" })
+      screen.getByRole("button", { name: "Send magic link" })
     ).toBeEnabled()
-    expect(screen.getByLabelText("Or continue with email")).toBeEnabled()
-    expect(screen.getByLabelText("Or continue with email")).toHaveValue(
+    expect(screen.getByLabelText("Continue with email")).toBeEnabled()
+    expect(screen.getByLabelText("Continue with email")).toHaveValue(
       "person@example.com"
     )
     expect(requestEmailMagicLinkMock).toHaveBeenCalledTimes(1)
@@ -271,23 +311,25 @@ describe("LoginAuthFlow", () => {
 
     render(<LoginAuthFlow mode="sign-up" />)
 
-    expect(screen.getByRole("heading", { name: "Sign up" })).toBeVisible()
-    expect(screen.getByRole("link", { name: "Sign in" })).toHaveAttribute(
-      "href",
-      "/login"
-    )
     expect(
-      screen.getByRole("button", { name: "Sign up with Google" })
+      screen.getByRole("heading", { name: "Welcome to Mandala" })
     ).toBeVisible()
     expect(
-      screen.getByRole("button", { name: "Sign up with Microsoft" })
+      screen.queryByRole("link", { name: "Sign in" })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: "Sign in with Google" })
     ).toBeVisible()
-    expect(screen.getByText("By signing up", { exact: false })).toBeVisible()
+    expect(
+      screen.getByRole("button", { name: "Sign in with Microsoft" })
+    ).toBeVisible()
+    expect(screen.getByText("Sign in or make an account")).toBeVisible()
+    expect(screen.getByText("Terms")).toBeVisible()
 
-    fireEvent.change(screen.getByLabelText("Or continue with email"), {
+    fireEvent.change(screen.getByLabelText("Continue with email"), {
       target: { value: "new@example.com" },
     })
-    fireEvent.click(screen.getByRole("button", { name: "Send Magic Link" }))
+    fireEvent.click(screen.getByRole("button", { name: "Send magic link" }))
 
     await waitFor(() => {
       expect(requestEmailMagicLinkMock).toHaveBeenCalledWith(
@@ -295,8 +337,10 @@ describe("LoginAuthFlow", () => {
         { shouldCreateUser: true }
       )
     })
-    expect(await screen.findByText("Magic Link Sent")).toBeVisible()
-    expect(screen.getByRole("heading", { name: "Sign up" })).toBeVisible()
+    expect(await screen.findByText("Magic link sent")).toBeVisible()
+    expect(
+      screen.getByRole("heading", { name: "Welcome to Mandala" })
+    ).toBeVisible()
   })
 
   it("shows success from callback state and signs out back to sign in", async () => {
@@ -311,7 +355,7 @@ describe("LoginAuthFlow", () => {
       "success"
     )
     expect(document.querySelector('[data-auth-stack="true"]')).toHaveClass(
-      "max-w-96"
+      "max-w-[432px]"
     )
 
     fireEvent.click(screen.getByRole("button", { name: "Sign out" }))
@@ -322,7 +366,7 @@ describe("LoginAuthFlow", () => {
     expect(window.location.pathname).toBe("/login")
     expect(window.location.search).toBe("")
     expect(
-      await screen.findByRole("button", { name: "Send Magic Link" })
+      await screen.findByRole("button", { name: "Send magic link" })
     ).toBeVisible()
   })
 })

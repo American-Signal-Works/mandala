@@ -4,15 +4,11 @@ import {
   useEffect,
   useRef,
   useState,
-  type ComponentType,
-  type ComponentProps,
   type FormEvent,
-  type ReactNode,
   type RefObject,
 } from "react"
 import Image from "next/image"
-import Link from "next/link"
-import { AiMagicIcon } from "@hugeicons/core-free-icons"
+import { Mail02Icon } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { LogOut } from "lucide-react"
 
@@ -37,7 +33,7 @@ type AuthMode = "sign-in" | "sign-up"
 type SocialProvider = "google" | "microsoft"
 type PendingAction = "send" | "logout" | SocialProvider | null
 type SocialLoginButtonConfig = {
-  icon: ComponentType<ComponentProps<"svg">>
+  iconSrc: string
   provider: SocialProvider
   oauthProvider: OAuthProvider
   providerLabel: string
@@ -45,13 +41,13 @@ type SocialLoginButtonConfig = {
 
 const SOCIAL_LOGIN_BUTTONS = [
   {
-    icon: GoogleIcon,
+    iconSrc: "/auth-provider-google.svg",
     provider: "google",
     oauthProvider: "google",
     providerLabel: "Google",
   },
   {
-    icon: MicrosoftIcon,
+    iconSrc: "/auth-provider-microsoft-teams.svg",
     provider: "microsoft",
     oauthProvider: "azure",
     providerLabel: "Microsoft",
@@ -59,12 +55,12 @@ const SOCIAL_LOGIN_BUTTONS = [
 ] satisfies SocialLoginButtonConfig[]
 
 const authSurfaceClass =
-  "h-10 rounded-[10px] border-transparent bg-secondary text-secondary-foreground shadow-none hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:ring-ring/45"
+  "h-9 rounded-[10px] border-transparent bg-[#2c2e30] text-[#f8f8f9] shadow-none hover:bg-[#35383a] hover:text-[#f8f8f9] focus-visible:border-[#45484a] focus-visible:ring-[#f0ece3]/25"
 
 const authPrimaryClass =
-  "auth-primary-button h-10 rounded-[10px] bg-primary text-primary-foreground shadow-none hover:bg-primary/90 hover:text-primary-foreground focus-visible:border-ring focus-visible:ring-ring/45"
+  "auth-primary-button h-10 rounded-[10px] bg-[#4b60ff] text-[#f8f8f9] shadow-none hover:bg-[#4054f4] hover:text-[#f8f8f9] focus-visible:border-[#6f7cff] focus-visible:ring-[#f0ece3]/25"
 
-const authTextSecondaryClass = "text-muted-foreground"
+const authTextSecondaryClass = "text-[#cbced0]"
 
 export function LoginAuthFlow({
   initialStep = "email",
@@ -88,11 +84,6 @@ export function LoginAuthFlow({
   const emailInputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
-    if (step === "email") {
-      emailInputRef.current?.focus()
-      return
-    }
-
     if (step === "link") {
       emailInputRef.current?.blur()
     }
@@ -194,25 +185,22 @@ export function LoginAuthFlow({
 
   return (
     <main
-      className="min-h-svh bg-background text-foreground"
+      className="min-h-svh bg-[#151617] text-[#f0ece3]"
       data-auth-shell="true"
     >
       <section
-        className={cn(
-          "flex min-h-svh justify-center px-4 pb-10",
-          step === "success" ? "pt-56 md:pt-[470px]" : "pt-36 md:pt-[336px]"
-        )}
+        className="flex min-h-svh w-full overflow-hidden bg-[#151617]"
+        data-auth-frame="true"
       >
         <div
-          data-auth-stack="true"
-          data-auth-step={step}
-          className="flex w-full max-w-96 flex-col items-start gap-6"
+          className="flex min-h-svh w-full flex-col justify-between gap-10 px-6 py-10 md:w-[560px] md:shrink-0 md:px-16 md:py-24"
+          data-auth-panel="true"
         >
+          <AuthMark />
           <div
-            className={cn(
-              "flex w-full flex-col",
-              step === "success" ? "gap-4" : "gap-5"
-            )}
+            data-auth-stack="true"
+            data-auth-step={step}
+            className="flex w-full max-w-[432px] flex-col items-start gap-6"
           >
             {(step === "email" || step === "link") && (
               <EmailStep
@@ -223,7 +211,6 @@ export function LoginAuthFlow({
                 formMessage={formMessage}
                 isMagicLinkSent={step === "link" && resendCooldown > 0}
                 isSending={isSending}
-                mode={mode}
                 onEmailChange={(value) => {
                   setEmail(value)
                   setEmailError(null)
@@ -243,50 +230,58 @@ export function LoginAuthFlow({
               />
             )}
           </div>
-          {(step === "email" || step === "link") && <TermsCopy mode={mode} />}
         </div>
+        <AuthVisual />
       </section>
     </main>
   )
 }
 
-function AuthHeader({
-  children,
-  title,
-}: {
-  children?: ReactNode
-  title: string
-}) {
+function AuthMark() {
   return (
-    <div className="flex w-full flex-col items-start gap-6 text-left">
-      <div className="relative size-9 shrink-0" data-auth-mark="true">
-        <Image
-          alt=""
-          aria-hidden="true"
-          className="size-9 dark:hidden"
-          height={36}
-          priority
-          src="/auth-icon-light.svg"
-          width={36}
-        />
-        <Image
-          alt=""
-          aria-hidden="true"
-          className="hidden size-9 dark:block"
-          height={36}
-          priority
-          src="/auth-icon-dark.svg"
-          width={36}
-        />
-      </div>
-      <div className="flex w-full flex-col items-start gap-2">
-        <h1 className="text-2xl leading-none font-normal">{title}</h1>
-        {children && (
-          <div className={cn("text-sm leading-5", authTextSecondaryClass)}>
-            {children}
-          </div>
-        )}
-      </div>
+    <div className="relative size-10 shrink-0" data-auth-mark="true">
+      <Image
+        alt=""
+        aria-hidden="true"
+        className="size-10"
+        height={40}
+        priority
+        src="/auth-icon-mandala-dark.svg"
+        width={40}
+      />
+    </div>
+  )
+}
+
+function AuthVisual() {
+  return (
+    <div
+      className="relative hidden min-h-svh min-w-0 flex-1 overflow-hidden md:block"
+      data-auth-visual="true"
+    >
+      <Image
+        alt=""
+        aria-hidden="true"
+        className="object-cover opacity-[0.03]"
+        fill
+        priority
+        src="/auth-visual-dark.jpg"
+      />
+    </div>
+  )
+}
+
+function AuthIntro({ title }: { title?: string }) {
+  return (
+    <div className="flex w-full flex-col items-start gap-1 text-left">
+      <h1 className="text-2xl leading-none font-medium">
+        {title ?? "Welcome to Mandala"}
+      </h1>
+      {!title && (
+        <p className={cn("text-sm leading-5", authTextSecondaryClass)}>
+          Sign in or make an account
+        </p>
+      )}
     </div>
   )
 }
@@ -298,7 +293,6 @@ function EmailStep({
   inputRef,
   isMagicLinkSent,
   isSending,
-  mode,
   onEmailChange,
   onProviderSignIn,
   onSubmit,
@@ -310,7 +304,6 @@ function EmailStep({
   inputRef: RefObject<HTMLInputElement | null>
   isMagicLinkSent: boolean
   isSending: boolean
-  mode: AuthMode
   onEmailChange: (value: string) => void
   onProviderSignIn: (
     provider: OAuthProvider,
@@ -320,47 +313,39 @@ function EmailStep({
   onSubmit: (event: FormEvent<HTMLFormElement>) => void
   pendingAction: PendingAction
 }) {
-  const actionLabel = mode === "sign-up" ? "Sign up" : "Sign in"
   const isAnyProviderPending =
     pendingAction === "google" || pendingAction === "microsoft"
   const isFormBusy = isSending || isAnyProviderPending
 
   return (
     <>
-      <AuthHeader title={actionLabel}>
-        {mode === "sign-up"
-          ? "Already have an account? "
-          : "Don't have an account? "}
-        <Link
-          className="font-medium text-signal underline underline-offset-4 hover:text-signal/80"
-          href={mode === "sign-up" ? "/login" : "/sign-up"}
-        >
-          {mode === "sign-up" ? "Sign in" : "Sign up"}
-        </Link>
-      </AuthHeader>
-      <form className="flex flex-col gap-6" noValidate onSubmit={onSubmit}>
+      <AuthIntro />
+      <div className="flex w-full gap-2" data-auth-provider-row="true">
+        {SOCIAL_LOGIN_BUTTONS.map((button) => (
+          <ProviderSignInButton
+            button={button}
+            disabled={isFormBusy}
+            isPending={pendingAction === button.provider}
+            key={button.provider}
+            onProviderSignIn={onProviderSignIn}
+          />
+        ))}
+      </div>
+      <form
+        className="flex w-full flex-col gap-6"
+        noValidate
+        onSubmit={onSubmit}
+      >
         <FieldGroup className="gap-2">
-          <div className="mb-4 flex flex-col gap-2">
-            {SOCIAL_LOGIN_BUTTONS.map((button) => (
-              <ProviderSignInButton
-                actionLabel={actionLabel}
-                button={button}
-                disabled={isFormBusy}
-                isPending={pendingAction === button.provider}
-                key={button.provider}
-                onProviderSignIn={onProviderSignIn}
-              />
-            ))}
-          </div>
           <Field className="gap-2" data-invalid={!!emailError}>
             <FieldLabel
-              className="text-sm leading-5 font-medium text-foreground"
+              className="text-sm leading-5 font-medium text-[#f8f8f9]"
               htmlFor="email"
             >
-              Or continue with email
+              Continue with email
             </FieldLabel>
             <InputGroup
-              className="rounded-[10px] border-border bg-input shadow-none has-[[data-slot=input-group-control]:focus-visible]:border-ring has-[[data-slot=input-group-control]:focus-visible]:ring-ring/45 has-[[data-slot][aria-invalid=true]]:border-destructive"
+              className="rounded-[10px] border-[#45484a] bg-[#2c2e30] shadow-none has-[[data-slot=input-group-control]:focus-visible]:border-[#6b7074] has-[[data-slot=input-group-control]:focus-visible]:ring-[#f0ece3]/25 has-[[data-slot][aria-invalid=true]]:border-destructive"
               data-auth-email-input="true"
             >
               <InputGroupInput
@@ -371,7 +356,7 @@ function EmailStep({
                   emailError ? "email-error" : "email-description"
                 }
                 autoComplete="email"
-                className="px-3 text-foreground placeholder:text-muted-foreground disabled:cursor-default disabled:opacity-100"
+                className="px-3 text-[#f0ece3] placeholder:text-[#cbced0] disabled:cursor-default disabled:opacity-100"
                 disabled={isFormBusy || isMagicLinkSent}
                 id="email"
                 inputMode="email"
@@ -394,7 +379,7 @@ function EmailStep({
           {isMagicLinkSent ? (
             <button
               aria-disabled="true"
-              className="inline-flex h-10 w-full items-center justify-center gap-2 rounded-[10px] border border-transparent bg-secondary px-3 text-sm font-medium whitespace-nowrap text-muted-foreground shadow-none"
+              className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-[10px] border border-transparent bg-[#2c2e30] px-2.5 py-2 text-sm font-medium whitespace-nowrap text-[#cbced0] shadow-none"
               data-auth-primary-action="true"
               disabled
               type="button"
@@ -404,9 +389,9 @@ function EmailStep({
                 data-icon="inline-start"
                 data-magic-link-icon="true"
               >
-                <HugeiconsIcon icon={AiMagicIcon} size={16} strokeWidth={1.8} />
+                <HugeiconsIcon icon={Mail02Icon} size={16} strokeWidth={1.8} />
               </span>
-              Magic Link Sent
+              Magic link sent
             </button>
           ) : (
             <Button
@@ -424,22 +409,23 @@ function EmailStep({
                   data-magic-link-icon="true"
                 >
                   <HugeiconsIcon
-                    icon={AiMagicIcon}
+                    icon={Mail02Icon}
                     size={16}
                     strokeWidth={1.8}
                   />
                 </span>
               )}
-              {isSending ? "Sending..." : "Send Magic Link"}
+              {isSending ? "Sending..." : "Send magic link"}
             </Button>
           )}
           {formMessage && (
-            <p className="text-sm leading-5 text-foreground" role="alert">
+            <p className="text-sm leading-5 text-[#f0ece3]" role="alert">
               {formMessage}
             </p>
           )}
         </FieldGroup>
       </form>
+      <TermsCopy />
     </>
   )
 }
@@ -455,7 +441,7 @@ function SuccessStep({
 }) {
   return (
     <>
-      <AuthHeader title="Sign in successful" />
+      <AuthIntro title="Sign in successful" />
       <div className="flex flex-col gap-3">
         <Button
           className={cn("w-full", authPrimaryClass)}
@@ -481,13 +467,11 @@ function SuccessStep({
 }
 
 function ProviderSignInButton({
-  actionLabel,
   button,
   disabled,
   isPending,
   onProviderSignIn,
 }: {
-  actionLabel: string
   button: SocialLoginButtonConfig
   disabled: boolean
   isPending: boolean
@@ -497,12 +481,12 @@ function ProviderSignInButton({
     providerLabel: string
   ) => void
 }) {
-  const Icon = button.icon
-  const label = `${actionLabel} with ${button.providerLabel}`
+  const label = `Sign in with ${button.providerLabel}`
 
   return (
     <Button
-      className={cn("w-full", authSurfaceClass)}
+      aria-label={label}
+      className={cn("flex-1 px-0", authSurfaceClass)}
       disabled={disabled}
       onClick={() =>
         onProviderSignIn(
@@ -518,75 +502,44 @@ function ProviderSignInButton({
       {isPending ? (
         <Spinner data-icon="inline-start" />
       ) : (
-        <Icon
+        <Image
+          alt=""
           aria-hidden="true"
-          className="size-5"
+          className="size-4"
           data-auth-provider-icon={button.provider}
           data-icon="inline-start"
+          height={16}
+          src={button.iconSrc}
+          width={16}
         />
       )}
-      {isPending ? "Redirecting..." : label}
+      {isPending && <span className="sr-only">Redirecting...</span>}
     </Button>
   )
 }
 
-function GoogleIcon(props: ComponentProps<"svg">) {
+function TermsCopy() {
   return (
-    <svg viewBox="0 0 18 18" xmlns="http://www.w3.org/2000/svg" {...props}>
-      <path
-        d="M17.64 9.204c0-.638-.057-1.252-.164-1.841H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.258h2.91c1.702-1.567 2.682-3.874 2.682-6.614Z"
-        fill="#4285F4"
-      />
-      <path
-        d="M9 18c2.43 0 4.467-.806 5.956-2.182l-2.909-2.258c-.806.54-1.837.86-3.047.86-2.344 0-4.328-1.583-5.036-3.71H.957v2.332A8.997 8.997 0 0 0 9 18Z"
-        fill="#34A853"
-      />
-      <path
-        d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.997 8.997 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332Z"
-        fill="#FBBC05"
-      />
-      <path
-        d="M9 3.58c1.321 0 2.508.454 3.44 1.346l2.582-2.581C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58Z"
-        fill="#EA4335"
-      />
-    </svg>
-  )
-}
-
-function MicrosoftIcon(props: ComponentProps<"svg">) {
-  return (
-    <svg viewBox="0 0 21 21" xmlns="http://www.w3.org/2000/svg" {...props}>
-      <rect fill="#f25022" height="10" width="10" x="1" y="1" />
-      <rect fill="#7fba00" height="10" width="10" x="11" y="1" />
-      <rect fill="#00a4ef" height="10" width="10" x="1" y="11" />
-      <rect fill="#ffb900" height="10" width="10" x="11" y="11" />
-    </svg>
-  )
-}
-
-function TermsCopy({ mode }: { mode: AuthMode }) {
-  return (
-    <p
+    <div
       className={cn(
-        "w-full text-center text-xs leading-5",
+        "flex w-full flex-wrap items-center justify-center gap-1 px-0 text-center text-sm leading-5 sm:px-16",
         authTextSecondaryClass
       )}
       data-auth-terms="true"
     >
-      By signing {mode === "sign-up" ? "up" : "in"} you agree to our{" "}
       <a
-        className="text-foreground underline underline-offset-4 hover:text-foreground"
+        className="text-[#f8f8f9] underline underline-offset-4 hover:text-[#f8f8f9]"
         href="#"
       >
-        terms
-      </a>
-      <br className="hidden md:block" /> and{" "}
+        Terms
+      </a>{" "}
+      <span>and</span>{" "}
       <a
-        className="text-foreground underline underline-offset-4 hover:text-foreground"
+        className="text-[#f8f8f9] underline underline-offset-4 hover:text-[#f8f8f9]"
         href="#"
       >
-        privacy policy
+        Privacy Policy
       </a>
-    </p>
+    </div>
   )
 }
