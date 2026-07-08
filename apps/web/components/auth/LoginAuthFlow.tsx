@@ -8,7 +8,7 @@ import {
   type RefObject,
 } from "react"
 import Image from "next/image"
-import { Mail02Icon } from "@hugeicons/core-free-icons"
+import { Mail02Icon, MailOpen02Icon } from "@hugeicons/core-free-icons"
 import { HugeiconsIcon } from "@hugeicons/react"
 import { LogOut } from "lucide-react"
 
@@ -409,9 +409,9 @@ function EmailStep({
             )}
           </Field>
           {isMagicLinkSent ? (
-            <button
+            <Button
               aria-disabled="true"
-              className="inline-flex h-10 w-full items-center justify-center gap-1.5 rounded-[10px] border border-transparent bg-secondary px-2.5 py-2 text-sm font-medium whitespace-nowrap text-muted-foreground shadow-none"
+              className={cn("w-full", authPrimaryClass)}
               data-auth-primary-action="true"
               disabled
               type="button"
@@ -421,10 +421,14 @@ function EmailStep({
                 data-icon="inline-start"
                 data-magic-link-icon="true"
               >
-                <HugeiconsIcon icon={Mail02Icon} size={16} strokeWidth={1.8} />
+                <HugeiconsIcon
+                  icon={MailOpen02Icon}
+                  size={16}
+                  strokeWidth={1.8}
+                />
               </span>
-              Magic link sent
-            </button>
+              Check your email
+            </Button>
           ) : (
             <Button
               className={cn("w-full", authPrimaryClass)}
@@ -447,7 +451,7 @@ function EmailStep({
                   />
                 </span>
               )}
-              {isSending ? "Sending..." : "Send magic link"}
+              {isSending ? "Sending email" : "Send magic link"}
             </Button>
           )}
           {formMessage && (

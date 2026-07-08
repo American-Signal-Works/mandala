@@ -314,6 +314,49 @@ describe("LoginAuthFlow", () => {
     expect(requestEmailMagicLinkMock).not.toHaveBeenCalled()
   })
 
+  it("shows the Figma email sending state while requesting a magic link", async () => {
+    let resolveMagicLink: (
+      value: Awaited<ReturnType<typeof requestEmailMagicLink>>
+    ) => void = () => {}
+
+    requestEmailMagicLinkMock.mockReturnValue(
+      new Promise((resolve) => {
+        resolveMagicLink = resolve
+      }) as ReturnType<typeof requestEmailMagicLink>
+    )
+
+    render(<LoginAuthFlow />)
+
+    fireEvent.change(screen.getByLabelText("Continue with email"), {
+      target: { value: "person@example.com" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Send magic link" }))
+
+    expect(await screen.findByText("Sending email")).toBeVisible()
+    const sendingButton = document.querySelector<HTMLButtonElement>(
+      '[data-auth-primary-action="true"]'
+    )
+    expect(sendingButton).not.toBeNull()
+    const sendingButtonElement = sendingButton as HTMLButtonElement
+    expect(sendingButtonElement).toBeDisabled()
+    expect(sendingButtonElement).toHaveClass(
+      "bg-primary",
+      "text-primary-foreground"
+    )
+    expect(
+      sendingButtonElement.querySelector('[role="status"]')
+    ).toBeInTheDocument()
+    expect(screen.queryByText("Sending...")).not.toBeInTheDocument()
+
+    await act(async () => {
+      resolveMagicLink({ data: {}, error: null } as never)
+    })
+
+    expect(
+      await screen.findByRole("button", { name: "Check your email" })
+    ).toBeDisabled()
+  })
+
   it("sends a normalized email and advances to the Figma magic-link sent state", async () => {
     requestEmailMagicLinkMock.mockResolvedValue({
       data: {},
@@ -336,18 +379,26 @@ describe("LoginAuthFlow", () => {
     expect(
       screen.getByRole("heading", { name: "Welcome to Mandala" })
     ).toBeVisible()
-    expect(screen.queryByText("Check your email")).not.toBeInTheDocument()
+    expect(screen.queryByText("Magic link sent")).not.toBeInTheDocument()
     expect(screen.getByLabelText("Continue with email")).toHaveValue(
       "person@example.com"
     )
     expect(screen.getByLabelText("Continue with email")).toBeDisabled()
     expect(screen.getByLabelText("Continue with email")).not.toHaveFocus()
     expect(
-      screen.getByRole("button", { name: "Magic link sent" })
+      screen.getByRole("button", { name: "Check your email" })
     ).toHaveAttribute("aria-disabled", "true")
     expect(
-      screen.getByRole("button", { name: "Magic link sent" })
+      screen.getByRole("button", { name: "Check your email" })
     ).toBeDisabled()
+    expect(
+      screen.getByRole("button", { name: "Check your email" })
+    ).toHaveClass("bg-primary", "text-primary-foreground")
+    expect(
+      screen
+        .getByRole("button", { name: "Check your email" })
+        .querySelector('[data-magic-link-icon="true"]')
+    ).toBeInTheDocument()
     expect(
       screen.queryByText("Didn't receive email?", { exact: false })
     ).not.toBeInTheDocument()
@@ -378,7 +429,7 @@ describe("LoginAuthFlow", () => {
     })
 
     expect(
-      screen.getByRole("button", { name: "Magic link sent" })
+      screen.getByRole("button", { name: "Check your email" })
     ).toBeDisabled()
     expect(
       screen.queryByText("Didn't receive email?", { exact: false })
@@ -432,7 +483,7 @@ describe("LoginAuthFlow", () => {
         { shouldCreateUser: true }
       )
     })
-    expect(await screen.findByText("Magic link sent")).toBeVisible()
+    expect(await screen.findByText("Check your email")).toBeVisible()
     expect(
       screen.getByRole("heading", { name: "Welcome to Mandala" })
     ).toBeVisible()

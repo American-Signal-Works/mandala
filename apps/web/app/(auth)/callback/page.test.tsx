@@ -90,7 +90,7 @@ describe("AuthCallbackPage", () => {
     expect(magicLinkButton).not.toBeNull()
     const magicLinkButtonElement = magicLinkButton as HTMLButtonElement
     expect(magicLinkButtonElement).toBeDisabled()
-    expect(magicLinkButtonElement).toHaveTextContent("Sending...")
+    expect(magicLinkButtonElement).toHaveTextContent("Sending email")
     expect(
       magicLinkButtonElement.querySelector('[role="status"]')
     ).toBeInTheDocument()
