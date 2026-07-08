@@ -64,7 +64,7 @@ describe("auth client helpers", () => {
       email: "person@example.com",
       options: {
         emailRedirectTo:
-          "https://mandala.md/callback?next=%2Flogin%3Fauth%3Dsuccess",
+          "https://mandala.md/callback?next=%2Flogin%3Fauth%3Dsuccess&method=email",
         shouldCreateUser: true,
       },
     })
@@ -100,7 +100,7 @@ describe("auth client helpers", () => {
       provider: "google",
       options: {
         redirectTo:
-          "https://mandala.md/callback?next=%2Flogin%3Fauth%3Dsuccess",
+          "https://mandala.md/callback?next=%2Flogin%3Fauth%3Dsuccess&method=google",
       },
     })
   })
@@ -123,7 +123,7 @@ describe("auth client helpers", () => {
       provider: "azure",
       options: {
         redirectTo:
-          "https://mandala.md/callback?next=%2Flogin%3Fauth%3Dsuccess",
+          "https://mandala.md/callback?next=%2Flogin%3Fauth%3Dsuccess&method=microsoft",
         scopes: "email",
       },
     })

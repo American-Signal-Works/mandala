@@ -2,6 +2,7 @@ import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 
 import { createClient } from "@/lib/supabase/browser"
 import { getAuthCallbackUrl, getEmailRedirectTo } from "@/lib/auth/redirect"
+import type { AuthCallbackMethod } from "@/lib/auth/callback"
 import type { Database } from "@/lib/supabase/types"
 
 export type OAuthProvider = "google" | "azure"
@@ -48,12 +49,19 @@ export async function requestOAuthSignIn(provider: OAuthProvider) {
       createClient().auth.signInWithOAuth({
         provider,
         options: {
-          redirectTo: getAuthCallbackUrl(),
+          redirectTo: getAuthCallbackUrl(
+            undefined,
+            getOAuthCallbackMethod(provider)
+          ),
           ...(provider === "azure" ? { scopes: "email" } : {}),
         },
       }),
     (error) => ({ data: null, error })
   )
+}
+
+function getOAuthCallbackMethod(provider: OAuthProvider): AuthCallbackMethod {
+  return provider === "azure" ? "microsoft" : "google"
 }
 
 export async function signOutCurrentSession() {

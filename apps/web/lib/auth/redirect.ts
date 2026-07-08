@@ -1,8 +1,13 @@
+import type { AuthCallbackMethod } from "@/lib/auth/callback"
+
 export const AUTH_SUCCESS_PATH = "/login?auth=success"
 
 const SAFE_POST_AUTH_PATHS = new Set([AUTH_SUCCESS_PATH])
 
-export function getAuthCallbackUrl(nextPath = AUTH_SUCCESS_PATH) {
+export function getAuthCallbackUrl(
+  nextPath = AUTH_SUCCESS_PATH,
+  method?: AuthCallbackMethod
+) {
   const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim()
   const origin =
     configuredSiteUrl ||
@@ -10,12 +15,15 @@ export function getAuthCallbackUrl(nextPath = AUTH_SUCCESS_PATH) {
 
   const callbackUrl = new URL("/callback", origin.replace(/\/+$/, ""))
   callbackUrl.searchParams.set("next", getSafePostAuthPath(nextPath))
+  if (method) {
+    callbackUrl.searchParams.set("method", method)
+  }
 
   return callbackUrl.toString()
 }
 
 export function getEmailRedirectTo() {
-  return getAuthCallbackUrl(AUTH_SUCCESS_PATH)
+  return getAuthCallbackUrl(AUTH_SUCCESS_PATH, "email")
 }
 
 export function getSafePostAuthPath(value: string | null | undefined) {

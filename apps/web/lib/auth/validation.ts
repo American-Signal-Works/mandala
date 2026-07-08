@@ -1,4 +1,4 @@
-const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/
 
 export function normalizeEmail(email: string) {
   return email.trim().toLowerCase()

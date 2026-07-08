@@ -14,6 +14,9 @@ describe("auth validation helpers", () => {
     expect(getEmailValidationError("not-an-email")).toBe(
       "Enter a valid email address."
     )
+    expect(getEmailValidationError("person@example.c")).toBe(
+      "Enter a valid email address."
+    )
     expect(getEmailValidationError("person@example.com")).toBeNull()
   })
 })

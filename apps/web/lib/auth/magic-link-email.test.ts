@@ -24,7 +24,7 @@ const hookPayload = {
   email_data: {
     email_action_type: "email",
     redirect_to:
-      "https://usebackdesk.com/callback?next=%2Flogin%3Fauth%3Dsuccess",
+      "https://usebackdesk.com/callback?next=%2Flogin%3Fauth%3Dsuccess&method=email",
     token_hash: "token-hash",
   },
 }
@@ -35,12 +35,12 @@ describe("Mandala magic-link email", () => {
       buildSupabaseVerifyUrl({
         emailActionType: "email",
         redirectTo:
-          "https://usebackdesk.com/callback?next=%2Flogin%3Fauth%3Dsuccess",
+          "https://usebackdesk.com/callback?next=%2Flogin%3Fauth%3Dsuccess&method=email",
         supabaseUrl: "https://project.supabase.co/",
         tokenHash: "token-hash",
       })
     ).toBe(
-      "https://project.supabase.co/auth/v1/verify?token=token-hash&type=email&redirect_to=https%3A%2F%2Fusebackdesk.com%2Fcallback%3Fnext%3D%252Flogin%253Fauth%253Dsuccess"
+      "https://project.supabase.co/auth/v1/verify?token=token-hash&type=email&redirect_to=https%3A%2F%2Fusebackdesk.com%2Fcallback%3Fnext%3D%252Flogin%253Fauth%253Dsuccess%26method%3Demail"
     )
   })
 

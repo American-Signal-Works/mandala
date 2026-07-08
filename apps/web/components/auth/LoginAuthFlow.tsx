@@ -18,6 +18,7 @@ import {
   signOutCurrentSession,
   type OAuthProvider,
 } from "@/lib/auth/client"
+import type { AuthCallbackPendingAction } from "@/lib/auth/callback"
 import { getEmailValidationError, normalizeEmail } from "@/lib/auth/validation"
 import { Button } from "@workspace/ui/components/button"
 import { Field, FieldGroup, FieldLabel } from "@workspace/ui/components/field"
@@ -31,7 +32,7 @@ import { cn } from "@workspace/ui/lib/utils"
 type AuthStep = "email" | "link" | "success"
 type AuthMode = "sign-in" | "sign-up"
 type SocialProvider = "google" | "microsoft"
-type PendingAction = "send" | "logout" | SocialProvider | null
+type PendingAction = AuthCallbackPendingAction | "logout" | null
 type SocialLoginButtonConfig = {
   iconSrc: string
   provider: SocialProvider
@@ -47,7 +48,7 @@ const SOCIAL_LOGIN_BUTTONS = [
     providerLabel: "Google",
   },
   {
-    iconSrc: "/auth-provider-microsoft-teams.svg",
+    iconSrc: "/auth-provider-microsoft.svg",
     provider: "microsoft",
     oauthProvider: "azure",
     providerLabel: "Microsoft",
@@ -61,18 +62,34 @@ const authPrimaryClass =
   "auth-primary-button h-10 rounded-[10px] bg-[#4b60ff] text-[#f8f8f9] shadow-none hover:bg-[#4054f4] hover:text-[#f8f8f9] focus-visible:border-[#6f7cff] focus-visible:ring-[#f0ece3]/25"
 
 const authTextSecondaryClass = "text-[#cbced0]"
+const authErrorClass = "text-[#e55767]"
+
+function getAuthEmailErrorMessage(validationError: string) {
+  if (validationError === "Enter your email address.") {
+    return "Please enter your email"
+  }
+
+  if (validationError === "Enter a valid email address.") {
+    return "Invalid email"
+  }
+
+  return validationError
+}
 
 export function LoginAuthFlow({
   initialStep = "email",
   initialFormMessage = null,
+  initialPendingAction = null,
   mode = "sign-in",
 }: {
   initialStep?: AuthStep
   initialFormMessage?: string | null
+  initialPendingAction?: AuthCallbackPendingAction | null
   mode?: AuthMode
 } = {}) {
   const [step, setStep] = useState<AuthStep>(initialStep)
-  const [pendingAction, setPendingAction] = useState<PendingAction>(null)
+  const [pendingAction, setPendingAction] =
+    useState<PendingAction>(initialPendingAction)
   const [email, setEmail] = useState("")
   const [submittedEmail, setSubmittedEmail] = useState("")
   const [emailError, setEmailError] = useState<string | null>(null)
@@ -109,7 +126,7 @@ export function LoginAuthFlow({
 
     const validationError = getEmailValidationError(email)
     if (validationError) {
-      setEmailError(validationError)
+      setEmailError(getAuthEmailErrorMessage(validationError))
       setFormMessage(null)
       emailInputRef.current?.focus()
       return
@@ -151,16 +168,15 @@ export function LoginAuthFlow({
 
     const { error } = await requestOAuthSignIn(provider)
 
-    setPendingAction(null)
-
     if (error) {
+      setPendingAction(null)
       setFormMessage(
         `We couldn't start ${providerLabel} sign-${mode === "sign-up" ? "up" : "in"}. Try again.`
       )
       return
     }
 
-    setFormMessage(`Redirecting to ${providerLabel}...`)
+    setFormMessage(null)
   }
 
   async function handleLogout() {
@@ -192,6 +208,7 @@ export function LoginAuthFlow({
         className="flex min-h-svh w-full overflow-hidden bg-[#151617]"
         data-auth-frame="true"
       >
+        <AuthVisual />
         <div
           className="flex min-h-svh w-full flex-col justify-between gap-10 px-6 py-10 md:w-[560px] md:shrink-0 md:px-16 md:py-24"
           data-auth-panel="true"
@@ -231,7 +248,6 @@ export function LoginAuthFlow({
             )}
           </div>
         </div>
-        <AuthVisual />
       </section>
     </main>
   )
@@ -339,13 +355,20 @@ function EmailStep({
         <FieldGroup className="gap-2">
           <Field className="gap-2" data-invalid={!!emailError}>
             <FieldLabel
-              className="text-sm leading-5 font-medium text-[#f8f8f9]"
+              className={cn(
+                "text-sm leading-5 font-medium",
+                emailError ? authErrorClass : "text-[#f8f8f9]"
+              )}
               htmlFor="email"
             >
-              Continue with email
+              {emailError ?? "Continue with email"}
             </FieldLabel>
             <InputGroup
-              className="rounded-[10px] border-[#45484a] bg-[#2c2e30] shadow-none has-[[data-slot=input-group-control]:focus-visible]:border-[#6b7074] has-[[data-slot=input-group-control]:focus-visible]:ring-[#f0ece3]/25 has-[[data-slot][aria-invalid=true]]:border-destructive"
+              className={cn(
+                "rounded-[10px] border-[#45484a] bg-[#2c2e30] shadow-none has-[[data-slot=input-group-control]:focus-visible]:border-[#6b7074] has-[[data-slot=input-group-control]:focus-visible]:ring-[#f0ece3]/25",
+                emailError &&
+                  "border-[#e55767] has-[[data-slot=input-group-control]:focus-visible]:border-[#e55767] has-[[data-slot=input-group-control]:focus-visible]:ring-0 has-[[data-slot][aria-invalid=true]]:border-[#e55767] has-[[data-slot][aria-invalid=true]]:ring-0"
+              )}
               data-auth-email-input="true"
             >
               <InputGroupInput
@@ -397,7 +420,7 @@ function EmailStep({
             <Button
               className={cn("w-full", authPrimaryClass)}
               data-auth-primary-action="true"
-              disabled={isFormBusy}
+              disabled={isFormBusy || !!emailError}
               type="submit"
             >
               {isSending ? (

@@ -16,7 +16,7 @@ describe("auth redirect helpers", () => {
     vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://preview.vercel.app/")
 
     expect(getEmailRedirectTo()).toBe(
-      "https://preview.vercel.app/callback?next=%2Flogin%3Fauth%3Dsuccess"
+      "https://preview.vercel.app/callback?next=%2Flogin%3Fauth%3Dsuccess&method=email"
     )
   })
 
@@ -24,7 +24,7 @@ describe("auth redirect helpers", () => {
     vi.stubEnv("NEXT_PUBLIC_SITE_URL", "")
 
     expect(getEmailRedirectTo()).toBe(
-      "http://localhost:3000/callback?next=%2Flogin%3Fauth%3Dsuccess"
+      "http://localhost:3000/callback?next=%2Flogin%3Fauth%3Dsuccess&method=email"
     )
   })
 
@@ -33,6 +33,14 @@ describe("auth redirect helpers", () => {
 
     expect(getAuthCallbackUrl()).toBe(
       "https://mandala.md/callback?next=%2Flogin%3Fauth%3Dsuccess"
+    )
+  })
+
+  it("tags callback URLs with the method when provided", () => {
+    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://mandala.md")
+
+    expect(getAuthCallbackUrl(AUTH_SUCCESS_PATH, "google")).toBe(
+      "https://mandala.md/callback?next=%2Flogin%3Fauth%3Dsuccess&method=google"
     )
   })
 

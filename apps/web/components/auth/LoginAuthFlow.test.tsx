@@ -62,6 +62,8 @@ describe("LoginAuthFlow", () => {
     expect(shell).toHaveClass("min-h-svh", "bg-[#151617]", "text-[#f0ece3]")
     expect(shell).not.toHaveAttribute("style")
     expect(frame).toHaveClass("flex", "min-h-svh", "overflow-hidden")
+    expect(frame?.firstElementChild).toHaveAttribute("data-auth-visual", "true")
+    expect(frame?.lastElementChild).toHaveAttribute("data-auth-panel", "true")
     expect(panel).toHaveClass(
       "md:w-[560px]",
       "md:px-16",
@@ -174,7 +176,7 @@ describe("LoginAuthFlow", () => {
       microsoftButton.querySelector('[data-auth-provider-icon="microsoft"]')
     ).toHaveAttribute(
       "src",
-      expect.stringContaining("auth-provider-microsoft-teams.svg")
+      expect.stringContaining("auth-provider-microsoft.svg")
     )
 
     fireEvent.click(googleButton)
@@ -182,19 +184,47 @@ describe("LoginAuthFlow", () => {
     await waitFor(() => {
       expect(requestOAuthSignInMock).toHaveBeenCalledWith("google")
     })
+    expect(
+      screen.queryByText("Redirecting to Google...")
+    ).not.toBeInTheDocument()
+    expect(googleButton).toBeDisabled()
+    expect(microsoftButton).toBeDisabled()
+    expect(
+      googleButton.querySelector('[data-auth-provider-icon="google"]')
+    ).not.toBeInTheDocument()
+    expect(
+      microsoftButton.querySelector('[data-auth-provider-icon="microsoft"]')
+    ).toBeInTheDocument()
+    expect(googleButton.querySelector('[role="status"]')).toBeInTheDocument()
+    expect(
+      microsoftButton.querySelector('[role="status"]')
+    ).not.toBeInTheDocument()
+  })
+
+  it("starts Microsoft OAuth from the Microsoft social button", async () => {
+    requestOAuthSignInMock.mockResolvedValue({
+      data: { url: "https://provider.example.com" },
+      error: null,
+    } as never)
+
+    render(<LoginAuthFlow />)
+
+    const microsoftButton = screen.getByRole("button", {
+      name: "Sign in with Microsoft",
+    })
 
     fireEvent.click(microsoftButton)
 
     await waitFor(() => {
       expect(requestOAuthSignInMock).toHaveBeenLastCalledWith("azure")
     })
-    expect(requestOAuthSignInMock).toHaveBeenCalledTimes(2)
+    expect(requestOAuthSignInMock).toHaveBeenCalledTimes(1)
     expect(requestEmailMagicLinkMock).not.toHaveBeenCalled()
     expect(signOutCurrentSessionMock).not.toHaveBeenCalled()
   })
 
   it("validates email before sending a magic link", async () => {
-    render(<LoginAuthFlow />)
+    const { container } = render(<LoginAuthFlow />)
 
     const magicLinkButton = screen.getByRole("button", {
       name: "Send magic link",
@@ -214,8 +244,41 @@ describe("LoginAuthFlow", () => {
     fireEvent.click(magicLinkButton)
 
     expect(
-      await screen.findByText("Enter your email address.")
-    ).not.toBeVisible()
+      await screen.findByText("Please enter your email", {
+        selector: "label",
+      })
+    ).toBeVisible()
+    expect(
+      screen.getByRole("textbox", { name: "Please enter your email" })
+    ).toHaveFocus()
+    expect(
+      container.querySelector('[data-auth-email-input="true"]')
+    ).toHaveClass("border-[#e55767]")
+    expect(magicLinkButton).toBeDisabled()
+    expect(requestEmailMagicLinkMock).not.toHaveBeenCalled()
+  })
+
+  it("shows the Figma invalid email state for malformed email", async () => {
+    const { container } = render(<LoginAuthFlow />)
+
+    const emailInput = screen.getByLabelText("Continue with email")
+    fireEvent.change(emailInput, {
+      target: { value: "user@example.c" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Send magic link" }))
+
+    expect(
+      await screen.findByText("Invalid email", { selector: "label" })
+    ).toBeVisible()
+    expect(screen.getByRole("textbox", { name: "Invalid email" })).toHaveValue(
+      "user@example.c"
+    )
+    expect(
+      container.querySelector('[data-auth-email-input="true"]')
+    ).toHaveClass("border-[#e55767]")
+    expect(
+      screen.getByRole("button", { name: "Send magic link" })
+    ).toBeDisabled()
     expect(requestEmailMagicLinkMock).not.toHaveBeenCalled()
   })
 
