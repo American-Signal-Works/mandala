@@ -331,7 +331,7 @@ function EmailStep({
           ? "Already have an account? "
           : "Don't have an account? "}
         <Link
-          className="font-medium text-signal underline underline-offset-4 hover:text-signal/80 dark:text-[#7DD3FC] dark:hover:text-[#A5E4FF]"
+          className="font-medium text-link underline underline-offset-4 hover:text-link/80"
           href={mode === "sign-up" ? "/login" : "/sign-up"}
         >
           {mode === "sign-up" ? "Sign in" : "Sign up"}

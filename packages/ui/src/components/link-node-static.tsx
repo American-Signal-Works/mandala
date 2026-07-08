@@ -1,12 +1,12 @@
-import * as React from 'react';
+import * as React from "react"
 
-import type { TLinkElement } from 'platejs';
-import type { SlateElementProps } from 'platejs/static';
+import type { TLinkElement } from "platejs"
+import type { SlateElementProps } from "platejs/static"
 
-import { getLinkAttributes } from '@platejs/link';
-import { SlateElement } from 'platejs/static';
-import { cn } from '@workspace/ui/lib/utils';
-import { inlineSuggestionVariants } from '@workspace/ui/components/suggestion';
+import { getLinkAttributes } from "@platejs/link"
+import { SlateElement } from "platejs/static"
+import { cn } from "@workspace/ui/lib/utils"
+import { inlineSuggestionVariants } from "@workspace/ui/components/suggestion"
 
 export function LinkElementStatic(props: SlateElementProps<TLinkElement>) {
   return (
@@ -14,7 +14,7 @@ export function LinkElementStatic(props: SlateElementProps<TLinkElement>) {
       {...props}
       as="a"
       className={cn(
-        'font-medium text-primary underline decoration-primary underline-offset-4',
+        "font-medium text-link underline decoration-link underline-offset-4",
         inlineSuggestionVariants()
       )}
       attributes={{
@@ -24,5 +24,5 @@ export function LinkElementStatic(props: SlateElementProps<TLinkElement>) {
     >
       {props.children}
     </SlateElement>
-  );
+  )
 }
