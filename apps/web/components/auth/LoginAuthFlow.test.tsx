@@ -115,12 +115,15 @@ describe("LoginAuthFlow", () => {
     )
     expect(visual?.querySelector("img")).toHaveClass(
       "object-cover",
-      "opacity-[0.03]"
+      "opacity-[0.03]",
+      "outline-black/10",
+      "dark:outline-white/10"
     )
     expect(
       screen.getByRole("heading", { name: "Welcome to Mandala" })
-    ).toHaveClass("text-2xl", "leading-none", "font-medium")
+    ).toHaveClass("text-balance", "text-2xl", "leading-none", "font-medium")
     expect(screen.getByText("Sign in or make an account")).toHaveClass(
+      "text-pretty",
       "text-sm",
       "leading-5",
       "text-muted-foreground"
@@ -175,7 +178,7 @@ describe("LoginAuthFlow", () => {
     expect(googleButton).not.toBeDisabled()
     expect(microsoftButton).not.toBeDisabled()
     expect(googleButton).toHaveClass(
-      "h-9",
+      "h-10",
       "rounded-[10px]",
       "border-transparent",
       "bg-secondary",
@@ -183,7 +186,7 @@ describe("LoginAuthFlow", () => {
       "flex-1"
     )
     expect(microsoftButton).toHaveClass(
-      "h-9",
+      "h-10",
       "rounded-[10px]",
       "border-transparent",
       "bg-secondary",
@@ -223,10 +226,19 @@ describe("LoginAuthFlow", () => {
     expect(microsoftButton).toBeDisabled()
     expect(
       googleButton.querySelector('[data-auth-provider-icon="google"]')
-    ).not.toBeInTheDocument()
+    ).toBeInTheDocument()
     expect(
       microsoftButton.querySelector('[data-auth-provider-icon="microsoft"]')
     ).toBeInTheDocument()
+    expect(
+      googleButton.querySelector('[data-auth-icon-idle="true"]')
+    ).toHaveClass("scale-[0.25]", "opacity-0", "blur-[4px]")
+    expect(
+      googleButton.querySelector('[data-auth-icon-pending="true"]')
+    ).toHaveClass("scale-100", "opacity-100", "blur-0")
+    expect(
+      microsoftButton.querySelector('[data-auth-icon-idle="true"]')
+    ).toHaveClass("scale-100", "opacity-100", "blur-0")
     expect(googleButton.querySelector('[role="status"]')).toBeInTheDocument()
     expect(
       microsoftButton.querySelector('[role="status"]')
