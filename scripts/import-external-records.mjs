@@ -19,7 +19,7 @@ const TARGET_URL = process.env.TARGET_SUPABASE_URL ?? "http://127.0.0.1:54321";
 const TARGET_KEY = process.env.TARGET_SERVICE_ROLE_KEY ?? "";
 const COMPANY_ID =
   process.env.IMPORT_COMPANY_ID ?? "70000000-0000-4000-8000-000000000001";
-const COMPANY_NAME = process.env.IMPORT_COMPANY_NAME ?? "Dirt King (Sandbox)";
+const COMPANY_NAME = process.env.IMPORT_COMPANY_NAME ?? "Dirt Queen";
 const OWNER_EMAIL = process.env.IMPORT_OWNER_EMAIL ?? "seed@example.com";
 const RUN_STAMP = new Date().toISOString();
 
