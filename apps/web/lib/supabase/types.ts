@@ -424,6 +424,156 @@ export type Database = {
         }
         Relationships: []
       }
+      external_record_links: {
+        Row: {
+          company_id: string
+          created_at: string
+          from_record_id: string
+          id: string
+          relationship: string
+          to_record_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          from_record_id: string
+          id?: string
+          relationship: string
+          to_record_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          from_record_id?: string
+          id?: string
+          relationship?: string
+          to_record_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "external_record_links_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "external_record_links_from_record_id_company_id_fkey"
+            columns: ["from_record_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "external_records"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "external_record_links_to_record_id_company_id_fkey"
+            columns: ["to_record_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "external_records"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      external_records: {
+        Row: {
+          company_id: string
+          created_at: string
+          external_id: string
+          id: string
+          payload: Json
+          pulled_at: string
+          record_type: string
+          source_id: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          external_id: string
+          id?: string
+          payload?: Json
+          pulled_at?: string
+          record_type: string
+          source_id: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          external_id?: string
+          id?: string
+          payload?: Json
+          pulled_at?: string
+          record_type?: string
+          source_id?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "external_records_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "external_records_source_id_company_id_fkey"
+            columns: ["source_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "external_sources"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      external_sources: {
+        Row: {
+          company_id: string
+          config: Json
+          created_at: string
+          id: string
+          kind: string
+          last_sync_error: string | null
+          last_synced_at: string | null
+          name: string
+          source_key: string
+          sync_status: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          config?: Json
+          created_at?: string
+          id?: string
+          kind: string
+          last_sync_error?: string | null
+          last_synced_at?: string | null
+          name: string
+          source_key: string
+          sync_status?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          config?: Json
+          created_at?: string
+          id?: string
+          kind?: string
+          last_sync_error?: string | null
+          last_synced_at?: string | null
+          name?: string
+          source_key?: string
+          sync_status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "external_sources_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       pages: {
         Row: {
           collection_id: string | null
