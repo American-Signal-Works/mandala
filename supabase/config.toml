@@ -58,11 +58,9 @@ enabled = true
 schema_paths = []
 
 [db.seed]
-# If enabled, seeds the database after migrations during a db reset.
-enabled = true
-# Specifies an ordered list of seed files to load during db reset.
-# Supports glob patterns relative to supabase directory: "./seeds/*.sql"
-sql_paths = ["./seed.sql"]
+# TypeScript seeding is run explicitly with `pnpm seed` after migrations.
+enabled = false
+sql_paths = []
 
 [db.network_restrictions]
 # Enable management of network restrictions.
@@ -97,7 +95,7 @@ openai_api_key = "env(OPENAI_API_KEY)"
 # Email testing server. Emails sent with the local dev setup are not actually sent - rather, they
 # are monitored, and you can view the emails that would have been sent from the web interface.
 [inbucket]
-enabled = false
+enabled = true
 # Port to use for the email testing server web interface.
 port = 54324
 # Uncomment to expose additional ports for testing user applications that send emails.
@@ -156,7 +154,7 @@ enabled = true
 # in emails.
 site_url = "https://mandala.md"
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["https://mandala.md/callback", "https://www.mandala.md/callback", "https://usebackdesk.com/callback", "http://localhost:3000/callback", "http://127.0.0.1:3000", "http://127.0.0.1:3000/callback", "https://127.0.0.1:3000"]
+additional_redirect_urls = ["https://mandala.md/callback", "https://www.mandala.md/callback", "https://usebackdesk.com/callback", "http://localhost:3000/callback", "http://127.0.0.1:3000", "http://127.0.0.1:3000/callback", "http://127.0.0.1:45454/auth/callback", "https://127.0.0.1:3000"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to the local API URL (http://127.0.0.1:<port>/auth/v1).

@@ -24,13 +24,15 @@ A workspace for your data. Pages of blocks, collections, connections.
 
 ## Local development
 
-Prerequisites: Node 20+, pnpm 9+, Docker, Supabase CLI.
+Prerequisites: Node 22+, pnpm 9+, Docker, Supabase CLI.
 
 ```bash
-pnpm install
+pnpm install --frozen-lockfile
 supabase start
-pnpm db:types
+supabase db reset
 cp .env.example apps/web/.env.local   # then edit with values from `supabase status`
+pnpm seed
+pnpm db:types
 pnpm dev
 ```
 
@@ -44,6 +46,59 @@ Visit http://localhost:3000.
 - `pnpm test:e2e` — Playwright e2e (requires local Supabase running)
 - `pnpm db:migrate` — apply migrations to local Supabase
 - `pnpm db:types` — regenerate Supabase TypeScript types
+- `pnpm seed` — create the local seed user, demo company, membership, and approval policy
+- `pnpm cli:build` — compile the terminal client
+- `pnpm cli:link` — compile and link `mandala` into `~/.local/bin`
+
+## Terminal client
+
+The terminal is a thin client over the same authenticated API and persisted workflow state as the web app. After local setup and while `pnpm dev` is running:
+
+```bash
+pnpm cli:link
+mandala auth login --email seed@example.com
+```
+
+If `~/.local/bin` is not already on `PATH`, add it to your shell configuration or set `MANDALA_BIN_DIR` to another user-writable directory that is on `PATH` before running `pnpm cli:link`.
+
+Open [local Inbucket](http://127.0.0.1:54324), open the newest message for `seed@example.com`, and follow its magic link while the CLI is waiting. Then start the conversational terminal:
+
+```bash
+mandala
+```
+
+Use `/run-fixture clean_reorder` to create the first review item, `/inbox` to list work, and `/open 1` to select it. The local demo password printed by `pnpm seed` is for browser testing; the CLI uses a one-time magic link.
+
+For a shared or hosted backend, collaborators should set `MANDALA_API_URL`, `MANDALA_SUPABASE_URL`, and `MANDALA_SUPABASE_ANON_KEY` in their shell. AI Gateway, LangSmith, service-role, and parser-binding credentials remain server-only and must never be placed in the CLI environment or committed.
+
+## Conversational control parser
+
+The optional Slice 2B parser is disabled by default. Explicit CLI commands and deterministic phrases continue to work without model credentials.
+
+Set these server-only values in `apps/web/.env.local` to test conversational parsing. After setting the binding secret, run `set -a; source apps/web/.env.local; set +a; pnpm seed` once to provision the matching database trust record.
+
+```bash
+MANDALA_CONVERSATIONAL_PARSER_ENABLED=true
+MANDALA_CONTROL_PARSER_MODEL=openai/gpt-5.4-mini
+MANDALA_CONTROL_INPUT_HASH_KEY=<at-least-32-random-characters>
+MANDALA_CONTROL_BINDING_SECRET=<a-different-32-character-random-secret>
+AI_GATEWAY_API_KEY=...
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=...
+LANGSMITH_PROJECT=mandala-control-plane
+LANGSMITH_HIDE_INPUTS=true
+LANGSMITH_HIDE_OUTPUTS=true
+```
+
+`VERCEL_OIDC_TOKEN` may replace `AI_GATEWAY_API_KEY` on Vercel or after pulling Vercel environment values. Set a stable `MANDALA_CONTROL_INPUT_HASH_KEY` in hosted environments so conversational audit correlation uses a server-keyed HMAC; local development falls back to an ephemeral process key. Provision the same `MANDALA_CONTROL_BINDING_SECRET` once through the service-role-only `configure_workflow_control_parser_trust` RPC. Conversational parsing fails closed when the server secret or matching database trust record is absent. The parser requests AI Gateway zero-data-retention routing and uses LangSmith only for hidden-input/hidden-output traces and synthetic evaluations.
+
+The API enforces database-backed per-user and per-company request and concurrency limits before calling the model. Configure AI Gateway team budgets and alerts as an additional operational limit.
+
+Run the versioned synthetic evaluation before enabling the parser by default:
+
+```bash
+pnpm --filter web eval:control-parser
+```
 
 ## Codex workflow
 

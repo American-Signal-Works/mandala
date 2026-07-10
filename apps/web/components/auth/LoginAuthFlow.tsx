@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type FormEvent,
+  type ReactNode,
   type RefObject,
 } from "react"
 import Image from "next/image"
@@ -56,10 +57,22 @@ const SOCIAL_LOGIN_BUTTONS = [
 ] satisfies SocialLoginButtonConfig[]
 
 const authSurfaceClass =
-  "h-9 rounded-[10px] border-transparent bg-secondary text-secondary-foreground shadow-none hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:ring-ring/45"
+  "h-10 rounded-[10px] border-transparent bg-secondary text-secondary-foreground hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:ring-ring/45"
 
 const authPrimaryClass =
-  "auth-primary-button h-10 rounded-[10px] bg-primary text-primary-foreground shadow-none hover:bg-primary/90 hover:text-primary-foreground focus-visible:border-ring focus-visible:ring-ring/45"
+  "auth-primary-button h-10 rounded-[10px] bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground focus-visible:border-ring focus-visible:ring-ring/45"
+
+const authSecondaryButtonDepthClass =
+  "shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--foreground)_6%,transparent)] hover:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--foreground)_9%,transparent)] dark:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--foreground)_8%,transparent)] dark:hover:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--foreground)_13%,transparent)]"
+
+const authPrimaryButtonDepthClass =
+  "shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--primary-foreground)_22%,transparent),0_1px_2px_-1px_color-mix(in_srgb,var(--primary)_46%,transparent),0_8px_18px_-10px_color-mix(in_srgb,var(--primary)_78%,transparent)] hover:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--primary-foreground)_30%,transparent),0_1px_2px_-1px_color-mix(in_srgb,var(--primary)_56%,transparent),0_10px_22px_-10px_color-mix(in_srgb,var(--primary)_92%,transparent)] dark:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--primary-foreground)_22%,transparent),0_6px_18px_-14px_color-mix(in_srgb,var(--primary)_92%,transparent)] dark:hover:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--primary-foreground)_30%,transparent),0_8px_22px_-14px_color-mix(in_srgb,var(--primary)_100%,transparent)]"
+
+const authInputDepthClass =
+  "shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--foreground)_6%,transparent)] hover:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--foreground)_9%,transparent)] dark:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--foreground)_8%,transparent)] dark:hover:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--foreground)_13%,transparent)]"
+
+const authInputErrorDepthClass =
+  "shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--destructive)_52%,transparent)]"
 
 const authTextSecondaryClass = "text-muted-foreground"
 const authErrorClass = "text-destructive"
@@ -287,7 +300,7 @@ function AuthVisual() {
       <Image
         alt=""
         aria-hidden="true"
-        className="object-cover opacity-[0.03]"
+        className="object-cover opacity-[0.03] outline outline-1 -outline-offset-1 outline-black/10 dark:outline-white/10"
         fill
         priority
         src="/auth-visual-dark.jpg"
@@ -299,15 +312,63 @@ function AuthVisual() {
 function AuthIntro({ title }: { title?: string }) {
   return (
     <div className="flex w-full flex-col items-start gap-1 text-left">
-      <h1 className="text-2xl leading-none font-medium">
+      <h1 className="text-2xl leading-none font-medium text-balance">
         {title ?? "Welcome to Mandala"}
       </h1>
       {!title && (
-        <p className={cn("text-sm leading-5", authTextSecondaryClass)}>
+        <p
+          className={cn(
+            "text-sm leading-5 text-pretty",
+            authTextSecondaryClass
+          )}
+        >
           Sign in or make an account
         </p>
       )}
     </div>
+  )
+}
+
+function AuthIconTransition({
+  idleIcon,
+  isPending,
+}: {
+  idleIcon: ReactNode
+  isPending: boolean
+}) {
+  return (
+    <span
+      className="relative inline-flex size-4 shrink-0 items-center justify-center"
+      data-auth-icon-transition="true"
+      data-icon="inline-start"
+    >
+      <span
+        aria-hidden="true"
+        className={cn(
+          "absolute inset-0 flex items-center justify-center transition-[opacity,filter,scale] duration-300 ease-[cubic-bezier(0.2,0,0,1)]",
+          isPending
+            ? "scale-[0.25] opacity-0 blur-[4px]"
+            : "blur-0 scale-100 opacity-100"
+        )}
+        data-auth-icon-idle="true"
+      >
+        {idleIcon}
+      </span>
+      <span
+        className={cn(
+          "absolute inset-0 flex items-center justify-center transition-[opacity,filter,scale] duration-300 ease-[cubic-bezier(0.2,0,0,1)]",
+          isPending
+            ? "blur-0 scale-100 opacity-100"
+            : "scale-[0.25] opacity-0 blur-[4px]"
+        )}
+        data-auth-icon-pending="true"
+      >
+        <Spinner
+          aria-hidden={!isPending}
+          role={isPending ? "status" : undefined}
+        />
+      </span>
+    </span>
   )
 }
 
@@ -374,9 +435,13 @@ function EmailStep({
             </FieldLabel>
             <InputGroup
               className={cn(
-                "rounded-[10px] border-border bg-input shadow-none has-[[data-slot=input-group-control]:focus-visible]:border-ring has-[[data-slot=input-group-control]:focus-visible]:ring-ring/45",
+                "rounded-[10px] border-transparent bg-input bg-clip-padding transition-[border-color,box-shadow] duration-150 ease-out has-[[data-slot=input-group-control]:focus-visible]:border-transparent has-[[data-slot=input-group-control]:focus-visible]:ring-ring/45",
+                authInputDepthClass,
                 emailError &&
-                  "border-destructive has-[[data-slot=input-group-control]:focus-visible]:border-destructive has-[[data-slot=input-group-control]:focus-visible]:ring-0 has-[[data-slot][aria-invalid=true]]:border-destructive has-[[data-slot][aria-invalid=true]]:ring-0"
+                  cn(
+                    "border-transparent has-[[data-slot=input-group-control]:focus-visible]:border-transparent has-[[data-slot=input-group-control]:focus-visible]:ring-0 has-[[data-slot][aria-invalid=true]]:border-transparent has-[[data-slot][aria-invalid=true]]:ring-0",
+                    authInputErrorDepthClass
+                  )
               )}
               data-auth-email-input="true"
             >
@@ -411,7 +476,11 @@ function EmailStep({
           {isMagicLinkSent ? (
             <Button
               aria-disabled="true"
-              className={cn("w-full", authPrimaryClass)}
+              className={cn(
+                "w-full",
+                authPrimaryClass,
+                authPrimaryButtonDepthClass
+              )}
               data-auth-primary-action="true"
               disabled
               type="button"
@@ -431,31 +500,39 @@ function EmailStep({
             </Button>
           ) : (
             <Button
-              className={cn("w-full", authPrimaryClass)}
+              className={cn(
+                "w-full",
+                authPrimaryClass,
+                authPrimaryButtonDepthClass
+              )}
               data-auth-primary-action="true"
               disabled={isFormBusy || !!emailError}
               type="submit"
             >
-              {isSending ? (
-                <Spinner data-icon="inline-start" />
-              ) : (
-                <span
-                  aria-hidden="true"
-                  data-icon="inline-start"
-                  data-magic-link-icon="true"
-                >
-                  <HugeiconsIcon
-                    icon={Mail02Icon}
-                    size={16}
-                    strokeWidth={1.8}
-                  />
-                </span>
-              )}
+              <AuthIconTransition
+                isPending={isSending}
+                idleIcon={
+                  <span
+                    aria-hidden="true"
+                    className="flex size-4 items-center justify-center"
+                    data-magic-link-icon="true"
+                  >
+                    <HugeiconsIcon
+                      icon={Mail02Icon}
+                      size={16}
+                      strokeWidth={1.8}
+                    />
+                  </span>
+                }
+              />
               {isSending ? "Sending email" : "Send magic link"}
             </Button>
           )}
           {formMessage && (
-            <p className="text-sm leading-5 text-foreground" role="alert">
+            <p
+              className="text-sm leading-5 text-pretty text-foreground"
+              role="alert"
+            >
               {formMessage}
             </p>
           )}
@@ -480,20 +557,28 @@ function SuccessStep({
       <AuthIntro title="Sign in successful" />
       <div className="flex flex-col gap-3">
         <Button
-          className={cn("w-full", authPrimaryClass)}
+          className={cn(
+            "w-full",
+            authPrimaryClass,
+            authPrimaryButtonDepthClass
+          )}
           disabled={isSigningOut}
           onClick={onLogout}
           type="button"
         >
-          {isSigningOut ? (
-            <Spinner data-icon="inline-start" />
-          ) : (
-            <LogOut aria-hidden="true" data-icon="inline-start" size={16} />
-          )}
+          <AuthIconTransition
+            isPending={isSigningOut}
+            idleIcon={
+              <LogOut aria-hidden="true" className="size-4" size={16} />
+            }
+          />
           {isSigningOut ? "Signing out..." : "Sign out"}
         </Button>
         {formMessage && (
-          <p className="text-center text-sm text-destructive" role="alert">
+          <p
+            className="text-center text-sm text-pretty text-destructive"
+            role="alert"
+          >
             {formMessage}
           </p>
         )}
@@ -522,7 +607,11 @@ function ProviderSignInButton({
   return (
     <Button
       aria-label={label}
-      className={cn("flex-1 px-0", authSurfaceClass)}
+      className={cn(
+        "flex-1 px-0",
+        authSurfaceClass,
+        authSecondaryButtonDepthClass
+      )}
       disabled={disabled}
       onClick={() =>
         onProviderSignIn(
@@ -535,20 +624,20 @@ function ProviderSignInButton({
       type="button"
       variant="outline"
     >
-      {isPending ? (
-        <Spinner data-icon="inline-start" />
-      ) : (
-        <Image
-          alt=""
-          aria-hidden="true"
-          className="size-4"
-          data-auth-provider-icon={button.provider}
-          data-icon="inline-start"
-          height={16}
-          src={button.iconSrc}
-          width={16}
-        />
-      )}
+      <AuthIconTransition
+        isPending={isPending}
+        idleIcon={
+          <Image
+            alt=""
+            aria-hidden="true"
+            className="size-4"
+            data-auth-provider-icon={button.provider}
+            height={16}
+            src={button.iconSrc}
+            width={16}
+          />
+        }
+      />
       {isPending && <span className="sr-only">Redirecting...</span>}
     </Button>
   )
@@ -558,20 +647,20 @@ function TermsCopy() {
   return (
     <div
       className={cn(
-        "flex w-full flex-wrap items-center justify-center gap-1 px-0 text-center text-sm leading-5 sm:px-16",
+        "flex w-full flex-wrap items-center justify-center gap-1 px-0 text-center text-sm leading-5 text-pretty sm:px-16",
         authTextSecondaryClass
       )}
       data-auth-terms="true"
     >
       <a
-        className="text-foreground underline underline-offset-4 hover:text-foreground"
+        className="inline-flex min-h-10 items-center rounded-sm px-1 text-foreground underline underline-offset-4 transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/45 focus-visible:outline-none"
         href="#"
       >
         Terms
       </a>{" "}
       <span>and</span>{" "}
       <a
-        className="text-foreground underline underline-offset-4 hover:text-foreground"
+        className="inline-flex min-h-10 items-center rounded-sm px-1 text-foreground underline underline-offset-4 transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/45 focus-visible:outline-none"
         href="#"
       >
         Privacy Policy

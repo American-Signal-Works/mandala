@@ -7,3 +7,5 @@ allowBuilds:
   msgpackr-extract: true
   msw: true
   sharp: true
+overrides:
+  langsmith: 0.8.0
