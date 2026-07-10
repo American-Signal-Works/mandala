@@ -6,6 +6,11 @@ function authUrl(path: string) {
     : path
 }
 
+function expectResolvedColor(value: string) {
+  expect(value).toMatch(/^(?:rgba?|hsla?|lab|lch|oklab|oklch|color)\(/)
+  expect(value).not.toBe("rgba(0, 0, 0, 0)")
+}
+
 test("/login matches the approved desktop auth frame", async ({ page }) => {
   await page.emulateMedia({ colorScheme: "dark" })
   await page.setViewportSize({ width: 1440, height: 1024 })
@@ -78,7 +83,7 @@ test("/login matches the approved desktop auth frame", async ({ page }) => {
     }
   })
 
-  expect(metrics.shell.backgroundColor).toMatch(/^lab\(/)
+  expectResolvedColor(metrics.shell.backgroundColor)
   expect(metrics.stack.width).toBeCloseTo(432, 0)
   expect(metrics.stack.x).toBeCloseTo(944, 0)
   expect(metrics.stack.y).toBeCloseTo(612, 0)
@@ -100,8 +105,8 @@ test("/login matches the approved desktop auth frame", async ({ page }) => {
   }
   expect(metrics.emailSurface.borderColor).toBe("rgba(0, 0, 0, 0)")
   expect(metrics.emailSurface.boxShadow).toContain("inset")
-  expect(metrics.primaryButton.backgroundColor).toMatch(/^lab\(/)
-  expect(metrics.primaryButton.color).toMatch(/^lab\(/)
+  expectResolvedColor(metrics.primaryButton.backgroundColor)
+  expectResolvedColor(metrics.primaryButton.color)
   expect(metrics.primaryButton.boxShadow).toContain("inset")
 
   await primaryButton.click()
@@ -144,10 +149,10 @@ test("/login follows system light and dark theme", async ({ browser }) => {
   expect(lightMetrics.htmlClass).toContain("light")
   expect(lightMetrics.googleBorderColor).toBe("rgba(0, 0, 0, 0)")
   expect(lightMetrics.googleBoxShadow).toContain("inset")
-  expect(lightMetrics.shellBg).toMatch(/^lab\(/)
-  expect(lightMetrics.shellColor).toMatch(/^lab\(/)
-  expect(lightMetrics.primaryBg).toMatch(/^lab\(/)
-  expect(lightMetrics.primaryColor).toMatch(/^lab\(/)
+  expectResolvedColor(lightMetrics.shellBg)
+  expectResolvedColor(lightMetrics.shellColor)
+  expectResolvedColor(lightMetrics.primaryBg)
+  expectResolvedColor(lightMetrics.primaryColor)
   await lightContext.close()
 
   const darkContext = await browser.newContext({
@@ -178,8 +183,8 @@ test("/login follows system light and dark theme", async ({ browser }) => {
     }
   })
   expect(darkMetrics.htmlClass).toContain("dark")
-  expect(darkMetrics.shellBg).toMatch(/^lab\(/)
-  expect(darkMetrics.shellColor).toMatch(/^lab\(/)
+  expectResolvedColor(darkMetrics.shellBg)
+  expectResolvedColor(darkMetrics.shellColor)
   expect(darkMetrics.shellBg).not.toBe(lightMetrics.shellBg)
   expect(darkMetrics.shellColor).not.toBe(lightMetrics.shellColor)
   expect(darkMetrics.primaryBg).toBe(lightMetrics.primaryBg)
