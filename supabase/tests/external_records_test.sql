@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(12);
+SELECT plan(15);
 
 -- Fixture users/companies (mirrors agent_workflow_harness_test.sql pattern)
 INSERT INTO auth.users (
@@ -25,6 +25,7 @@ VALUES
 INSERT INTO public.external_sources (id, company_id, source_key, kind, name)
 VALUES
   ('50000000-0000-0000-0000-000000000001', '40000000-0000-0000-0000-000000000001', 'test_source', 'inventory_platform', 'Test Source A'),
+  ('50000000-0000-0000-0000-000000000003', '40000000-0000-0000-0000-000000000001', 'second_source', 'project_board', 'Second Source A'),
   ('50000000-0000-0000-0000-000000000002', '40000000-0000-0000-0000-000000000002', 'test_source', 'inventory_platform', 'Test Source B');
 
 INSERT INTO public.external_records (id, company_id, source_id, record_type, external_id, payload)
@@ -46,14 +47,23 @@ SELECT ok(
   'external_sources has RLS enabled'
 );
 
--- Dedup constraint: same (company, record_type, external_id) must fail
+-- Dedup constraint: the same identity from the same source must fail.
 SELECT throws_ok(
   $$INSERT INTO public.external_records (company_id, source_id, record_type, external_id)
     VALUES ('40000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000001', 'inventory_position', 'SKU-A@wh1')$$,
   '23505',
   NULL,
-  'duplicate external_id per company+type is rejected'
+  'duplicate external_id per source+type is rejected'
 );
+
+-- Different connector instances may use the same record type and external ID.
+SELECT lives_ok(
+  $$INSERT INTO public.external_records (company_id, source_id, record_type, external_id)
+    VALUES ('40000000-0000-0000-0000-000000000001', '50000000-0000-0000-0000-000000000003', 'inventory_position', 'SKU-A@wh1')$$,
+  'the same external identity is allowed for a different source'
+);
+DELETE FROM public.external_records
+WHERE source_id = '50000000-0000-0000-0000-000000000003';
 
 -- Composite tenant FK: a record cannot reference another company's source
 SELECT throws_ok(
@@ -94,6 +104,25 @@ SELECT throws_ok(
   '42501',
   NULL,
   'viewer cannot insert external_sources'
+);
+
+SELECT throws_ok(
+  $$SELECT config FROM public.external_sources$$,
+  '42501',
+  NULL,
+  'members cannot read connector config'
+);
+
+-- Owners/admins can manage non-sensitive source metadata.
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub', '30000000-0000-0000-0000-000000000001', true);
+SELECT set_config('request.jwt.claims', '{"sub":"30000000-0000-0000-0000-000000000001","role":"authenticated"}', true);
+SET LOCAL ROLE authenticated;
+
+SELECT lives_ok(
+  $$INSERT INTO public.external_sources (company_id, source_key, kind, name)
+    VALUES ('40000000-0000-0000-0000-000000000001', 'owner_managed', 'curated', 'Owner Managed')$$,
+  'owner can insert non-sensitive source metadata'
 );
 
 -- RLS: company B owner cannot see company A records

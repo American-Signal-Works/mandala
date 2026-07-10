@@ -1,7 +1,7 @@
 // Bootstrap import: copy business records from an existing Supabase project
 // (the DK ERP prototype database) into this stack's external_records store,
-// under a company. Idempotent — upserts on (company_id, record_type,
-// external_id); safe to re-run for refreshes until real per-source connectors
+// under a company. Idempotent — upserts on (company_id, source_id,
+// record_type, external_id); safe to re-run until real per-source connectors
 // (ShipHero GraphQL, Trello API) replace it.
 //
 // Env:
@@ -68,10 +68,11 @@ async function pullAll(table, select = "*") {
 }
 
 function dedupeRecords(rows) {
-  // Last occurrence wins per (record_type, external_id) — sources can contain
-  // the same external entity twice (e.g. re-pulled provider rows).
+  // Last occurrence wins per source and external identity. Different connector
+  // instances may legitimately use the same record type and external ID.
   const map = new Map();
-  for (const r of rows) map.set(`${r.record_type} ${r.external_id}`, r);
+  for (const r of rows)
+    map.set(`${r.source_id} ${r.record_type} ${r.external_id}`, r);
   const out = [...map.values()];
   if (out.length !== rows.length)
     console.log(`  deduped ${rows.length - out.length} duplicate external ids`);
@@ -200,7 +201,7 @@ async function run() {
         source_row_id: v.id,
       })
     ),
-    "company_id,record_type,external_id"
+    "company_id,source_id,record_type,external_id"
   );
 
   console.log("== purchase orders (+lines nested) ==");
@@ -235,7 +236,7 @@ async function run() {
         source_row_id: p.id,
       })
     ),
-    "company_id,record_type,external_id"
+    "company_id,source_id,record_type,external_id"
   );
 
   console.log("== inventory positions ==");
@@ -264,7 +265,7 @@ async function run() {
         i.pulled_at
       )
     ),
-    "company_id,record_type,external_id"
+    "company_id,source_id,record_type,external_id"
   );
 
   console.log("== sales orders (+lines nested) ==");
@@ -294,7 +295,7 @@ async function run() {
         source_row_id: s.id,
       })
     ),
-    "company_id,record_type,external_id"
+    "company_id,source_id,record_type,external_id"
   );
 
   console.log("== product-vendor assignments ==");
@@ -310,7 +311,7 @@ async function run() {
         vendor_cost: pv.vendor_cost,
       })
     ),
-    "company_id,record_type,external_id"
+    "company_id,source_id,record_type,external_id"
   );
 
   console.log("== sku-vendor map ==");
@@ -327,7 +328,7 @@ async function run() {
         confirmed: m.confirmed,
       })
     ),
-    "company_id,record_type,external_id"
+    "company_id,source_id,record_type,external_id"
   );
 
   console.log("== vendor aliases ==");
@@ -340,7 +341,7 @@ async function run() {
         canonical: a.canonical,
       })
     ),
-    "company_id,record_type,external_id"
+    "company_id,source_id,record_type,external_id"
   );
 
   console.log("== board cards (procurement board history) ==");
@@ -371,7 +372,7 @@ async function run() {
         last_activity: c.last_activity,
       })
     ),
-    "company_id,record_type,external_id"
+    "company_id,source_id,record_type,external_id"
   );
 
   // Mark sources synced.

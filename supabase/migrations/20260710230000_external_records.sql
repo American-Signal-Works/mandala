@@ -42,7 +42,7 @@ CREATE TABLE external_records (
   pulled_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
-  UNIQUE (company_id, record_type, external_id),
+  UNIQUE (company_id, source_id, record_type, external_id),
   UNIQUE (id, company_id),
   FOREIGN KEY (source_id, company_id)
     REFERENCES external_sources (id, company_id) ON DELETE CASCADE
@@ -100,12 +100,41 @@ CREATE POLICY external_record_links_member_select ON external_record_links
 
 -- Writes: connector/sync jobs run server-side with the service role; end
 -- users do not write external records directly. Admins may manage sources.
-CREATE POLICY external_sources_admin_write ON external_sources
-  FOR ALL TO authenticated
+CREATE POLICY external_sources_admin_insert ON external_sources
+  FOR INSERT TO authenticated
+  WITH CHECK (public.has_company_role(company_id, 'admin'));
+
+CREATE POLICY external_sources_admin_update ON external_sources
+  FOR UPDATE TO authenticated
   USING (public.has_company_role(company_id, 'admin'))
   WITH CHECK (public.has_company_role(company_id, 'admin'));
 
-GRANT SELECT ON external_sources, external_records, external_record_links
-  TO authenticated;
+CREATE POLICY external_sources_admin_delete ON external_sources
+  FOR DELETE TO authenticated
+  USING (public.has_company_role(company_id, 'admin'));
+
+-- Members may inspect source identity and freshness, but connector config and
+-- raw sync errors stay service-only because they may contain sensitive data.
+REVOKE ALL ON external_sources, external_records, external_record_links
+  FROM anon, authenticated;
+
+GRANT SELECT (
+  id,
+  company_id,
+  source_key,
+  kind,
+  name,
+  sync_status,
+  last_synced_at,
+  created_at,
+  updated_at
+) ON external_sources TO authenticated;
+GRANT INSERT (company_id, source_key, kind, name)
+  ON external_sources TO authenticated;
+GRANT UPDATE (source_key, kind, name)
+  ON external_sources TO authenticated;
+GRANT DELETE ON external_sources TO authenticated;
+
+GRANT SELECT ON external_records, external_record_links TO authenticated;
 GRANT ALL ON external_sources, external_records, external_record_links
   TO service_role;
