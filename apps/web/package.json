@@ -10,6 +10,7 @@
     "start": "next start",
     "lint": "eslint",
     "format": "prettier --write \"**/*.{ts,tsx}\"",
+    "pretypecheck": "pnpm --dir ../.. --filter @workspace/control-plane build",
     "typecheck": "tsc --noEmit",
     "test": "vitest run"
   },
