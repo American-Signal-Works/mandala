@@ -11,10 +11,13 @@
     "db:types": "supabase gen types typescript --local > apps/web/lib/supabase/types.ts",
     "test": "turbo test",
     "test:e2e": "pnpm --filter web exec playwright test",
+    "cli:build": "pnpm --filter @workspace/control-plane build && pnpm --filter @workspace/cli build",
+    "cli:link": "pnpm run cli:build && tsx scripts/link-mandala-cli.ts",
     "seed": "SUPABASE_SERVICE_ROLE_KEY=$(supabase status -o json | jq -r .SERVICE_ROLE_KEY) tsx seed/seed.ts",
     "seed:reset": "SUPABASE_SERVICE_ROLE_KEY=$(supabase status -o json | jq -r .SERVICE_ROLE_KEY) tsx seed/seed.ts --reset"
   },
   "devDependencies": {
+    "@supabase/supabase-js": "^2.105.1",
     "@workspace/eslint-config": "workspace:*",
     "@workspace/typescript-config": "workspace:*",
     "prettier": "^3.8.1",
@@ -29,9 +32,12 @@
       "esbuild",
       "sharp",
       "msw"
-    ]
+    ],
+    "overrides": {
+      "ws": "8.21.0"
+    }
   },
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   }
 }
