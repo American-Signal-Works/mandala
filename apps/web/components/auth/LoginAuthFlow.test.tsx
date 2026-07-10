@@ -64,7 +64,8 @@ describe("LoginAuthFlow", () => {
     expect(source).toContain("bg-primary")
     expect(source).toContain("bg-secondary")
     expect(source).toContain("text-muted-foreground")
-    expect(source).toContain("border-destructive")
+    expect(source).toContain("text-destructive")
+    expect(source).toContain("var(--destructive)")
   })
 
   it("renders a theme-aware auth stack with Mandala tokens", () => {
@@ -144,7 +145,30 @@ describe("LoginAuthFlow", () => {
     ).toBeInTheDocument()
     expect(
       container.querySelector('[data-auth-email-input="true"]')
-    ).toHaveClass("rounded-[10px]", "border-border", "bg-input")
+    ).toHaveClass(
+      "rounded-[10px]",
+      "border-transparent",
+      "bg-input",
+      "bg-clip-padding"
+    )
+    expect(
+      container.querySelector('[data-auth-email-input="true"]')
+    ).not.toHaveClass("shadow-none")
+    expect(
+      container.querySelector('[data-auth-email-input="true"]')?.className
+    ).toContain(
+      "shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--foreground)_6%"
+    )
+    expect(
+      container.querySelector('[data-auth-email-input="true"]')?.className
+    ).toContain(
+      "hover:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--foreground)_9%"
+    )
+    expect(
+      container.querySelector('[data-auth-email-input="true"]')?.className
+    ).toContain(
+      "dark:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--foreground)_8%"
+    )
     expect(emailInput).toHaveAttribute("type", "email")
     expect(emailInput).toHaveAttribute("placeholder", "user@example.com")
     expect(emailInput).toHaveAccessibleDescription("A link will be sent to you")
@@ -195,6 +219,15 @@ describe("LoginAuthFlow", () => {
     )
     expect(googleButton).toHaveAttribute("title", "Sign in with Google")
     expect(microsoftButton).toHaveAttribute("title", "Sign in with Microsoft")
+    expect(googleButton.className).toContain(
+      "shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--foreground)_6%"
+    )
+    expect(googleButton.className).toContain(
+      "hover:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--foreground)_9%"
+    )
+    expect(googleButton.className).toContain(
+      "dark:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--foreground)_8%"
+    )
     expect(
       googleButton.querySelector('[data-auth-provider-icon="google"]')
     ).toHaveClass("size-4")
@@ -284,6 +317,15 @@ describe("LoginAuthFlow", () => {
       "bg-primary",
       "text-primary-foreground"
     )
+    expect(magicLinkButton.className).toContain(
+      "shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--primary-foreground)_22%"
+    )
+    expect(magicLinkButton.className).toContain(
+      "hover:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--primary-foreground)_30%"
+    )
+    expect(magicLinkButton.className).toContain(
+      "dark:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--primary-foreground)_22%"
+    )
 
     fireEvent.click(magicLinkButton)
 
@@ -297,7 +339,13 @@ describe("LoginAuthFlow", () => {
     ).toHaveFocus()
     expect(
       container.querySelector('[data-auth-email-input="true"]')
-    ).toHaveClass("border-destructive")
+    ).toHaveClass("border-transparent")
+    expect(
+      container.querySelector('[data-auth-email-input="true"]')
+    ).not.toHaveClass("border-destructive")
+    expect(
+      container.querySelector('[data-auth-email-input="true"]')?.className
+    ).toContain("color-mix(in_srgb,var(--destructive)_52%")
     expect(magicLinkButton).toBeDisabled()
     expect(requestEmailMagicLinkMock).not.toHaveBeenCalled()
   })
@@ -319,7 +367,13 @@ describe("LoginAuthFlow", () => {
     )
     expect(
       container.querySelector('[data-auth-email-input="true"]')
-    ).toHaveClass("border-destructive")
+    ).toHaveClass("border-transparent")
+    expect(
+      container.querySelector('[data-auth-email-input="true"]')
+    ).not.toHaveClass("border-destructive")
+    expect(
+      container.querySelector('[data-auth-email-input="true"]')?.className
+    ).toContain("color-mix(in_srgb,var(--destructive)_52%")
     expect(
       screen.getByRole("button", { name: "Send magic link" })
     ).toBeDisabled()

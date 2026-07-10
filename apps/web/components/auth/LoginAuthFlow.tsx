@@ -57,10 +57,22 @@ const SOCIAL_LOGIN_BUTTONS = [
 ] satisfies SocialLoginButtonConfig[]
 
 const authSurfaceClass =
-  "h-10 rounded-[10px] border-transparent bg-secondary text-secondary-foreground shadow-none hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:ring-ring/45"
+  "h-10 rounded-[10px] border-transparent bg-secondary text-secondary-foreground hover:bg-accent hover:text-accent-foreground focus-visible:border-ring focus-visible:ring-ring/45"
 
 const authPrimaryClass =
-  "auth-primary-button h-10 rounded-[10px] bg-primary text-primary-foreground shadow-none hover:bg-primary/90 hover:text-primary-foreground focus-visible:border-ring focus-visible:ring-ring/45"
+  "auth-primary-button h-10 rounded-[10px] bg-primary text-primary-foreground hover:bg-primary/90 hover:text-primary-foreground focus-visible:border-ring focus-visible:ring-ring/45"
+
+const authSecondaryButtonDepthClass =
+  "shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--foreground)_6%,transparent)] hover:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--foreground)_9%,transparent)] dark:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--foreground)_8%,transparent)] dark:hover:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--foreground)_13%,transparent)]"
+
+const authPrimaryButtonDepthClass =
+  "shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--primary-foreground)_22%,transparent),0_1px_2px_-1px_color-mix(in_srgb,var(--primary)_46%,transparent),0_8px_18px_-10px_color-mix(in_srgb,var(--primary)_78%,transparent)] hover:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--primary-foreground)_30%,transparent),0_1px_2px_-1px_color-mix(in_srgb,var(--primary)_56%,transparent),0_10px_22px_-10px_color-mix(in_srgb,var(--primary)_92%,transparent)] dark:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--primary-foreground)_22%,transparent),0_6px_18px_-14px_color-mix(in_srgb,var(--primary)_92%,transparent)] dark:hover:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--primary-foreground)_30%,transparent),0_8px_22px_-14px_color-mix(in_srgb,var(--primary)_100%,transparent)]"
+
+const authInputDepthClass =
+  "shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--foreground)_6%,transparent)] hover:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--foreground)_9%,transparent)] dark:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--foreground)_8%,transparent)] dark:hover:shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--foreground)_13%,transparent)]"
+
+const authInputErrorDepthClass =
+  "shadow-[inset_0_0_0_1px_color-mix(in_srgb,var(--destructive)_52%,transparent)]"
 
 const authTextSecondaryClass = "text-muted-foreground"
 const authErrorClass = "text-destructive"
@@ -423,9 +435,13 @@ function EmailStep({
             </FieldLabel>
             <InputGroup
               className={cn(
-                "rounded-[10px] border-border bg-input shadow-none transition-[border-color,box-shadow] duration-150 ease-out has-[[data-slot=input-group-control]:focus-visible]:border-ring has-[[data-slot=input-group-control]:focus-visible]:ring-ring/45",
+                "rounded-[10px] border-transparent bg-input bg-clip-padding transition-[border-color,box-shadow] duration-150 ease-out has-[[data-slot=input-group-control]:focus-visible]:border-transparent has-[[data-slot=input-group-control]:focus-visible]:ring-ring/45",
+                authInputDepthClass,
                 emailError &&
-                  "border-destructive has-[[data-slot=input-group-control]:focus-visible]:border-destructive has-[[data-slot=input-group-control]:focus-visible]:ring-0 has-[[data-slot][aria-invalid=true]]:border-destructive has-[[data-slot][aria-invalid=true]]:ring-0"
+                  cn(
+                    "border-transparent has-[[data-slot=input-group-control]:focus-visible]:border-transparent has-[[data-slot=input-group-control]:focus-visible]:ring-0 has-[[data-slot][aria-invalid=true]]:border-transparent has-[[data-slot][aria-invalid=true]]:ring-0",
+                    authInputErrorDepthClass
+                  )
               )}
               data-auth-email-input="true"
             >
@@ -460,7 +476,11 @@ function EmailStep({
           {isMagicLinkSent ? (
             <Button
               aria-disabled="true"
-              className={cn("w-full", authPrimaryClass)}
+              className={cn(
+                "w-full",
+                authPrimaryClass,
+                authPrimaryButtonDepthClass
+              )}
               data-auth-primary-action="true"
               disabled
               type="button"
@@ -480,7 +500,11 @@ function EmailStep({
             </Button>
           ) : (
             <Button
-              className={cn("w-full", authPrimaryClass)}
+              className={cn(
+                "w-full",
+                authPrimaryClass,
+                authPrimaryButtonDepthClass
+              )}
               data-auth-primary-action="true"
               disabled={isFormBusy || !!emailError}
               type="submit"
@@ -533,7 +557,11 @@ function SuccessStep({
       <AuthIntro title="Sign in successful" />
       <div className="flex flex-col gap-3">
         <Button
-          className={cn("w-full", authPrimaryClass)}
+          className={cn(
+            "w-full",
+            authPrimaryClass,
+            authPrimaryButtonDepthClass
+          )}
           disabled={isSigningOut}
           onClick={onLogout}
           type="button"
@@ -579,7 +607,11 @@ function ProviderSignInButton({
   return (
     <Button
       aria-label={label}
-      className={cn("flex-1 px-0", authSurfaceClass)}
+      className={cn(
+        "flex-1 px-0",
+        authSurfaceClass,
+        authSecondaryButtonDepthClass
+      )}
       disabled={disabled}
       onClick={() =>
         onProviderSignIn(
