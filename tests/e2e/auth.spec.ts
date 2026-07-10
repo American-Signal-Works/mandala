@@ -18,12 +18,15 @@ test("/login matches the approved desktop auth frame", async ({ page }) => {
   const microsoftButton = page.getByRole("button", {
     name: "Sign in with Microsoft",
   })
-  const emailInput = page.getByLabel("Or continue with email")
+  const emailInput = page.getByLabel("Continue with email")
   const emailSurface = page.locator('[data-auth-email-input="true"]')
-  const primaryButton = page.getByRole("button", { name: "Send Magic Link" })
+  const primaryButton = page.getByRole("button", { name: "Send magic link" })
 
-  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible()
-  await expect(page.getByText("Don't have an account? Sign up")).toBeVisible()
+  await expect(
+    page.getByRole("heading", { name: "Welcome to Mandala" })
+  ).toBeVisible()
+  await expect(page.getByText("Sign in or make an account")).toBeVisible()
+  await expect(page.getByRole("link", { name: "Sign up" })).toHaveCount(0)
   await expect(googleButton).toBeEnabled()
   await expect(microsoftButton).toBeEnabled()
   await expect(
@@ -38,9 +41,8 @@ test("/login matches the approved desktop auth frame", async ({ page }) => {
   await expect(
     primaryButton.locator('[data-magic-link-icon="true"]')
   ).toBeVisible()
-  await expect(page.locator('[data-auth-terms="true"]')).toHaveText(
-    "By signing in you agree to our terms and privacy policy"
-  )
+  await expect(page.getByRole("link", { name: "Terms" })).toBeVisible()
+  await expect(page.getByRole("link", { name: "Privacy Policy" })).toBeVisible()
 
   const metrics = await page.evaluate(() => {
     const readBox = (selector: string) => {
@@ -57,6 +59,7 @@ test("/login matches the approved desktop auth frame", async ({ page }) => {
         backgroundColor: styles.backgroundColor,
         borderColor: styles.borderColor,
         borderRadius: styles.borderRadius,
+        boxShadow: styles.boxShadow,
         color: styles.color,
         height: box.height,
         width: box.width,
@@ -75,35 +78,36 @@ test("/login matches the approved desktop auth frame", async ({ page }) => {
     }
   })
 
-  expect(metrics.shell.backgroundColor).toBe("rgb(17, 17, 17)")
-  expect(metrics.stack.width).toBeCloseTo(384, 0)
-  expect(metrics.stack.x).toBeCloseTo(528, 0)
-  expect(metrics.stack.y).toBeCloseTo(336, 0)
-  expect(metrics.googleButton.y).toBeCloseTo(468, 0)
-  expect(metrics.microsoftButton.y).toBeCloseTo(516, 0)
-  expect(metrics.emailSurface.y).toBeCloseTo(608, 0)
-  expect(metrics.primaryButton.y).toBeCloseTo(656, 0)
-  for (const control of [
-    metrics.googleButton,
-    metrics.microsoftButton,
-    metrics.emailSurface,
-    metrics.primaryButton,
-  ]) {
-    expect(control.width).toBeCloseTo(384, 0)
+  expect(metrics.shell.backgroundColor).toMatch(/^lab\(/)
+  expect(metrics.stack.width).toBeCloseTo(432, 0)
+  expect(metrics.stack.x).toBeCloseTo(944, 0)
+  expect(metrics.stack.y).toBeCloseTo(612, 0)
+  expect(metrics.googleButton.y).toBeCloseTo(684, 0)
+  expect(metrics.microsoftButton.y).toBeCloseTo(684, 0)
+  expect(metrics.emailSurface.y).toBeCloseTo(776, 0)
+  expect(metrics.primaryButton.y).toBeCloseTo(824, 0)
+  for (const control of [metrics.emailSurface, metrics.primaryButton]) {
+    expect(control.width).toBeCloseTo(432, 0)
     expect(control.height).toBeCloseTo(40, 0)
     expect(control.borderRadius).toBe("10px")
   }
-  expect(metrics.googleButton.backgroundColor).toBe("rgb(24, 25, 26)")
-  expect(metrics.microsoftButton.backgroundColor).toBe("rgb(24, 25, 26)")
-  expect(metrics.emailSurface.backgroundColor).toBe("rgb(24, 25, 26)")
-  expect(metrics.emailSurface.borderColor).toBe("rgb(59, 61, 63)")
-  expect(metrics.primaryButton.backgroundColor).toBe("rgb(65, 130, 255)")
-  expect(metrics.primaryButton.color).toBe("rgb(255, 255, 255)")
+  for (const provider of [metrics.googleButton, metrics.microsoftButton]) {
+    expect(provider.width).toBeCloseTo(212, 0)
+    expect(provider.height).toBeCloseTo(40, 0)
+    expect(provider.borderRadius).toBe("10px")
+    expect(provider.borderColor).toBe("rgba(0, 0, 0, 0)")
+    expect(provider.boxShadow).toContain("inset")
+  }
+  expect(metrics.emailSurface.borderColor).toBe("rgba(0, 0, 0, 0)")
+  expect(metrics.emailSurface.boxShadow).toContain("inset")
+  expect(metrics.primaryButton.backgroundColor).toMatch(/^lab\(/)
+  expect(metrics.primaryButton.color).toMatch(/^lab\(/)
+  expect(metrics.primaryButton.boxShadow).toContain("inset")
 
   await primaryButton.click()
   await expect(page.getByText("Enter your email address.")).not.toBeVisible()
   const invalidStack = await stack.boundingBox()
-  expect(invalidStack?.width).toBeCloseTo(384, 0)
+  expect(invalidStack?.width).toBeCloseTo(432, 0)
 })
 
 test("/login follows system light and dark theme", async ({ browser }) => {
@@ -115,7 +119,7 @@ test("/login follows system light and dark theme", async ({ browser }) => {
   const lightPage = await lightContext.newPage()
   await lightPage.goto(authUrl("/login"))
   await expect(
-    lightPage.getByRole("heading", { name: "Sign in" })
+    lightPage.getByRole("heading", { name: "Welcome to Mandala" })
   ).toBeVisible()
 
   const lightMetrics = await lightPage.evaluate(() => {
@@ -130,6 +134,7 @@ test("/login follows system light and dark theme", async ({ browser }) => {
     return {
       htmlClass: document.documentElement.className,
       googleBorderColor: getComputedStyle(google).borderColor,
+      googleBoxShadow: getComputedStyle(google).boxShadow,
       shellBg: getComputedStyle(shell).backgroundColor,
       shellColor: getComputedStyle(shell).color,
       primaryBg: getComputedStyle(primary).backgroundColor,
@@ -138,10 +143,11 @@ test("/login follows system light and dark theme", async ({ browser }) => {
   })
   expect(lightMetrics.htmlClass).toContain("light")
   expect(lightMetrics.googleBorderColor).toBe("rgba(0, 0, 0, 0)")
-  expect(lightMetrics.shellBg).toBe("rgb(245, 243, 238)")
-  expect(lightMetrics.shellColor).toBe("rgb(27, 27, 25)")
-  expect(lightMetrics.primaryBg).toBe("rgb(65, 130, 255)")
-  expect(lightMetrics.primaryColor).toBe("rgb(255, 255, 255)")
+  expect(lightMetrics.googleBoxShadow).toContain("inset")
+  expect(lightMetrics.shellBg).toMatch(/^lab\(/)
+  expect(lightMetrics.shellColor).toMatch(/^lab\(/)
+  expect(lightMetrics.primaryBg).toMatch(/^lab\(/)
+  expect(lightMetrics.primaryColor).toMatch(/^lab\(/)
   await lightContext.close()
 
   const darkContext = await browser.newContext({
@@ -151,7 +157,9 @@ test("/login follows system light and dark theme", async ({ browser }) => {
   })
   const darkPage = await darkContext.newPage()
   await darkPage.goto(authUrl("/login"))
-  await expect(darkPage.getByRole("heading", { name: "Sign in" })).toBeVisible()
+  await expect(
+    darkPage.getByRole("heading", { name: "Welcome to Mandala" })
+  ).toBeVisible()
 
   const darkMetrics = await darkPage.evaluate(() => {
     const shell = document.querySelector('[data-auth-shell="true"]')
@@ -170,43 +178,42 @@ test("/login follows system light and dark theme", async ({ browser }) => {
     }
   })
   expect(darkMetrics.htmlClass).toContain("dark")
-  expect(darkMetrics.shellBg).toBe("rgb(17, 17, 17)")
-  expect(darkMetrics.shellColor).toBe("rgb(240, 236, 230)")
-  expect(darkMetrics.primaryBg).toBe("rgb(65, 130, 255)")
-  expect(darkMetrics.primaryColor).toBe("rgb(255, 255, 255)")
+  expect(darkMetrics.shellBg).toMatch(/^lab\(/)
+  expect(darkMetrics.shellColor).toMatch(/^lab\(/)
+  expect(darkMetrics.shellBg).not.toBe(lightMetrics.shellBg)
+  expect(darkMetrics.shellColor).not.toBe(lightMetrics.shellColor)
+  expect(darkMetrics.primaryBg).toBe(lightMetrics.primaryBg)
+  expect(darkMetrics.primaryColor).toBe(lightMetrics.primaryColor)
   await darkContext.close()
 })
 
-test("/sign-up matches the approved desktop sign-up frame", async ({
-  page,
-}) => {
+test("/sign-up matches the approved unified auth frame", async ({ page }) => {
   await page.setViewportSize({ width: 1440, height: 1024 })
-  await page.goto(authUrl("/login"))
-  await page.getByRole("link", { name: "Sign up" }).click()
+  await page.goto(authUrl("/sign-up"))
 
   await expect(page).toHaveURL(/\/sign-up$/)
-  await expect(page.getByRole("heading", { name: "Sign up" })).toBeVisible()
-  await expect(page.getByText("Already have an account? Sign in")).toBeVisible()
   await expect(
-    page.getByRole("button", { name: "Sign up with Google" })
+    page.getByRole("heading", { name: "Welcome to Mandala" })
+  ).toBeVisible()
+  await expect(page.getByText("Sign in or make an account")).toBeVisible()
+  await expect(page.getByRole("link", { name: "Sign in" })).toHaveCount(0)
+  await expect(page.getByRole("link", { name: "Sign up" })).toHaveCount(0)
+  await expect(
+    page.getByRole("button", { name: "Sign in with Google" })
   ).toBeEnabled()
   await expect(
-    page.getByRole("button", { name: "Sign up with Microsoft" })
+    page.getByRole("button", { name: "Sign in with Microsoft" })
   ).toBeEnabled()
-  await expect(page.locator('[data-auth-terms="true"]')).toHaveText(
-    "By signing up you agree to our terms and privacy policy"
-  )
+  await expect(page.getByRole("link", { name: "Terms" })).toBeVisible()
+  await expect(page.getByRole("link", { name: "Privacy Policy" })).toBeVisible()
 
   const stackBox = await page.locator('[data-auth-stack="true"]').boundingBox()
-  expect(stackBox?.width).toBeCloseTo(384, 0)
-  expect(stackBox?.x).toBeCloseTo(528, 0)
-  expect(stackBox?.y).toBeCloseTo(336, 0)
-
-  await page.getByRole("link", { name: "Sign in" }).click()
-  await expect(page).toHaveURL(/\/login$/)
+  expect(stackBox?.width).toBeCloseTo(432, 0)
+  expect(stackBox?.x).toBeCloseTo(944, 0)
+  expect(stackBox?.y).toBeCloseTo(612, 0)
 })
 
-test("/login keeps callback success on the 384px auth stack", async ({
+test("/login keeps callback success on the 432px auth stack", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 1024 })
@@ -219,12 +226,12 @@ test("/login keeps callback success on the 384px auth stack", async ({
   ).toBeVisible()
   await expect(stack).toHaveAttribute("data-auth-step", "success")
   const stackBox = await stack.boundingBox()
-  expect(stackBox?.width).toBeCloseTo(384, 0)
-  expect(stackBox?.x).toBeCloseTo(528, 0)
-  expect(stackBox?.y).toBeCloseTo(470, 0)
+  expect(stackBox?.width).toBeCloseTo(432, 0)
+  expect(stackBox?.x).toBeCloseTo(944, 0)
+  expect(stackBox?.y).toBeCloseTo(840, 0)
 })
 
-test("/login keeps magic-link sent on the 384px auth stack", async ({
+test("/login keeps magic-link sent on the 432px auth stack", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 1024 })
@@ -240,24 +247,26 @@ test("/login keeps magic-link sent on the 384px auth stack", async ({
 
   const stack = page.locator('[data-auth-stack="true"]')
 
-  await page.getByLabel("Or continue with email").fill("person@example.com")
-  await page.getByRole("button", { name: "Send Magic Link" }).click()
+  await page.getByLabel("Continue with email").fill("person@example.com")
+  await page.getByRole("button", { name: "Send magic link" }).click()
 
-  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible()
   await expect(
-    page.getByRole("button", { name: "Magic Link Sent" })
+    page.getByRole("heading", { name: "Welcome to Mandala" })
+  ).toBeVisible()
+  await expect(
+    page.getByRole("button", { name: "Check your email" })
   ).toHaveAttribute("aria-disabled", "true")
   await expect(
-    page.getByRole("button", { name: "Magic Link Sent" })
+    page.getByRole("button", { name: "Check your email" })
   ).toBeDisabled()
   await expect(
     page.getByText("Didn't receive email?", { exact: false })
   ).toHaveCount(0)
   await expect(stack).toHaveAttribute("data-auth-step", "link")
   const stackBox = await stack.boundingBox()
-  expect(stackBox?.width).toBeCloseTo(384, 0)
-  expect(stackBox?.x).toBeCloseTo(528, 0)
-  expect(stackBox?.y).toBeCloseTo(336, 0)
+  expect(stackBox?.width).toBeCloseTo(432, 0)
+  expect(stackBox?.x).toBeCloseTo(944, 0)
+  expect(stackBox?.y).toBeCloseTo(612, 0)
 })
 
 test("/login renders auth controls without overlap on mobile", async ({
@@ -268,16 +277,18 @@ test("/login renders auth controls without overlap on mobile", async ({
 
   const stack = page.locator('[data-auth-stack="true"]')
 
-  await expect(page.getByRole("heading", { name: "Sign in" })).toBeVisible()
+  await expect(
+    page.getByRole("heading", { name: "Welcome to Mandala" })
+  ).toBeVisible()
   await expect(
     page.getByRole("button", { name: "Sign in with Google" })
   ).toBeVisible()
   await expect(
     page.getByRole("button", { name: "Sign in with Microsoft" })
   ).toBeVisible()
-  await expect(page.getByLabel("Or continue with email")).toBeVisible()
+  await expect(page.getByLabel("Continue with email")).toBeVisible()
   await expect(
-    page.getByRole("button", { name: "Send Magic Link" })
+    page.getByRole("button", { name: "Send magic link" })
   ).toBeVisible()
 
   const stackBox = await stack.boundingBox()
