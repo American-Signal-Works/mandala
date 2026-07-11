@@ -138,17 +138,13 @@ async function seedMandalaDemo(
     process.exit(1)
   }
 
-  const { error: membershipError } = await admin
-    .from("company_memberships")
-    .upsert(
-      {
-        company_id: DEMO_COMPANY_ID,
-        user_id: userId,
-        role: "owner",
-        status: "active",
-      },
-      { onConflict: "company_id,user_id" }
-    )
+  const { error: membershipError } = await admin.rpc(
+    "bootstrap_company_owner",
+    {
+      p_company_id: DEMO_COMPANY_ID,
+      p_owner_user_id: userId,
+    }
+  )
   if (membershipError) {
     console.error(
       `Failed to seed demo company membership: ${membershipError.message}`

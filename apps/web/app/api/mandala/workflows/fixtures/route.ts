@@ -6,6 +6,10 @@ import {
 } from "@workspace/control-plane"
 import { z } from "zod"
 import { authenticateRequest } from "@/lib/supabase/request"
+import {
+  authorizeCompanyPermission,
+  companyPermissionFailure,
+} from "@/lib/mandala/authorization"
 import { deriveControlInputHash } from "@/lib/mandala/control-plane/input-hash"
 import {
   WorkflowMemoryStore,
@@ -13,7 +17,6 @@ import {
   classifyWorkflowRpcError,
   generateSyntheticCommerceDataset,
   persistFixtureRun,
-  getCompanyMembership,
   runProcurementFixtureScenario,
   runSyntheticProcurementAgentScenario,
   runSyntheticProcurementTestAgent,
@@ -51,22 +54,22 @@ export async function POST(request: Request) {
     )
   }
 
-  let membership
-  try {
-    membership = await getCompanyMembership({
+  const permissionFailure = companyPermissionFailure(
+    await authorizeCompanyPermission({
       supabase,
       companyId: parsed.data.companyId,
       userId: user.id,
+      permission: "workflow.fixture.run",
     })
-  } catch {
+  )
+  if (permissionFailure) {
     return NextResponse.json(
-      { error: "membership_lookup_failed" },
-      { status: 500 }
+      { error: permissionFailure.code },
+      {
+        status: permissionFailure.status,
+        headers: { "cache-control": "private, no-store" },
+      }
     )
-  }
-
-  if (!membership || !canRunFixture(membership.role)) {
-    return NextResponse.json({ error: "forbidden" }, { status: 403 })
   }
 
   const store = new WorkflowMemoryStore()
@@ -170,11 +173,6 @@ async function parseJson(request: Request): Promise<unknown> {
     return null
   }
 }
-
-function canRunFixture(role: string): boolean {
-  return role === "owner" || role === "admin"
-}
-
 function projectAgentRun(
   agent: Awaited<ReturnType<typeof runSyntheticProcurementTestAgent>>
 ) {

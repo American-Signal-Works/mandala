@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
+import { authorizeCompanyPermission } from "@/lib/mandala/authorization"
 import { parseConversationalControlInput } from "@/lib/mandala/control-plane/conversational-parser"
 import {
   acquireWorkflowControlParserLeaseRpc,
   classifyWorkflowRpcError,
-  getCompanyMembership,
   recordWorkflowControlRequestRpc,
   recordWorkflowControlRequestWithBindingRpc,
   releaseWorkflowControlParserLeaseRpc,
@@ -14,6 +14,11 @@ import { authenticateRequest } from "@/lib/supabase/request"
 import { POST } from "./route"
 
 vi.mock("@/lib/supabase/request", () => ({ authenticateRequest: vi.fn() }))
+vi.mock("@/lib/mandala/authorization", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("@/lib/mandala/authorization")>()
+  return { ...original, authorizeCompanyPermission: vi.fn() }
+})
 vi.mock("@/lib/mandala/workflows", async (importOriginal) => {
   const original =
     await importOriginal<typeof import("@/lib/mandala/workflows")>()
@@ -21,7 +26,6 @@ vi.mock("@/lib/mandala/workflows", async (importOriginal) => {
     ...original,
     acquireWorkflowControlParserLeaseRpc: vi.fn(),
     classifyWorkflowRpcError: vi.fn(),
-    getCompanyMembership: vi.fn(),
     recordWorkflowControlRequestRpc: vi.fn(),
     recordWorkflowControlRequestWithBindingRpc: vi.fn(),
     releaseWorkflowControlParserLeaseRpc: vi.fn(),
@@ -52,7 +56,12 @@ describe("conversational control parse route", () => {
     vi.clearAllMocks()
     process.env.MANDALA_CONTROL_BINDING_SECRET = bindingSecret
     vi.mocked(authenticateRequest).mockResolvedValue(auth as never)
-    vi.mocked(getCompanyMembership).mockResolvedValue({ role: "owner" })
+    vi.mocked(authorizeCompanyPermission).mockResolvedValue({
+      effect: "allow",
+      reason: "role_permission_granted",
+      role: "owner",
+      permission: "workflow.read",
+    })
     vi.mocked(recordWorkflowControlRequestRpc).mockResolvedValue({
       id: controlRequestId,
     } as never)
@@ -66,7 +75,7 @@ describe("conversational control parse route", () => {
     vi.mocked(releaseWorkflowControlParserLeaseRpc).mockResolvedValue(undefined)
   })
 
-  it("verifies membership, records a normalized trace link, and omits raw input", async () => {
+  it("authorizes workflow reads, records a normalized trace link, and omits raw input", async () => {
     const phrase = `Please approve ${itemId}`
     vi.mocked(parseConversationalControlInput).mockResolvedValue({
       parserKind: "langchain",
@@ -98,10 +107,11 @@ describe("conversational control parse route", () => {
       trace: { traceId, runId: traceId },
       outcome: { status: "resolved" },
     })
-    expect(getCompanyMembership).toHaveBeenCalledWith({
+    expect(authorizeCompanyPermission).toHaveBeenCalledWith({
       supabase: auth.supabase,
       companyId,
       userId: auth.user.id,
+      permission: "workflow.read",
     })
     expect(recordWorkflowControlRequestWithBindingRpc).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -152,14 +162,42 @@ describe("conversational control parse route", () => {
     })
   })
 
-  it("rejects a non-member before invoking the parser", async () => {
-    vi.mocked(getCompanyMembership).mockResolvedValue(null)
+  it("rejects denied workflow reads before invoking the parser", async () => {
+    vi.mocked(authorizeCompanyPermission).mockResolvedValue({
+      effect: "deny",
+      reason: "forbidden",
+      permission: "workflow.read",
+    })
 
     const response = await POST(
       request({ companyId, input: "What needs attention?" })
     )
 
     expect(response.status).toBe(403)
+    expect(response.headers.get("cache-control")).toBe("private, no-store")
+    await expect(response.json()).resolves.toEqual({ error: "forbidden" })
+    expect(parseConversationalControlInput).not.toHaveBeenCalled()
+    expect(recordWorkflowControlRequestRpc).not.toHaveBeenCalled()
+    expect(recordWorkflowControlRequestWithBindingRpc).not.toHaveBeenCalled()
+    expect(acquireWorkflowControlParserLeaseRpc).not.toHaveBeenCalled()
+  })
+
+  it("returns a private server error when membership lookup fails", async () => {
+    vi.mocked(authorizeCompanyPermission).mockResolvedValue({
+      effect: "deny",
+      reason: "membership_lookup_failed",
+      permission: "workflow.read",
+    })
+
+    const response = await POST(
+      request({ companyId, input: "What needs attention?" })
+    )
+
+    expect(response.status).toBe(500)
+    expect(response.headers.get("cache-control")).toBe("private, no-store")
+    await expect(response.json()).resolves.toEqual({
+      error: "membership_lookup_failed",
+    })
     expect(parseConversationalControlInput).not.toHaveBeenCalled()
     expect(recordWorkflowControlRequestRpc).not.toHaveBeenCalled()
     expect(recordWorkflowControlRequestWithBindingRpc).not.toHaveBeenCalled()
@@ -174,7 +212,7 @@ describe("conversational control parse route", () => {
     )
 
     expect(response.status).toBe(401)
-    expect(getCompanyMembership).not.toHaveBeenCalled()
+    expect(authorizeCompanyPermission).not.toHaveBeenCalled()
     expect(parseConversationalControlInput).not.toHaveBeenCalled()
   })
 

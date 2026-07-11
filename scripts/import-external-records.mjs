@@ -103,6 +103,16 @@ async function targetSelect(pathAndQuery) {
   return res.json();
 }
 
+async function targetRpc(name, body) {
+  const res = await fetch(`${TARGET_URL}/rest/v1/rpc/${name}`, {
+    method: "POST",
+    headers: headers(TARGET_KEY),
+    body: JSON.stringify(body),
+  });
+  if (!res.ok) throw new Error(`${name} failed: ${res.status} ${await res.text()}`);
+  return res.json();
+}
+
 async function findOwnerUserId() {
   const res = await fetch(`${TARGET_URL}/auth/v1/admin/users?page=1&per_page=100`, {
     headers: headers(TARGET_KEY),
@@ -122,11 +132,10 @@ async function ensureCompany() {
     [{ id: COMPANY_ID, name: COMPANY_NAME, created_by: userId }],
     "id"
   );
-  await targetUpsert(
-    "company_memberships",
-    [{ company_id: COMPANY_ID, user_id: userId, role: "owner", status: "active" }],
-    "company_id,user_id"
-  );
+  await targetRpc("bootstrap_company_owner", {
+    p_company_id: COMPANY_ID,
+    p_owner_user_id: userId,
+  });
   await targetUpsert(
     "company_approval_policies",
     [

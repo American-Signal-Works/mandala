@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { authenticateRequest } from "@/lib/supabase/request"
+import { authorizeCompanyPermission } from "@/lib/mandala/authorization"
 import {
   WorkflowRpcError,
   recordWorkflowControlRequestRpc,
@@ -9,6 +10,11 @@ import { POST as recordControlRequest } from "./control/requests/route"
 import { POST as reissueExecutionToken } from "./workflows/execution-tokens/route"
 
 vi.mock("@/lib/supabase/request", () => ({ authenticateRequest: vi.fn() }))
+vi.mock("@/lib/mandala/authorization", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("@/lib/mandala/authorization")>()
+  return { ...original, authorizeCompanyPermission: vi.fn() }
+})
 vi.mock("@/lib/mandala/workflows", async (importOriginal) => {
   const original =
     await importOriginal<typeof import("@/lib/mandala/workflows")>()
@@ -35,6 +41,12 @@ describe("Mandala control-plane mutation support routes", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(authenticateRequest).mockResolvedValue(auth as never)
+    vi.mocked(authorizeCompanyPermission).mockResolvedValue({
+      effect: "allow",
+      reason: "role_permission_granted",
+      role: "owner",
+      permission: "workflow.read",
+    })
   })
 
   it("derives CLI attribution from bearer auth and records no raw input", async () => {
@@ -155,6 +167,12 @@ describe("Mandala control-plane mutation support routes", () => {
   })
 
   it("returns a fresh one-time execution capability without caching it", async () => {
+    vi.mocked(authorizeCompanyPermission).mockResolvedValue({
+      effect: "allow",
+      reason: "role_permission_granted",
+      role: "approver",
+      permission: "workflow.execution_token.issue",
+    })
     vi.mocked(reissueWorkflowExecutionTokenRpc).mockResolvedValue({
       decisionId,
       executionToken: {
@@ -180,6 +198,12 @@ describe("Mandala control-plane mutation support routes", () => {
   })
 
   it("maps attempted-action conflicts and requires authentication", async () => {
+    vi.mocked(authorizeCompanyPermission).mockResolvedValue({
+      effect: "allow",
+      reason: "role_permission_granted",
+      role: "approver",
+      permission: "workflow.execution_token.issue",
+    })
     vi.mocked(reissueWorkflowExecutionTokenRpc).mockRejectedValue(
       new WorkflowRpcError("action_already_attempted", "55000")
     )
@@ -199,6 +223,51 @@ describe("Mandala control-plane mutation support routes", () => {
       jsonRequest("/control/requests", {})
     )
     expect(unauthorized.status).toBe(401)
+  })
+
+  it("maps named permission denials before calling support RPCs", async () => {
+    vi.mocked(authorizeCompanyPermission).mockResolvedValue({
+      effect: "deny",
+      reason: "forbidden",
+      permission: "workflow.read",
+    })
+
+    const forbidden = await recordControlRequest(
+      jsonRequest("/control/requests", {
+        companyId,
+        inputHash: "a".repeat(64),
+        normalizedIntent: {
+          kind: "inspect_work_item",
+          companyId,
+          itemId,
+          risk: "read",
+        },
+        parserKind: "explicit",
+        resolutionStatus: "executed",
+        riskClass: "read",
+      })
+    )
+
+    expect(forbidden.status).toBe(403)
+    await expect(forbidden.json()).resolves.toEqual({ error: "forbidden" })
+    expect(recordWorkflowControlRequestRpc).not.toHaveBeenCalled()
+
+    vi.mocked(authorizeCompanyPermission).mockResolvedValue({
+      effect: "deny",
+      reason: "membership_lookup_failed",
+      permission: "workflow.execution_token.issue",
+    })
+    const failed = await reissueExecutionToken(
+      jsonRequest("/workflows/execution-tokens", {
+        companyId,
+        actionDraftId: draftId,
+      })
+    )
+    expect(failed.status).toBe(500)
+    await expect(failed.json()).resolves.toEqual({
+      error: "membership_lookup_failed",
+    })
+    expect(reissueWorkflowExecutionTokenRpc).not.toHaveBeenCalled()
   })
 })
 

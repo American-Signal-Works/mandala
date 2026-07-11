@@ -4,9 +4,15 @@ import {
   transitionWorkflowControlRequestRpc,
 } from "@/lib/mandala/workflows"
 import { authenticateRequest } from "@/lib/supabase/request"
+import { authorizeCompanyPermission } from "@/lib/mandala/authorization"
 import { POST } from "./route"
 
 vi.mock("@/lib/supabase/request", () => ({ authenticateRequest: vi.fn() }))
+vi.mock("@/lib/mandala/authorization", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("@/lib/mandala/authorization")>()
+  return { ...original, authorizeCompanyPermission: vi.fn() }
+})
 vi.mock("@/lib/mandala/workflows", () => ({
   classifyWorkflowRpcError: vi.fn(),
   transitionWorkflowControlRequestRpc: vi.fn(),
@@ -24,6 +30,12 @@ describe("control request transition route", () => {
   beforeEach(() => {
     vi.clearAllMocks()
     vi.mocked(authenticateRequest).mockResolvedValue(auth as never)
+    vi.mocked(authorizeCompanyPermission).mockResolvedValue({
+      effect: "allow",
+      reason: "role_permission_granted",
+      role: "viewer",
+      permission: "workflow.read",
+    })
     vi.mocked(transitionWorkflowControlRequestRpc).mockResolvedValue({
       id: controlRequestId,
       resolution_status: "executed",
@@ -76,6 +88,22 @@ describe("control request transition route", () => {
     await expect(response.json()).resolves.toEqual({
       error: "control_request_forbidden",
     })
+  })
+
+  it("requires the named workflow read permission", async () => {
+    vi.mocked(authorizeCompanyPermission).mockResolvedValue({
+      effect: "deny",
+      reason: "forbidden",
+      permission: "workflow.read",
+    })
+
+    const response = await POST(
+      request({ companyId, controlRequestId, resolutionStatus: "blocked" })
+    )
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({ error: "forbidden" })
+    expect(transitionWorkflowControlRequestRpc).not.toHaveBeenCalled()
   })
 })
 

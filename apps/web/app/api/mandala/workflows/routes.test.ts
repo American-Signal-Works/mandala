@@ -1,9 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { executeAgentActionFromServer } from "@/actions/admin/execute-agent-action"
 import { authenticateRequest } from "@/lib/supabase/request"
+import { authorizeCompanyPermission } from "@/lib/mandala/authorization"
 import {
   WorkflowRpcError,
-  getCompanyMembership,
   persistFixtureRun,
 } from "@/lib/mandala/workflows"
 import {
@@ -18,12 +18,19 @@ vi.mock("@/lib/supabase/request", () => ({ authenticateRequest: vi.fn() }))
 vi.mock("@/actions/admin/execute-agent-action", () => ({
   executeAgentActionFromServer: vi.fn(),
 }))
+vi.mock("@/lib/mandala/authorization", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("@/lib/mandala/authorization")>()
+  return {
+    ...original,
+    authorizeCompanyPermission: vi.fn(),
+  }
+})
 vi.mock("@/lib/mandala/workflows", async (importOriginal) => {
   const original =
     await importOriginal<typeof import("@/lib/mandala/workflows")>()
   return {
     ...original,
-    getCompanyMembership: vi.fn(),
     persistFixtureRun: vi.fn(),
   }
 })
@@ -48,6 +55,12 @@ describe("Mandala workflow API routes", () => {
       supabase: supabaseFor(user),
       user,
     } as never)
+    vi.mocked(authorizeCompanyPermission).mockResolvedValue({
+      effect: "allow",
+      reason: "role_permission_granted",
+      role: "owner",
+      permission: "workflow.fixture.run",
+    })
   })
 
   it("returns 401 for unauthenticated fixture requests", async () => {
@@ -68,16 +81,45 @@ describe("Mandala workflow API routes", () => {
     expect(invalid.status).toBe(400)
     expect(await invalid.json()).toMatchObject({ error: "invalid_request" })
 
-    vi.mocked(getCompanyMembership).mockResolvedValue({ role: "viewer" })
+    vi.mocked(authorizeCompanyPermission).mockResolvedValue({
+      effect: "deny",
+      reason: "forbidden",
+      permission: "workflow.fixture.run",
+    })
     const forbidden = await runFixture(
       jsonRequest("/fixtures", { companyId, scenarioId: "clean_reorder" })
     )
     expect(forbidden.status).toBe(403)
     await expect(forbidden.json()).resolves.toEqual({ error: "forbidden" })
+    expect(persistFixtureRun).not.toHaveBeenCalled()
+  })
+
+  it("maps fixture membership lookup failures before domain work", async () => {
+    vi.mocked(authorizeCompanyPermission).mockResolvedValue({
+      effect: "deny",
+      reason: "membership_lookup_failed",
+      permission: "workflow.fixture.run",
+    })
+
+    const response = await runFixture(
+      jsonRequest("/fixtures", { companyId, scenarioId: "clean_reorder" })
+    )
+
+    expect(response.status).toBe(500)
+    await expect(response.json()).resolves.toEqual({
+      error: "membership_lookup_failed",
+    })
+    expect(authorizeCompanyPermission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        companyId,
+        userId: user.id,
+        permission: "workflow.fixture.run",
+      })
+    )
+    expect(persistFixtureRun).not.toHaveBeenCalled()
   })
 
   it("returns durable duplicate references without replaying an in-memory draft", async () => {
-    vi.mocked(getCompanyMembership).mockResolvedValue({ role: "admin" })
     vi.mocked(persistFixtureRun).mockResolvedValue({
       duplicate: true,
       run: { id: "31000000-0000-0000-0000-000000000010", status: "suppressed" },
@@ -114,6 +156,9 @@ describe("Mandala workflow API routes", () => {
         controlRequestId,
       })
     )
+    expect(authorizeCompanyPermission).toHaveBeenCalledWith(
+      expect.objectContaining({ permission: "workflow.fixture.run" })
+    )
   })
 
   it("validates edit decisions before calling the database", async () => {
@@ -148,6 +193,56 @@ describe("Mandala workflow API routes", () => {
 
     expect(response.status).toBe(403)
     await expect(response.json()).resolves.toEqual({ error: "forbidden" })
+  })
+
+  it("denies decisions before RPC work using the decision permission", async () => {
+    vi.mocked(authorizeCompanyPermission).mockResolvedValue({
+      effect: "deny",
+      reason: "forbidden",
+      permission: "workflow.decision.reject",
+    })
+
+    const response = await recordDecision(
+      jsonRequest("/decisions", {
+        companyId,
+        actionDraftId: draftId,
+        decision: "reject",
+        reason: "Not needed",
+      })
+    )
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({ error: "forbidden" })
+    expect(authorizeCompanyPermission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        companyId,
+        userId: user.id,
+        permission: "workflow.decision.reject",
+      })
+    )
+    expect(recordWorkflowDecisionV2).not.toHaveBeenCalled()
+  })
+
+  it("maps decision membership lookup failures before RPC work", async () => {
+    vi.mocked(authorizeCompanyPermission).mockResolvedValue({
+      effect: "deny",
+      reason: "membership_lookup_failed",
+      permission: "workflow.decision.approve",
+    })
+
+    const response = await recordDecision(
+      jsonRequest("/decisions", {
+        companyId,
+        actionDraftId: draftId,
+        decision: "approve",
+      })
+    )
+
+    expect(response.status).toBe(500)
+    await expect(response.json()).resolves.toEqual({
+      error: "membership_lookup_failed",
+    })
+    expect(recordWorkflowDecisionV2).not.toHaveBeenCalled()
   })
 
   it("returns a successful atomic decision result", async () => {
@@ -390,6 +485,43 @@ describe("Mandala workflow API routes", () => {
       attempt: { status: "reconciliation_required" },
     })
     expect(executeAgentActionFromServer).toHaveBeenCalledTimes(3)
+  })
+
+  it("denies executions before RPC work with the mock permission", async () => {
+    vi.mocked(authorizeCompanyPermission).mockResolvedValue({
+      effect: "deny",
+      reason: "forbidden",
+      permission: "workflow.execution.mock",
+    })
+
+    const response = await executeAction(validExecutionRequest())
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({ error: "forbidden" })
+    expect(authorizeCompanyPermission).toHaveBeenCalledWith(
+      expect.objectContaining({
+        companyId,
+        userId: user.id,
+        permission: "workflow.execution.mock",
+      })
+    )
+    expect(executeAgentActionFromServer).not.toHaveBeenCalled()
+  })
+
+  it("maps execution membership lookup failures before RPC work", async () => {
+    vi.mocked(authorizeCompanyPermission).mockResolvedValue({
+      effect: "deny",
+      reason: "membership_lookup_failed",
+      permission: "workflow.execution.mock",
+    })
+
+    const response = await executeAction(validExecutionRequest())
+
+    expect(response.status).toBe(500)
+    await expect(response.json()).resolves.toEqual({
+      error: "membership_lookup_failed",
+    })
+    expect(executeAgentActionFromServer).not.toHaveBeenCalled()
   })
 })
 
