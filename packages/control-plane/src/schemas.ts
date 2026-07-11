@@ -737,6 +737,7 @@ export const executionEnvelopeSchema =
 export type ApiMeta = z.infer<typeof apiMetaSchema>
 export type ApiError = z.infer<typeof apiErrorSchema>
 export type ApiErrorEnvelope = z.infer<typeof apiErrorEnvelopeSchema>
+export type CompanyRole = z.infer<typeof companyRoleSchema>
 export type CompanySummary = z.infer<typeof companySummarySchema>
 export type WorkItemSummary = z.infer<typeof workItemSummarySchema>
 export type WorkItemDetail = z.infer<typeof workItemDetailSchema>

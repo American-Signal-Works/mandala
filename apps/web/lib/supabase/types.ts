@@ -338,6 +338,63 @@ export type Database = {
           },
         ]
       }
+      company_membership_events: {
+        Row: {
+          action: string
+          actor_user_id: string
+          company_id: string
+          created_at: string
+          id: string
+          membership_id: string
+          next_role: string
+          next_status: string
+          previous_role: string | null
+          previous_status: string | null
+          target_user_id: string
+        }
+        Insert: {
+          action: string
+          actor_user_id: string
+          company_id: string
+          created_at?: string
+          id?: string
+          membership_id: string
+          next_role: string
+          next_status: string
+          previous_role?: string | null
+          previous_status?: string | null
+          target_user_id: string
+        }
+        Update: {
+          action?: string
+          actor_user_id?: string
+          company_id?: string
+          created_at?: string
+          id?: string
+          membership_id?: string
+          next_role?: string
+          next_status?: string
+          previous_role?: string | null
+          previous_status?: string | null
+          target_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_membership_events_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_membership_events_membership_id_company_id_fkey"
+            columns: ["membership_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "company_memberships"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
       company_memberships: {
         Row: {
           company_id: string
@@ -373,6 +430,163 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_policy_decisions: {
+        Row: {
+          action_draft_id: string | null
+          approval_policy_id: string | null
+          approval_policy_snapshot: Json
+          company_id: string
+          created_at: string
+          effect: string
+          evaluation_context: Json
+          evaluation_key: string
+          execution_mode: string
+          id: string
+          permission: string
+          policy_version: string
+          principal_id: string
+          principal_snapshot: Json
+          reason: string
+          workflow_run_id: string | null
+        }
+        Insert: {
+          action_draft_id?: string | null
+          approval_policy_id?: string | null
+          approval_policy_snapshot?: Json
+          company_id: string
+          created_at?: string
+          effect: string
+          evaluation_context: Json
+          evaluation_key: string
+          execution_mode: string
+          id?: string
+          permission: string
+          policy_version: string
+          principal_id: string
+          principal_snapshot: Json
+          reason: string
+          workflow_run_id?: string | null
+        }
+        Update: {
+          action_draft_id?: string | null
+          approval_policy_id?: string | null
+          approval_policy_snapshot?: Json
+          company_id?: string
+          created_at?: string
+          effect?: string
+          evaluation_context?: Json
+          evaluation_key?: string
+          execution_mode?: string
+          id?: string
+          permission?: string
+          policy_version?: string
+          principal_id?: string
+          principal_snapshot?: Json
+          reason?: string
+          workflow_run_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_policy_decisions_action_draft_id_company_id_fkey"
+            columns: ["action_draft_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_action_drafts"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "company_policy_decisions_approval_policy_id_company_id_fkey"
+            columns: ["approval_policy_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "company_approval_policies"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "company_policy_decisions_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_policy_decisions_principal_id_company_id_fkey"
+            columns: ["principal_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "company_principals"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "company_policy_decisions_workflow_run_id_company_id_fkey"
+            columns: ["workflow_run_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_runs"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      company_principals: {
+        Row: {
+          capabilities: string[]
+          company_id: string
+          created_at: string
+          delegated_by_user_id: string | null
+          display_name: string | null
+          id: string
+          membership_id: string | null
+          principal_key: string | null
+          principal_type: string
+          state: string
+          updated_at: string
+        }
+        Insert: {
+          capabilities?: string[]
+          company_id: string
+          created_at?: string
+          delegated_by_user_id?: string | null
+          display_name?: string | null
+          id?: string
+          membership_id?: string | null
+          principal_key?: string | null
+          principal_type: string
+          state?: string
+          updated_at?: string
+        }
+        Update: {
+          capabilities?: string[]
+          company_id?: string
+          created_at?: string
+          delegated_by_user_id?: string | null
+          display_name?: string | null
+          id?: string
+          membership_id?: string | null
+          principal_key?: string | null
+          principal_type?: string
+          state?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_principals_company_id_delegated_by_user_id_fkey"
+            columns: ["company_id", "delegated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "company_memberships"
+            referencedColumns: ["company_id", "user_id"]
+          },
+          {
+            foreignKeyName: "company_principals_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_principals_membership_id_company_id_fkey"
+            columns: ["membership_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "company_memberships"
+            referencedColumns: ["id", "company_id"]
           },
         ]
       }
@@ -1870,6 +2084,10 @@ export type Database = {
         Args: { p_company_id: string }
         Returns: Json
       }
+      bootstrap_company_owner: {
+        Args: { p_company_id: string; p_owner_user_id: string }
+        Returns: boolean
+      }
       company_role_rank: { Args: { role: string }; Returns: number }
       configure_workflow_control_parser_trust: {
         Args: { p_server_secret: string }
@@ -2027,6 +2245,15 @@ export type Database = {
       release_workflow_control_parser_lease: {
         Args: { p_company_id: string; p_lease_id: string }
         Returns: undefined
+      }
+      transition_company_membership: {
+        Args: {
+          p_action: string
+          p_company_id: string
+          p_requested_role?: string
+          p_target_user_id: string
+        }
+        Returns: Json
       }
       transition_workflow_control_request: {
         Args: {

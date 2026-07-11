@@ -1,8 +1,13 @@
 import { createHash, randomBytes } from "node:crypto";
+import {
+  authorizeCompanyRole,
+  permissionForWorkflowDecision,
+  type CompanyRole,
+} from "@workspace/control-plane";
 import type { WorkflowSpec } from "./schema";
 import { hashWorkflowValue, workflowUuidFor } from "./hash";
 
-export type CompanyRole = "owner" | "admin" | "approver" | "member" | "viewer" | "agent";
+export type { CompanyRole } from "@workspace/control-plane";
 export type ActorType = "user" | "system_agent";
 export type ValidationStatus = "pass" | "warn" | "blocked";
 export type WorkflowItemStatus = "active" | "blocked" | "approved" | "rejected" | "executed" | "resolved";
@@ -284,6 +289,7 @@ export class WorkflowMemoryStore {
   }
 }
 
+// Fixture-only domain simulation. Production authorization stays in checked RPCs.
 export function recordWorkflowDecision(input: {
   store: WorkflowMemoryStore;
   companyId: string;
@@ -320,12 +326,21 @@ export function recordWorkflowDecision(input: {
   );
   if (!recommendation) throw new Error("Recommendation not found.");
 
-  if ((input.decision === "approve" || input.decision === "edit") && !canApprove(input.actorRole)) {
-    throw new Error("Actor is not allowed to approve workflow actions.");
+  const decisionPermission = permissionForWorkflowDecision(input.decision);
+  const decisionAuthorization = authorizeCompanyRole(input.actorRole, decisionPermission);
+  if (decisionAuthorization.effect === "deny") {
+    throw new Error("Actor is not allowed to record this workflow decision.");
   }
 
-  if ((input.decision === "approve" || input.decision === "edit") && input.actorType !== "user") {
-    throw new Error("System agents cannot self-approve workflow actions.");
+  if (input.actorType !== "user") {
+    throw new Error("System agents cannot record workflow decisions.");
+  }
+
+  if (
+    (input.decision === "approve" || input.decision === "edit") &&
+    authorizeCompanyRole(input.actorRole, "workflow.execution_token.issue").effect === "deny"
+  ) {
+    throw new Error("Actor is not allowed to issue execution tokens.");
   }
 
   if (
@@ -427,11 +442,16 @@ export function executeMockAction(input: {
   rawToken: string;
   idempotencyKey: string;
   actorUserId: string;
+  actorRole: CompanyRole;
   payload: WorkflowActionPayload;
   now?: Date;
 }): MockExecutionResult {
   const now = input.now ?? new Date();
   const createdAt = now.toISOString();
+  const executionAuthorization = authorizeCompanyRole(input.actorRole, "workflow.execution.mock");
+  if (executionAuthorization.effect === "deny") {
+    throw new Error("Actor is not allowed to execute workflow actions.");
+  }
   const existingAttempt = input.store.actionAttempts.find(
     (attempt) => attempt.companyId === input.companyId && attempt.idempotencyKey === input.idempotencyKey,
   );
@@ -619,10 +639,6 @@ function createAuditEvent(
   };
   store.auditEvents.push(event);
   return event;
-}
-
-function canApprove(role: CompanyRole): boolean {
-  return role === "owner" || role === "admin" || role === "approver";
 }
 
 function assertEditedPayloadMatchesPolicy(
