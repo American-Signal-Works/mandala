@@ -5,6 +5,10 @@ import {
 } from "@workspace/control-plane"
 import type { Json } from "@/lib/supabase/types"
 import {
+  authorizeCompanyPermission,
+  companyPermissionFailure,
+} from "@/lib/mandala/authorization"
+import {
   classifyWorkflowRpcError,
   recordWorkflowControlRequestRpc,
 } from "@/lib/mandala/workflows"
@@ -31,6 +35,24 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "controlled_mutation_required" },
       { status: 400 }
+    )
+  }
+
+  const permissionFailure = companyPermissionFailure(
+    await authorizeCompanyPermission({
+      supabase: auth.supabase,
+      companyId: parsed.data.companyId,
+      userId: auth.user.id,
+      permission: "workflow.read",
+    })
+  )
+  if (permissionFailure) {
+    return NextResponse.json(
+      { error: permissionFailure.code },
+      {
+        status: permissionFailure.status,
+        headers: { "cache-control": "private, no-store" },
+      }
     )
   }
 
