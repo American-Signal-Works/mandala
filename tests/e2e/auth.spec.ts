@@ -218,7 +218,7 @@ test("/sign-up matches the approved unified auth frame", async ({ page }) => {
   expect(stackBox?.y).toBeCloseTo(612, 0)
 })
 
-test("/login keeps callback success on the 432px auth stack", async ({
+test("/login does not trust callback success without a confirmed session", async ({
   page,
 }) => {
   await page.setViewportSize({ width: 1440, height: 1024 })
@@ -228,12 +228,19 @@ test("/login keeps callback success on the 432px auth stack", async ({
 
   await expect(
     page.getByRole("heading", { name: "Sign in successful" })
+  ).toHaveCount(0)
+  await expect(
+    page.getByRole("button", { name: "Send magic link" })
   ).toBeVisible()
-  await expect(stack).toHaveAttribute("data-auth-step", "success")
+  await expect(
+    page.getByText("We couldn't confirm your sign in. Request a new link.")
+  ).toBeVisible()
+  await expect(stack).toHaveAttribute("data-auth-step", "email")
   const stackBox = await stack.boundingBox()
   expect(stackBox?.width).toBeCloseTo(432, 0)
   expect(stackBox?.x).toBeCloseTo(944, 0)
-  expect(stackBox?.y).toBeCloseTo(840, 0)
+  expect(stackBox?.y).toBeGreaterThan(540)
+  expect(stackBox?.y).toBeLessThan(620)
 })
 
 test("/login keeps magic-link sent on the 432px auth stack", async ({

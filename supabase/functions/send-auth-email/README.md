@@ -1,6 +1,14 @@
 # Mandala Auth Email Hook
 
-This Supabase Edge Function sends Supabase Auth magic-link emails through Resend.
+This Supabase Edge Function sends supported Supabase Auth emails through Resend.
+It currently accepts magic-link (`magiclink`, new-user `signup`, and the legacy
+`email` alias) and password-recovery (`recovery`) hook actions. Other action
+types fail closed until their own copy and behavior are explicitly implemented.
+
+The shared renderer folder also contains transport-ready contracts for workspace
+invitations, member-removal notices, and invitation-accepted confirmations. Their
+live invitation and membership triggers intentionally remain in the later
+invitation workflow.
 
 ## Required Secrets
 
@@ -33,9 +41,13 @@ https://<project-ref>.supabase.co/functions/v1/send-auth-email
 
 Use the same `SEND_EMAIL_HOOK_SECRET` value as the hook secret.
 
-## Sender Profile Photo
+## Workspace Logo
 
 Resend does not provide a per-message sender avatar field. The attached profile image should be used in the sender mailbox/provider setup, such as Gravatar for the exact from address or domain-level BIMI/Apple Branded Mail where available. The email body uses the Mandala mark from the Figma frame independently of inbox-avatar support.
+
+The image shown inside invitation and member-removal emails is the workspace
+logo, never the inviter's avatar. Renderers accept only HTTPS logo URLs and fall
+back to the Mandala mark while keeping the workspace name in readable text.
 
 ## Theming
 

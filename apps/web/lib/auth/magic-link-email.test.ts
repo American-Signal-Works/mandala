@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from "vitest"
 import {
   MANDALA_MAGIC_LINK_EMAIL_THEME,
   MAGIC_LINK_EMAIL_SUBJECT,
+  RECOVERY_EMAIL_SUBJECT,
   buildSupabaseVerifyUrl,
   createResendEmailPayload,
   formatSender,
@@ -48,6 +49,12 @@ describe("Mandala magic-link email", () => {
     expect(formatSender("auth@example.com")).toBe("Mandala <auth@example.com>")
   })
 
+  it("rejects sender values that could add email headers", () => {
+    expect(() => formatSender("auth@example.com\nBcc: other@example.com")).toThrow(
+      "Email hook payload is invalid"
+    )
+  })
+
   it("normalizes Supabase hook secrets for Standard Webhooks", () => {
     expect(normalizeWebhookSecret("v1,whsec_base64secret")).toBe("base64secret")
     expect(normalizeWebhookSecret("base64secret")).toBe("base64secret")
@@ -59,11 +66,11 @@ describe("Mandala magic-link email", () => {
     expect(payload).toMatchObject({
       from: "Mandala <auth@example.com>",
       subject: MAGIC_LINK_EMAIL_SUBJECT,
-      text: expect.stringContaining("After 5 minutes"),
+      text: expect.stringContaining("after 1 hour"),
       to: ["person@example.com"],
     })
-    expect(payload.html).toContain("Here&rsquo;s your magic link")
-    expect(payload.html).toContain("After 5 minutes")
+    expect(payload.html).toContain("Sign in to Mandala")
+    expect(payload.html).toContain("after 1 hour")
     expect(payload.html).toContain("Sign in")
     expect(payload.html).toContain("&copy; American Signal Works")
     expect(payload.html).toContain("Sheridan, WY")
@@ -88,11 +95,78 @@ describe("Mandala magic-link email", () => {
     )
   })
 
+  it("routes recovery actions to recovery-specific copy", () => {
+    const payload = createResendEmailPayload(
+      {
+        ...hookPayload,
+        email_data: {
+          ...hookPayload.email_data,
+          email_action_type: "recovery",
+        },
+      },
+      config
+    )
+
+    expect(payload).toMatchObject({
+      subject: RECOVERY_EMAIL_SUBJECT,
+      tags: [{ name: "category", value: "auth_recovery" }],
+      text: expect.stringContaining("Reset your password"),
+    })
+    expect(payload.html).toContain("Reset password")
+    expect(payload.html).toContain("after 1 hour")
+  })
+
+  it("uses the sign-in email for a safely created unknown user", () => {
+    const payload = createResendEmailPayload(
+      {
+        ...hookPayload,
+        email_data: {
+          ...hookPayload.email_data,
+          email_action_type: "signup",
+        },
+      },
+      config
+    )
+
+    expect(payload).toMatchObject({
+      subject: MAGIC_LINK_EMAIL_SUBJECT,
+      tags: [{ name: "category", value: "auth_magic_link" }],
+      to: ["person@example.com"],
+    })
+    expect(payload.html).toContain("Sign in to Mandala")
+    expect(payload.html).toContain("type=signup")
+  })
+
+  it.each(["invite", "email_change", "reauthentication", "unknown"])(
+    "fails closed for unsupported auth action type %s",
+    (emailActionType) => {
+      expect(() =>
+        createResendEmailPayload(
+          {
+            ...hookPayload,
+            email_data: {
+              ...hookPayload.email_data,
+              email_action_type: emailActionType,
+            },
+          },
+          config
+        )
+      ).toThrow("Email hook payload is invalid")
+    }
+  )
+
   it("sends verified hook requests through the injected email provider", async () => {
+    const signupHookPayload = {
+      ...hookPayload,
+      email_data: {
+        ...hookPayload.email_data,
+        email_action_type: "signup",
+      },
+    }
     const sendEmail = vi.fn().mockResolvedValue({ error: null })
-    const verifyWebhook = vi.fn().mockReturnValue(hookPayload)
+    const verifyWebhook = vi.fn().mockReturnValue(signupHookPayload)
     const request = new Request("https://example.com", {
-      body: JSON.stringify(hookPayload),
+      body: JSON.stringify(signupHookPayload),
       headers: {
         "webhook-id": "msg_123",
         "webhook-signature": "sig",
@@ -115,7 +189,7 @@ describe("Mandala magic-link email", () => {
 
     expect(response.status).toBe(200)
     expect(verifyWebhook).toHaveBeenCalledWith(
-      JSON.stringify(hookPayload),
+      JSON.stringify(signupHookPayload),
       expect.objectContaining({
         "webhook-id": "msg_123",
       }),
@@ -124,7 +198,8 @@ describe("Mandala magic-link email", () => {
     expect(sendEmail).toHaveBeenCalledWith(
       expect.objectContaining({
         from: "Mandala <auth@example.com>",
-        subject: "Sign in with magic link",
+        html: expect.stringContaining("type=signup"),
+        subject: MAGIC_LINK_EMAIL_SUBJECT,
         to: ["person@example.com"],
       }),
       expect.objectContaining({

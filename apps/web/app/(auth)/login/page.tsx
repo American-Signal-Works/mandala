@@ -16,7 +16,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
           ? "We couldn't complete sign in. Try again."
           : null
       }
-      initialStep={auth === "success" ? "success" : "email"}
+      initialStep={auth === "success" ? "verifying" : "email"}
       mode="sign-in"
     />
   )

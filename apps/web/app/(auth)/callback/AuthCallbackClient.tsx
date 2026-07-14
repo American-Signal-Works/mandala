@@ -46,10 +46,7 @@ export function AuthCallbackClient({
         if (error) {
           throw error
         }
-        return
-      }
-
-      if (tokenHash) {
+      } else if (tokenHash) {
         const { error } = await supabase.auth.verifyOtp({
           token_hash: tokenHash,
           type: "email",
@@ -57,10 +54,7 @@ export function AuthCallbackClient({
         if (error) {
           throw error
         }
-        return
-      }
-
-      if (accessToken && refreshToken) {
+      } else if (accessToken && refreshToken) {
         const { error } = await supabase.auth.setSession({
           access_token: accessToken,
           refresh_token: refreshToken,
@@ -68,15 +62,22 @@ export function AuthCallbackClient({
         if (error) {
           throw error
         }
-        return
+      } else {
+        const { data, error } = await supabase.auth.getSession()
+        if (error) {
+          throw error
+        }
+        if (!data.session) {
+          throw new Error("Missing auth callback session.")
+        }
       }
 
-      const { data, error } = await supabase.auth.getSession()
+      const { data, error } = await supabase.auth.getUser()
       if (error) {
         throw error
       }
-      if (!data.session) {
-        throw new Error("Missing auth callback session.")
+      if (!data.user) {
+        throw new Error("Missing authenticated callback user.")
       }
     }
 
