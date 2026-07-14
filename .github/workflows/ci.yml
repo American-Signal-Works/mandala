@@ -13,8 +13,6 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    env:
-      MANDALA_BIN_DIR: ${{ runner.temp }}/mandala-bin
     steps:
       - uses: actions/checkout@v6
 
@@ -29,10 +27,14 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: CLI checks
-        run: pnpm --filter @workspace/cli lint && pnpm --filter @workspace/cli typecheck && pnpm --filter @workspace/cli test
+        run: pnpm --filter @workspace/control-plane build && pnpm --filter @workspace/cli lint && pnpm --filter @workspace/cli typecheck && pnpm --filter @workspace/cli test
 
       - name: Link CLI
-        run: pnpm cli:link
+        shell: pwsh
+        run: |
+          $env:MANDALA_BIN_DIR = Join-Path $env:RUNNER_TEMP "mandala-bin"
+          "MANDALA_BIN_DIR=$env:MANDALA_BIN_DIR" >> $env:GITHUB_ENV
+          pnpm cli:link
 
       - name: Verify linked command
         shell: pwsh
