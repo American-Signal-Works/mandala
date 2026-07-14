@@ -310,7 +310,6 @@ describe("CLI commands", () => {
         draft: {
           id: draftId,
           status: "approved" as const,
-          payload: { lines: [{ quantity: 12 }] },
         },
         item: {
           id: itemId,
@@ -322,6 +321,7 @@ describe("CLI commands", () => {
           rawToken,
           expiresAt: "2026-07-09T12:15:00.000Z",
         },
+        ...decisionReplayMetadata(),
       })),
     })
     const confirm = vi.fn().mockResolvedValue(true)
@@ -335,6 +335,16 @@ describe("CLI commands", () => {
     ).toBe(0)
 
     expect(confirm).toHaveBeenCalledTimes(2)
+    expect(api.getWorkItemReview).toHaveBeenCalledWith(companyId, itemId)
+    expect(api.recordDecision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        companyId,
+        workItemId: itemId,
+        actionDraftId: draftId,
+        expectedVersion: "a".repeat(64),
+        idempotencyKey: expect.stringMatching(/^cli:[0-9a-f-]{36}$/),
+      })
+    )
     expect(confirm).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({
@@ -401,7 +411,6 @@ describe("CLI commands", () => {
         draft: {
           id: draftId,
           status: "approved" as const,
-          payload: { lines: [{ quantity: 12 }] },
         },
         item: {
           id: itemId,
@@ -413,6 +422,7 @@ describe("CLI commands", () => {
           rawToken,
           expiresAt: "2026-07-09T12:15:00.000Z",
         },
+        ...decisionReplayMetadata(),
       })),
     })
     const confirm = vi
@@ -448,6 +458,46 @@ describe("CLI commands", () => {
       },
     })
     expect(stdout.value).not.toContain(rawToken)
+  })
+
+  it("resolves eligible work without requiring an action draft", async () => {
+    const recordDecision = vi.fn(async () => ({
+      decision: { id: decisionId, decision: "resolve" as const },
+      draft: null,
+      item: { id: itemId, status: "resolved" as const },
+      executionToken: null,
+      duplicate: false,
+      needsTokenReissue: false,
+      priorState: { itemStatus: "active" as const, draftStatus: null },
+      resultState: { itemStatus: "resolved" as const, draftStatus: null },
+      version: "b".repeat(64),
+    }))
+    const api = fakeApi({
+      getWorkItem: vi.fn(async () => ({
+        ...detail(),
+        item: { ...detail().item, status: "active" as const },
+        draft: null,
+      })),
+      getWorkItemReview: vi.fn(async () => ({
+        ...review(),
+        draft: null,
+        availableActions: ["resolve" as const],
+      })),
+      recordDecision,
+    })
+
+    expect(await command(["work", "resolve", itemId, "--json"], api)).toBe(0)
+    expect(recordDecision).toHaveBeenCalledWith(
+      expect.objectContaining({
+        workItemId: itemId,
+        decision: "resolve",
+        expectedVersion: "a".repeat(64),
+        idempotencyKey: expect.stringMatching(/^cli:[0-9a-f-]{36}$/),
+      })
+    )
+    expect(recordDecision).toHaveBeenCalledWith(
+      expect.not.objectContaining({ actionDraftId: expect.anything() })
+    )
   })
 
   it("lists registered fixture scenarios without calling the workflow API", async () => {
@@ -612,6 +662,7 @@ describe("CLI commands", () => {
           rawToken,
           expiresAt: "2026-07-09T12:15:00.000Z",
         },
+        ...decisionReplayMetadata(),
       })),
     })
 
@@ -754,6 +805,7 @@ function fakeApi(overrides: Partial<ControlApi> = {}) {
     listCompanies: vi.fn(async () => ({ companies: [] })),
     listWorkItems: vi.fn(async () => ({ items: [] })),
     getWorkItem: vi.fn(async () => detail()),
+    getWorkItemReview: vi.fn(async () => review()),
     askWorkItem: vi.fn(async () => ({
       answer: "The draft is supported by the selected item's current facts.",
       model: "injected-test-model",
@@ -770,6 +822,7 @@ function fakeApi(overrides: Partial<ControlApi> = {}) {
       draft: { id: draftId, status: "approved" as const },
       item: { id: itemId, status: "approved" as const, workflow_run_id: runId },
       executionToken: null,
+      ...decisionReplayMetadata(),
     })),
     issueExecutionToken: vi.fn(async () => ({
       decisionId,
@@ -878,6 +931,69 @@ function detail() {
     },
     attempt: null,
     auditEvents: [],
+  }
+}
+
+function review() {
+  return {
+    item: {
+      id: itemId,
+      workflowRunId: runId,
+      itemKey: "mock-action-review",
+      itemType: "mock_action_review",
+      title: "Review mock action",
+      status: "active" as const,
+      priority: 50,
+      sourceType: null,
+      ownerRole: null,
+      assigneeId: null,
+      dueAt: null,
+      draft: {
+        id: draftId,
+        actionType: "mock_action",
+        status: "pending_review" as const,
+        updatedAt: "2026-07-09T12:00:00.000Z",
+      },
+      nextActions: ["approve" as const],
+      createdAt: "2026-07-09T12:00:00.000Z",
+      updatedAt: "2026-07-09T12:00:00.000Z",
+    },
+    recordSnapshot: null,
+    recommendation: null,
+    evidence: null,
+    draft: {
+      id: draftId,
+      actionType: "mock_action",
+      status: "pending_review" as const,
+      payload: { lines: [{ quantity: 12 }] },
+      editPolicy: {},
+      updatedAt: "2026-07-09T12:00:00.000Z",
+    },
+    policy: {
+      minimumRole: "approver" as const,
+      requireHumanApproval: true,
+      requireWarningAcknowledgement: false,
+    },
+    reviewState: "ready" as const,
+    version: "a".repeat(64),
+    availableActions: ["approve" as const],
+    activity: { items: [], nextCursor: null },
+  }
+}
+
+function decisionReplayMetadata() {
+  return {
+    duplicate: false,
+    needsTokenReissue: false,
+    priorState: {
+      itemStatus: "active" as const,
+      draftStatus: "pending_review" as const,
+    },
+    resultState: {
+      itemStatus: "approved" as const,
+      draftStatus: "approved" as const,
+    },
+    version: "b".repeat(64),
   }
 }
 

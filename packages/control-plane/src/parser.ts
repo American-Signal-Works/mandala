@@ -4,6 +4,7 @@ import {
   controlIntentSchema,
   type ControlIntentCandidate,
   type ControlIntent,
+  type DecisionKind,
   type NormalizedControlIntent,
   type ControlOutcome,
   type JsonPointerPatch,
@@ -27,7 +28,7 @@ export type ControlIntentCandidateInput = {
   scenarioId?: string | null
   status?: string | null
   itemId?: string | null
-  decision?: "approve" | "edit" | "reject" | "request_rework" | null
+  decision?: DecisionKind | null
   patches?: JsonPointerPatch[]
   reason?: string | null
 }
@@ -124,7 +125,7 @@ export function resolveControlIntent(
       }
       if (!candidate.decision)
         return clarification(
-          "Should this item be approved, edited, rejected, or sent for rework?"
+          "Should this item be approved, edited, rejected, resolved, or sent for rework?"
         )
       if (candidate.decision === "edit" && !candidate.patches.length) {
         return clarification(
@@ -259,6 +260,20 @@ export function parseControlPhrase(
   }
 
   match = new RegExp(
+    `^resolve(?:\\s+work(?: item)?)?\\s+(${uuidSource})$`,
+    "i"
+  ).exec(phrase)
+  if (match)
+    return resolveControlIntent(
+      createControlIntentCandidate({
+        kind: "record_decision",
+        itemId: match[1],
+        decision: "resolve",
+      }),
+      context
+    )
+
+  match = new RegExp(
     `^execute(?:\\s+work(?: item)?)?\\s+(${uuidSource})$`,
     "i"
   ).exec(phrase)
@@ -300,7 +315,7 @@ export function parseControlPhrase(
     )
   }
   if (
-    /^(?:approve|reject|rework|execute|edit)(?:\s+work(?: item)?)?$/i.test(
+    /^(?:approve|reject|resolve|rework|execute|edit)(?:\s+work(?: item)?)?$/i.test(
       phrase
     )
   ) {
@@ -373,6 +388,7 @@ function hasMultipleActionKinds(phrase: string): boolean {
     /\b(?:inspect|show)\b.{0,30}\b(?:work|item)\b/i,
     /\bapprove\b/i,
     /\breject\b/i,
+    /\bresolve\b/i,
     /\b(?:rework|send\s+back)\b/i,
     /\b(?:edit|change|update|set)\b/i,
     /\bexecute\b/i,

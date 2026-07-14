@@ -253,6 +253,66 @@ describe("API client", () => {
     })
   })
 
+  it("reads a coherent review version and posts a guarded decision", async () => {
+    const companyId = "20000000-0000-4000-8000-000000000001"
+    const itemId = "30000000-0000-4000-8000-000000000001"
+    const draftId = "40000000-0000-4000-8000-000000000001"
+    const version = "a".repeat(64)
+    const idempotencyKey = "cli:00000000-0000-4000-8000-000000000001"
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(reviewResponse(itemId, draftId, version)))
+      .mockResolvedValueOnce(
+        Response.json({
+          decision: {
+            id: "50000000-0000-4000-8000-000000000001",
+            decision: "approve",
+          },
+          draft: { id: draftId, status: "approved" },
+          item: { id: itemId, status: "approved" },
+          executionToken: null,
+          duplicate: false,
+          needsTokenReissue: false,
+          priorState: {
+            itemStatus: "active",
+            draftStatus: "pending_review",
+          },
+          resultState: {
+            itemStatus: "approved",
+            draftStatus: "approved",
+          },
+          version: "b".repeat(64),
+        })
+      )
+    const client = new ApiClient(
+      "http://127.0.0.1:3000",
+      { getAccessToken: vi.fn().mockResolvedValue("access") },
+      request
+    )
+
+    const review = await client.getWorkItemReview(companyId, itemId)
+    await client.recordDecision({
+      companyId,
+      workItemId: itemId,
+      actionDraftId: draftId,
+      decision: "approve",
+      expectedVersion: review.version,
+      idempotencyKey,
+    })
+
+    expect(request.mock.calls[0]?.[0]).toBe(
+      `http://127.0.0.1:3000/api/mandala/workflows/items/${itemId}/review?companyId=${companyId}`
+    )
+    expect(JSON.parse(String(request.mock.calls[1]?.[1]?.body))).toEqual({
+      companyId,
+      workItemId: itemId,
+      actionDraftId: draftId,
+      decision: "approve",
+      expectedVersion: version,
+      idempotencyKey,
+    })
+  })
+
   it("posts terminal transitions for an existing control request", async () => {
     const controlRequestId = "90000000-0000-4000-8000-000000000001"
     const request = vi
@@ -357,5 +417,52 @@ function agentResponse(agentId: string, companyId: string) {
     diagnostics: [],
     createdAt: "2026-07-13T12:00:00.000Z",
     updatedAt: "2026-07-13T12:00:00.000Z",
+  }
+}
+
+function reviewResponse(itemId: string, draftId: string, version: string) {
+  return {
+    item: {
+      id: itemId,
+      workflowRunId: "60000000-0000-4000-8000-000000000001",
+      itemKey: "reorder:coffee-beans",
+      itemType: "procurement_reorder_review",
+      title: "Review coffee bean reorder",
+      status: "active",
+      priority: 50,
+      sourceType: "inventory",
+      ownerRole: "approver",
+      assigneeId: null,
+      dueAt: null,
+      draft: {
+        id: draftId,
+        actionType: "mock_purchase_order",
+        status: "pending_review",
+        updatedAt: "2026-07-09T12:00:00.000Z",
+      },
+      nextActions: ["approve", "edit", "reject", "request_rework"],
+      createdAt: "2026-07-09T12:00:00.000Z",
+      updatedAt: "2026-07-09T12:00:00.000Z",
+    },
+    recordSnapshot: null,
+    recommendation: null,
+    evidence: null,
+    draft: {
+      id: draftId,
+      actionType: "mock_purchase_order",
+      status: "pending_review",
+      payload: {},
+      editPolicy: {},
+      updatedAt: "2026-07-09T12:00:00.000Z",
+    },
+    policy: {
+      minimumRole: "approver",
+      requireHumanApproval: true,
+      requireWarningAcknowledgement: false,
+    },
+    reviewState: "ready",
+    version,
+    availableActions: ["approve", "edit", "reject", "request_rework"],
+    activity: { items: [], nextCursor: null },
   }
 }

@@ -63,6 +63,7 @@ export const decisionKindSchema = z.enum([
   "edit",
   "reject",
   "request_rework",
+  "resolve",
 ])
 export const controlRiskSchema = z.enum([
   "read",
@@ -210,6 +211,239 @@ export const workItemSummarySchema = z
     updatedAt: isoTimestampSchema,
   })
   .strict()
+
+export const workItemActionSchema = z.enum([
+  "approve",
+  "edit",
+  "reject",
+  "request_rework",
+  "resolve",
+  "execute_mock",
+])
+
+export const workItemQueueSortKeySchema = z.enum([
+  "priority",
+  "createdAt",
+  "updatedAt",
+  "dueAt",
+])
+export const sortDirectionSchema = z.enum(["asc", "desc"])
+export const opaqueCursorSchema = z
+  .string()
+  .min(1)
+  .max(4_096)
+  .regex(/^[A-Za-z0-9_-]+$/)
+export const reviewVersionSchema = z
+  .string()
+  .min(1)
+  .max(200)
+  .regex(/^[A-Za-z0-9._:-]+$/)
+
+const boundedSearchSchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(200)
+  .refine((value) => !hasControlCharacter(value), {
+    message: "Search text cannot contain control characters.",
+  })
+
+function hasControlCharacter(value: string): boolean {
+  return [...value].some((character) => {
+    const code = character.charCodeAt(0)
+    return code <= 0x1f || code === 0x7f
+  })
+}
+
+export const workItemQueueRequestSchema = z
+  .object({
+    companyId: z.string().uuid(),
+    search: boundedSearchSchema.optional(),
+    statuses: z.array(workflowItemStatusSchema).min(1).max(6).optional(),
+    itemTypes: z.array(identifierSchema).min(1).max(20).optional(),
+    priorities: z
+      .array(z.number().int().min(0).max(100))
+      .min(1)
+      .max(20)
+      .optional(),
+    sourceTypes: z.array(identifierSchema).min(1).max(20).optional(),
+    ownerRoles: z.array(companyRoleSchema).min(1).max(6).optional(),
+    assigneeIds: z.array(z.string().uuid()).min(1).max(20).optional(),
+    sort: z
+      .object({
+        key: workItemQueueSortKeySchema,
+        direction: sortDirectionSchema,
+      })
+      .strict()
+      .default({ key: "priority", direction: "desc" }),
+    limit: z.number().int().min(1).max(100).default(50),
+    cursor: opaqueCursorSchema.optional(),
+  })
+  .strict()
+
+export const safeWorkItemDraftSummarySchema = z
+  .object({
+    id: z.string().uuid(),
+    actionType: identifierSchema,
+    status: workflowDraftStatusSchema,
+    updatedAt: isoTimestampSchema,
+  })
+  .strict()
+
+export const safeWorkItemSummarySchema = z
+  .object({
+    id: z.string().uuid(),
+    workflowRunId: z.string().uuid(),
+    itemKey: z.string().min(1).max(500),
+    itemType: identifierSchema,
+    title: z.string().min(1).max(500),
+    status: workflowItemStatusSchema,
+    priority: z.number().int(),
+    sourceType: identifierSchema.nullable(),
+    ownerRole: identifierSchema.nullable(),
+    assigneeId: z.string().uuid().nullable(),
+    dueAt: isoTimestampSchema.nullable(),
+    draft: safeWorkItemDraftSummarySchema.nullable(),
+    nextActions: z.array(workItemActionSchema).max(10),
+    createdAt: isoTimestampSchema,
+    updatedAt: isoTimestampSchema,
+  })
+  .strict()
+
+export const workItemQueueDataSchema = z
+  .object({
+    items: z.array(safeWorkItemSummarySchema),
+    nextCursor: opaqueCursorSchema.nullable().optional(),
+  })
+  .strict()
+export const workItemQueueResponseSchema = workItemQueueDataSchema
+export const workItemQueueEnvelopeSchema = apiSuccessEnvelopeSchema(
+  workItemQueueDataSchema
+)
+
+export const reviewStateSchema = z.enum([
+  "ready",
+  "blocked",
+  "stale",
+  "missing_context",
+  "already_resolved",
+])
+
+export const safeRecordSnapshotSchema = z
+  .object({
+    contextPacketId: z.string().uuid(),
+    sources: z.array(jsonObjectSchema),
+    facts: jsonObjectSchema,
+    freshnessState: z.enum(["fresh", "stale", "unknown"]),
+    warnings: z.array(z.string().max(2_000)).max(100),
+    capturedAt: isoTimestampSchema,
+  })
+  .strict()
+
+export const safeRecommendationSchema = z
+  .object({
+    id: z.string().uuid(),
+    status: z.enum(["ready_for_review", "blocked"]),
+    rationaleSummary: z.string().max(5_000),
+    warningState: z.enum(["pass", "warn", "blocked"]),
+    warnings: z.array(z.string().max(2_000)).max(100),
+    confidence: z.number().min(0).max(1).nullable(),
+    freshnessState: z.enum(["fresh", "stale", "unknown"]),
+    output: jsonObjectSchema,
+    createdAt: isoTimestampSchema,
+  })
+  .strict()
+
+export const safeEvidenceSchema = z
+  .object({
+    id: z.string().uuid(),
+    sourceRefs: z.array(jsonObjectSchema),
+    assumptions: z.array(z.string().max(2_000)).max(100),
+    warnings: z.array(z.string().max(2_000)).max(100),
+    evidence: z.array(jsonObjectSchema),
+    createdAt: isoTimestampSchema,
+  })
+  .strict()
+
+export const safeReviewDraftSchema = safeWorkItemDraftSummarySchema.extend({
+  payload: jsonObjectSchema,
+  editPolicy: jsonObjectSchema,
+})
+
+export const reviewPolicySchema = z
+  .object({
+    minimumRole: companyRoleSchema,
+    requireHumanApproval: z.boolean(),
+    requireWarningAcknowledgement: z.boolean(),
+  })
+  .strict()
+
+export const workItemActivityActorSchema = z
+  .object({
+    type: z.enum(["user", "agent", "system"]),
+    id: z.string().uuid().nullable(),
+  })
+  .strict()
+
+export const workItemActivityStateSchema = z
+  .object({
+    itemStatus: workflowItemStatusSchema.nullable(),
+    draftStatus: workflowDraftStatusSchema.nullable(),
+  })
+  .strict()
+
+export const workItemActivitySchema = z
+  .object({
+    id: z.string().uuid(),
+    type: identifierSchema,
+    summary: z.string().min(1).max(2_000),
+    details: jsonObjectSchema,
+    actor: workItemActivityActorSchema,
+    reason: z.string().max(2_000).nullable(),
+    priorState: workItemActivityStateSchema.nullable(),
+    resultState: workItemActivityStateSchema.nullable(),
+    createdAt: isoTimestampSchema,
+  })
+  .strict()
+
+export const workItemActivityRequestSchema = z
+  .object({
+    companyId: z.string().uuid(),
+    itemId: z.string().uuid(),
+    limit: z.number().int().min(1).max(100).default(50),
+    cursor: opaqueCursorSchema.optional(),
+  })
+  .strict()
+
+export const workItemActivityDataSchema = z
+  .object({
+    items: z.array(workItemActivitySchema),
+    nextCursor: opaqueCursorSchema.nullable().optional(),
+  })
+  .strict()
+export const workItemActivityResponseSchema = workItemActivityDataSchema
+export const workItemActivityEnvelopeSchema = apiSuccessEnvelopeSchema(
+  workItemActivityDataSchema
+)
+
+export const workItemReviewDataSchema = z
+  .object({
+    item: safeWorkItemSummarySchema,
+    recordSnapshot: safeRecordSnapshotSchema.nullable(),
+    recommendation: safeRecommendationSchema.nullable(),
+    evidence: safeEvidenceSchema.nullable(),
+    draft: safeReviewDraftSchema.nullable(),
+    policy: reviewPolicySchema,
+    reviewState: reviewStateSchema,
+    version: reviewVersionSchema,
+    availableActions: z.array(workItemActionSchema).max(6),
+    activity: workItemActivityDataSchema,
+  })
+  .strict()
+export const workItemReviewResponseSchema = workItemReviewDataSchema
+export const workItemReviewEnvelopeSchema = apiSuccessEnvelopeSchema(
+  workItemReviewDataSchema
+)
 
 const detailItemSchema = z
   .object({
@@ -646,8 +880,11 @@ export const fixtureRunEnvelopeSchema =
 export const decisionRequestSchema = z
   .object({
     companyId: z.string().uuid(),
-    actionDraftId: z.string().uuid(),
+    workItemId: z.string().uuid(),
+    actionDraftId: z.string().uuid().optional(),
     decision: decisionKindSchema,
+    expectedVersion: reviewVersionSchema,
+    idempotencyKey: idempotencyKeySchema,
     reason: z.string().min(1).max(2_000).optional(),
     warningsAcknowledged: z.boolean().optional(),
     editedPayload: jsonObjectSchema.optional(),
@@ -655,6 +892,20 @@ export const decisionRequestSchema = z
   })
   .strict()
   .superRefine((value, context) => {
+    if (value.decision === "resolve" && value.actionDraftId) {
+      context.addIssue({
+        code: "custom",
+        path: ["actionDraftId"],
+        message: "Resolve does not accept an action draft.",
+      })
+    }
+    if (value.decision !== "resolve" && !value.actionDraftId) {
+      context.addIssue({
+        code: "custom",
+        path: ["actionDraftId"],
+        message: "This decision requires an action draft.",
+      })
+    }
     if (value.decision === "edit" && !value.editedPayload) {
       context.addIssue({
         code: "custom",
@@ -696,11 +947,17 @@ export const decisionDataSchema = z
       .passthrough(),
     draft: z
       .object({ id: z.string().uuid(), status: workflowDraftStatusSchema })
-      .passthrough(),
+      .passthrough()
+      .nullable(),
     item: z
       .object({ id: z.string().uuid(), status: workflowItemStatusSchema })
       .passthrough(),
     executionToken: sensitiveExecutionTokenSchema.nullable().optional(),
+    duplicate: z.boolean(),
+    needsTokenReissue: z.boolean(),
+    priorState: workItemActivityStateSchema,
+    resultState: workItemActivityStateSchema,
+    version: reviewVersionSchema,
   })
   .strict()
 export const decisionResponseSchema = decisionDataSchema
@@ -763,6 +1020,21 @@ export type ApiErrorEnvelope = z.infer<typeof apiErrorEnvelopeSchema>
 export type CompanySummary = z.infer<typeof companySummarySchema>
 export type WorkItemSummary = z.infer<typeof workItemSummarySchema>
 export type WorkItemDetail = z.infer<typeof workItemDetailSchema>
+export type WorkItemAction = z.infer<typeof workItemActionSchema>
+export type WorkItemQueueRequest = z.infer<
+  typeof workItemQueueRequestSchema
+>
+export type SafeWorkItemSummary = z.infer<typeof safeWorkItemSummarySchema>
+export type WorkItemQueueData = z.infer<typeof workItemQueueDataSchema>
+export type ReviewState = z.infer<typeof reviewStateSchema>
+export type WorkItemActivity = z.infer<typeof workItemActivitySchema>
+export type WorkItemActivityRequest = z.infer<
+  typeof workItemActivityRequestSchema
+>
+export type WorkItemActivityData = z.infer<
+  typeof workItemActivityDataSchema
+>
+export type WorkItemReviewData = z.infer<typeof workItemReviewDataSchema>
 export type WorkItemQuestionRequest = z.infer<
   typeof workItemQuestionRequestSchema
 >

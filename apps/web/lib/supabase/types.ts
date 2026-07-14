@@ -2064,9 +2064,54 @@ export type Database = {
           },
         ]
       }
+      workflow_decision_outcomes: {
+        Row: {
+          company_id: string
+          created_at: string
+          decision_id: string
+          expected_version: string
+          prior_state: Json
+          result_state: Json
+          workflow_item_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          decision_id: string
+          expected_version: string
+          prior_state: Json
+          result_state: Json
+          workflow_item_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          decision_id?: string
+          expected_version?: string
+          prior_state?: Json
+          result_state?: Json
+          workflow_item_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_decision_outcomes_decision_id_company_id_fkey"
+            columns: ["decision_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_decisions"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "workflow_decision_outcomes_workflow_item_id_company_id_fkey"
+            columns: ["workflow_item_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_items"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
       workflow_decisions: {
         Row: {
-          action_draft_id: string
+          action_draft_id: string | null
           actor_type: string
           company_id: string
           created_at: string
@@ -2080,7 +2125,7 @@ export type Database = {
           workflow_run_id: string
         }
         Insert: {
-          action_draft_id: string
+          action_draft_id?: string | null
           actor_type: string
           company_id: string
           created_at?: string
@@ -2094,7 +2139,7 @@ export type Database = {
           workflow_run_id: string
         }
         Update: {
-          action_draft_id?: string
+          action_draft_id?: string | null
           actor_type?: string
           company_id?: string
           created_at?: string
@@ -2452,14 +2497,19 @@ export type Database = {
       }
       workflow_items: {
         Row: {
+          assignee_id: string | null
           company_id: string
           created_at: string
+          due_at: string | null
           id: string
           item_key: string
           item_type: string
+          owner_role: string | null
           priority: number
+          queue_search_document: unknown
           related_records: Json
           resolution_state: Json
+          source_type: string | null
           status: string
           title: string
           updated_at: string
@@ -2468,14 +2518,19 @@ export type Database = {
           workflow_run_id: string
         }
         Insert: {
+          assignee_id?: string | null
           company_id: string
           created_at?: string
+          due_at?: string | null
           id?: string
           item_key: string
           item_type: string
+          owner_role?: string | null
           priority?: number
+          queue_search_document?: unknown
           related_records?: Json
           resolution_state?: Json
+          source_type?: string | null
           status: string
           title: string
           updated_at?: string
@@ -2484,14 +2539,19 @@ export type Database = {
           workflow_run_id: string
         }
         Update: {
+          assignee_id?: string | null
           company_id?: string
           created_at?: string
+          due_at?: string | null
           id?: string
           item_key?: string
           item_type?: string
+          owner_role?: string | null
           priority?: number
+          queue_search_document?: unknown
           related_records?: Json
           resolution_state?: Json
+          source_type?: string | null
           status?: string
           title?: string
           updated_at?: string
@@ -2500,6 +2560,13 @@ export type Database = {
           workflow_run_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "workflow_items_assignee_company_fkey"
+            columns: ["company_id", "assignee_id"]
+            isOneToOne: false
+            referencedRelation: "company_memberships"
+            referencedColumns: ["company_id", "user_id"]
+          },
           {
             foreignKeyName: "workflow_items_company_id_fkey"
             columns: ["company_id"]
@@ -3019,6 +3086,16 @@ export type Database = {
         }
         Returns: Json
       }
+      get_workflow_review_v1: {
+        Args: {
+          p_activity_before_created_at?: string
+          p_activity_before_id?: string
+          p_activity_limit?: number
+          p_company_id: string
+          p_workflow_item_id: string
+        }
+        Returns: Json
+      }
       has_company_role: {
         Args: { minimum_role: string; target_company_id: string }
         Returns: boolean
@@ -3029,6 +3106,16 @@ export type Database = {
           p_compile_result: Json
           p_manifest: Json
           p_skill_markdown: string
+        }
+        Returns: Json
+      }
+      list_workflow_activity_v1: {
+        Args: {
+          p_before_created_at?: string
+          p_before_id?: string
+          p_company_id: string
+          p_limit?: number
+          p_workflow_item_id: string
         }
         Returns: Json
       }
@@ -3050,6 +3137,10 @@ export type Database = {
           workflow_item_id: string
           workflow_run_id: string
         }[]
+      }
+      list_workflow_queue_v1: {
+        Args: { p_company_id: string; p_query?: Json }
+        Returns: Json
       }
       persist_compiled_workflow_review_controlled: {
         Args: {
@@ -3200,6 +3291,20 @@ export type Database = {
           p_input_hash: string
           p_reason?: string
           p_warnings_acknowledged?: boolean
+        }
+        Returns: Json
+      }
+      record_workflow_decision_v2: {
+        Args: {
+          p_action_draft_id?: string
+          p_company_id: string
+          p_decision: string
+          p_edited_payload?: Json
+          p_expected_version: string
+          p_idempotency_key: string
+          p_reason?: string
+          p_warnings_acknowledged?: boolean
+          p_workflow_item_id: string
         }
         Returns: Json
       }

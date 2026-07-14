@@ -24,9 +24,10 @@ import {
   fixtureRunRequestSchema,
   fixtureRunResponseSchema,
   workItemDetailResponseSchema,
-  workItemListResponseSchema,
+  workItemQueueResponseSchema,
   workItemQuestionRequestSchema,
   workItemQuestionResponseSchema,
+  workItemReviewResponseSchema,
   type AgentActionRequest,
   type AgentInstallRequest,
   type AgentSummary,
@@ -47,9 +48,10 @@ import {
   type FixtureRunData,
   type FixtureRunRequest,
   type WorkItemDetail,
+  type WorkItemQueueData,
   type WorkItemQuestionData,
   type WorkItemQuestionRequest,
-  type WorkItemSummary,
+  type WorkItemReviewData,
 } from "@workspace/control-plane"
 import type { z } from "zod"
 import type { SessionAccess } from "./auth.js"
@@ -83,8 +85,12 @@ export interface ControlApi {
   listWorkItems(
     companyId: string,
     status?: string
-  ): Promise<{ items: WorkItemSummary[] }>
+  ): Promise<WorkItemQueueData>
   getWorkItem(companyId: string, itemId: string): Promise<WorkItemDetail>
+  getWorkItemReview(
+    companyId: string,
+    itemId: string
+  ): Promise<WorkItemReviewData>
   askWorkItem(
     itemId: string,
     request: WorkItemQuestionRequest
@@ -196,12 +202,12 @@ export class ApiClient implements ControlApi {
   listWorkItems(
     companyId: string,
     status?: string
-  ): Promise<{ items: WorkItemSummary[] }> {
+  ): Promise<WorkItemQueueData> {
     const query = new URLSearchParams({ companyId })
     if (status) query.set("status", status)
     return this.request(
       `/api/mandala/workflows/items?${query.toString()}`,
-      workItemListResponseSchema
+      workItemQueueResponseSchema
     )
   }
 
@@ -210,6 +216,17 @@ export class ApiClient implements ControlApi {
     return this.request(
       `/api/mandala/workflows/items/${encodeURIComponent(itemId)}?${query.toString()}`,
       workItemDetailResponseSchema
+    )
+  }
+
+  getWorkItemReview(
+    companyId: string,
+    itemId: string
+  ): Promise<WorkItemReviewData> {
+    const query = new URLSearchParams({ companyId })
+    return this.request(
+      `/api/mandala/workflows/items/${encodeURIComponent(itemId)}/review?${query.toString()}`,
+      workItemReviewResponseSchema
     )
   }
 
