@@ -14,6 +14,7 @@ import { HugeiconsIcon } from "@hugeicons/react"
 import { LogOut } from "lucide-react"
 
 import {
+  confirmCurrentSession,
   requestEmailMagicLink,
   requestOAuthSignIn,
   signOutCurrentSession,
@@ -30,7 +31,7 @@ import {
 import { Spinner } from "@workspace/ui/components/spinner"
 import { cn } from "@workspace/ui/lib/utils"
 
-type AuthStep = "email" | "link" | "success"
+type AuthStep = "email" | "link" | "verifying" | "success"
 type AuthMode = "sign-in" | "sign-up"
 type SocialProvider = "google" | "microsoft"
 type PendingAction = AuthCallbackPendingAction | "logout" | null
@@ -116,6 +117,34 @@ export function LoginAuthFlow({
   useEffect(() => {
     if (step === "link") {
       emailInputRef.current?.blur()
+    }
+  }, [step])
+
+  useEffect(() => {
+    if (step !== "verifying") {
+      return
+    }
+
+    let isMounted = true
+
+    confirmCurrentSession().then(({ data, error }) => {
+      if (!isMounted) {
+        return
+      }
+
+      if (error || !data.user) {
+        window.history.replaceState(null, "", "/login?error=session_missing")
+        setFormMessage("We couldn't confirm your sign in. Request a new link.")
+        setStep("email")
+        return
+      }
+
+      setFormMessage(null)
+      setStep("success")
+    })
+
+    return () => {
+      isMounted = false
     }
   }, [step])
 
@@ -252,6 +281,7 @@ export function LoginAuthFlow({
                 inputRef={emailInputRef}
               />
             )}
+            {step === "verifying" && <VerifyingStep />}
             {step === "success" && (
               <SuccessStep
                 formMessage={formMessage}
@@ -263,6 +293,18 @@ export function LoginAuthFlow({
         </div>
       </section>
     </main>
+  )
+}
+
+function VerifyingStep() {
+  return (
+    <div className="flex w-full flex-col items-start gap-4" role="status">
+      <AuthIntro title="Completing sign in" />
+      <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <Spinner aria-hidden="true" />
+        Confirming your session...
+      </div>
+    </div>
   )
 }
 

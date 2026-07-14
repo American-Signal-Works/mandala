@@ -12,6 +12,7 @@ import {
 } from "vitest"
 
 import {
+  confirmCurrentSession,
   requestEmailMagicLink,
   requestOAuthSignIn,
   signOutCurrentSession,
@@ -19,6 +20,7 @@ import {
 import { LoginAuthFlow } from "./LoginAuthFlow"
 
 vi.mock("@/lib/auth/client", () => ({
+  confirmCurrentSession: vi.fn(),
   requestEmailMagicLink: vi.fn(),
   requestOAuthSignIn: vi.fn(),
   signOutCurrentSession: vi.fn(),
@@ -27,6 +29,7 @@ vi.mock("@/lib/auth/client", () => ({
 const requestEmailMagicLinkMock = vi.mocked(requestEmailMagicLink)
 const requestOAuthSignInMock = vi.mocked(requestOAuthSignIn)
 const signOutCurrentSessionMock = vi.mocked(signOutCurrentSession)
+const confirmCurrentSessionMock = vi.mocked(confirmCurrentSession)
 
 beforeAll(() => {
   vi.stubGlobal(
@@ -46,6 +49,7 @@ describe("LoginAuthFlow", () => {
     requestEmailMagicLinkMock.mockReset()
     requestOAuthSignInMock.mockReset()
     signOutCurrentSessionMock.mockReset()
+    confirmCurrentSessionMock.mockReset()
   })
 
   afterEach(() => {
@@ -580,5 +584,41 @@ describe("LoginAuthFlow", () => {
     expect(
       await screen.findByRole("button", { name: "Send magic link" })
     ).toBeVisible()
+  })
+
+  it("shows callback success only after confirming the current user", async () => {
+    confirmCurrentSessionMock.mockResolvedValue({
+      data: { user: { id: "user_1" } },
+      error: null,
+    } as never)
+
+    render(<LoginAuthFlow initialStep="verifying" />)
+
+    expect(
+      screen.getByRole("heading", { name: "Completing sign in" })
+    ).toBeVisible()
+    expect(screen.queryByText("Sign in successful")).not.toBeInTheDocument()
+
+    expect(await screen.findByText("Sign in successful")).toBeVisible()
+    expect(confirmCurrentSessionMock).toHaveBeenCalledTimes(1)
+  })
+
+  it("returns to sign in when callback success has no confirmed user", async () => {
+    confirmCurrentSessionMock.mockResolvedValue({
+      data: { user: null },
+      error: null,
+    } as never)
+
+    render(<LoginAuthFlow initialStep="verifying" />)
+
+    expect(
+      await screen.findByRole("button", { name: "Send magic link" })
+    ).toBeVisible()
+    expect(screen.queryByText("Sign in successful")).not.toBeInTheDocument()
+    expect(
+      screen.getByText("We couldn't confirm your sign in. Request a new link.")
+    ).toBeVisible()
+    expect(window.location.pathname).toBe("/login")
+    expect(window.location.search).toBe("?error=session_missing")
   })
 })

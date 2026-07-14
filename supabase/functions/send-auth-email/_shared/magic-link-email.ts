@@ -1,9 +1,19 @@
-export const MAGIC_LINK_EMAIL_SUBJECT = "Sign in with magic link"
+export const MAGIC_LINK_EMAIL_SUBJECT = "Sign in to Mandala"
+export const RECOVERY_EMAIL_SUBJECT = "Reset your Mandala password"
 export const MAGIC_LINK_SENDER_NAME = "Mandala"
-export const MAGIC_LINK_EXPIRY_MINUTES = 5
+export const MAGIC_LINK_EXPIRY_HOURS = 1
 
-const MANDALA_ICON_ASSET_REVISION =
-  "b8d27daac8f84123eb589cc6b4d6da4f8546b2e3"
+export const SUPPORTED_AUTH_EMAIL_ACTION_TYPES = [
+  "email",
+  "magiclink",
+  "signup",
+  "recovery",
+] as const
+
+export type SupportedAuthEmailActionType =
+  (typeof SUPPORTED_AUTH_EMAIL_ACTION_TYPES)[number]
+
+const MANDALA_ICON_ASSET_REVISION = "b8d27daac8f84123eb589cc6b4d6da4f8546b2e3"
 const MANDALA_ICON_ASSET_BASE_URL = `https://raw.githubusercontent.com/American-Signal-Works/mandala/${MANDALA_ICON_ASSET_REVISION}/apps/web/public`
 
 type MagicLinkEmailPalette = {
@@ -163,7 +173,9 @@ export function createResendEmailPayload(
     emailData?.token_hash_new ||
     ""
   ).trim()
-  const emailActionType = emailData?.email_action_type?.trim()
+  const emailActionType = parseSupportedAuthEmailActionType(
+    emailData?.email_action_type
+  )
   const redirectTo = emailData?.redirect_to?.trim()
 
   if (!recipient || !tokenHash || !emailActionType || !redirectTo) {
@@ -177,14 +189,33 @@ export function createResendEmailPayload(
     tokenHash,
   })
 
+  const isRecovery = emailActionType === "recovery"
+
   return {
     from: formatSender(config.fromAddress),
-    html: renderMandalaMagicLinkHtml(magicLink),
-    subject: MAGIC_LINK_EMAIL_SUBJECT,
-    tags: [{ name: "category", value: "auth_magic_link" }],
-    text: renderMandalaMagicLinkText(magicLink),
+    html: renderMandalaAuthActionHtml(magicLink, emailActionType),
+    subject: isRecovery ? RECOVERY_EMAIL_SUBJECT : MAGIC_LINK_EMAIL_SUBJECT,
+    tags: [
+      {
+        name: "category",
+        value: isRecovery ? "auth_recovery" : "auth_magic_link",
+      },
+    ],
+    text: renderMandalaAuthActionText(magicLink, emailActionType),
     to: [recipient],
   }
+}
+
+export function parseSupportedAuthEmailActionType(
+  value: string | null | undefined
+): SupportedAuthEmailActionType | null {
+  const actionType = value?.trim().toLowerCase()
+
+  return SUPPORTED_AUTH_EMAIL_ACTION_TYPES.includes(
+    actionType as SupportedAuthEmailActionType
+  )
+    ? (actionType as SupportedAuthEmailActionType)
+    : null
 }
 
 export function buildSupabaseVerifyUrl({
@@ -208,7 +239,7 @@ export function buildSupabaseVerifyUrl({
 export function formatSender(fromAddress: string) {
   const address = fromAddress.trim()
 
-  if (!address || address.includes("<") || address.includes(">")) {
+  if (!address || /[\r\n<>]/.test(address)) {
     throw new InvalidEmailHookPayloadError()
   }
 
@@ -267,7 +298,21 @@ export async function handleSendAuthEmailRequest(
 }
 
 export function renderMandalaMagicLinkHtml(magicLink: string) {
-  const href = escapeAttribute(magicLink)
+  return renderMandalaAuthActionHtml(magicLink, "magiclink")
+}
+
+export function renderMandalaAuthActionHtml(
+  actionLink: string,
+  actionType: SupportedAuthEmailActionType
+) {
+  const isRecovery = actionType === "recovery"
+  const subject = isRecovery ? RECOVERY_EMAIL_SUBJECT : MAGIC_LINK_EMAIL_SUBJECT
+  const heading = isRecovery ? "Reset your password" : "Sign in to Mandala"
+  const description = isRecovery
+    ? `Click the link below to reset your password. You will need to request a new link after ${MAGIC_LINK_EXPIRY_HOURS} hour.`
+    : `Click the link below to sign in. You will need to request a new link after ${MAGIC_LINK_EXPIRY_HOURS} hour.`
+  const buttonLabel = isRecovery ? "Reset password" : "Sign in"
+  const href = escapeAttribute(actionLink)
   const theme = MANDALA_MAGIC_LINK_EMAIL_THEME
   const light = theme.light
   const dark = theme.dark
@@ -279,7 +324,7 @@ export function renderMandalaMagicLinkHtml(magicLink: string) {
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="color-scheme" content="light dark">
     <meta name="supported-color-schemes" content="light dark">
-    <title>${MAGIC_LINK_EMAIL_SUBJECT}</title>
+    <title>${subject}</title>
     <style>
       :root {
         color-scheme: light dark;
@@ -324,7 +369,7 @@ export function renderMandalaMagicLinkHtml(magicLink: string) {
   </head>
   <body class="mandala-email-body" style="margin:0;padding:0;background:#ffffff;">
     <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">
-      Click the link below to sign in. After ${MAGIC_LINK_EXPIRY_MINUTES} minutes you will need to request a new one.
+      ${description}
     </div>
     <table class="mandala-email-root" role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="border-collapse:collapse;background:#ffffff;margin:0;padding:0;">
       <tr>
@@ -335,14 +380,14 @@ export function renderMandalaMagicLinkHtml(magicLink: string) {
                 ${renderMandalaMarkImage(light.iconUrl, "mandala-email-mark-light", "block")}
                 ${renderMandalaMarkImage(dark.iconUrl, "mandala-email-mark-dark", "none")}
                 <h1 class="mandala-email-heading" style="margin:24px 0 0 0;color:${light.text};font-family:${theme.fontFamily};font-size:24px;line-height:24px;font-weight:500;letter-spacing:0;">
-                  Here&rsquo;s your magic link
+                  ${heading}
                 </h1>
                 <p class="mandala-email-text" style="margin:8px 0 0 0;width:401px;max-width:100%;color:${light.mutedText};font-family:${theme.fontFamily};font-size:16px;line-height:24px;font-weight:400;letter-spacing:0;">
-                  Click the link below to sign in. After ${MAGIC_LINK_EXPIRY_MINUTES} minutes you will need to request a new one.
+                  ${description}
                 </p>
                 <div style="margin-top:36px;">
                   <a class="mandala-email-button" href="${href}" target="_blank" style="display:inline-block;background:${light.buttonBackground};border-radius:8px;color:${light.buttonText};font-family:${theme.fontFamily};font-size:14px;line-height:20px;font-weight:500;text-decoration:none;padding:10px 10px;">
-                    <span style="display:inline-block;vertical-align:middle;">Sign in</span>
+                    <span style="display:inline-block;vertical-align:middle;">${buttonLabel}</span>
                     <span aria-hidden="true" style="display:inline-block;width:16px;height:16px;margin-left:6px;vertical-align:-1px;font-size:14px;line-height:16px;text-align:center;">${ARROW_UP_RIGHT_ENTITY}</span>
                   </a>
                 </div>
@@ -372,14 +417,26 @@ export function renderMandalaMagicLinkHtml(magicLink: string) {
 }
 
 export function renderMandalaMagicLinkText(magicLink: string) {
+  return renderMandalaAuthActionText(magicLink, "magiclink")
+}
+
+export function renderMandalaAuthActionText(
+  actionLink: string,
+  actionType: SupportedAuthEmailActionType
+) {
   const theme = MANDALA_MAGIC_LINK_EMAIL_THEME
+  const isRecovery = actionType === "recovery"
+  const heading = isRecovery ? "Reset your password" : "Sign in to Mandala"
+  const description = isRecovery
+    ? `Click the link below to reset your password. You will need to request a new link after ${MAGIC_LINK_EXPIRY_HOURS} hour.`
+    : `Click the link below to sign in. You will need to request a new link after ${MAGIC_LINK_EXPIRY_HOURS} hour.`
 
   return [
-    "Here's your magic link",
+    heading,
     "",
-    `Click the link below to sign in. After ${MAGIC_LINK_EXPIRY_MINUTES} minutes you will need to request a new one.`,
+    description,
     "",
-    magicLink,
+    actionLink,
     "",
     theme.brandOwner,
     ...theme.addressLines,
@@ -413,8 +470,7 @@ function renderMandalaMarkImage(
   className: string,
   display: "block" | "none"
 ) {
-  const hiddenStyle =
-    display === "none" ? "max-height:0;overflow:hidden;" : ""
+  const hiddenStyle = display === "none" ? "max-height:0;overflow:hidden;" : ""
 
   return `<img class="${className}" src="${escapeAttribute(src)}" width="36" height="36" alt="" aria-hidden="true" style="border:0;display:${display};height:36px;outline:none;text-decoration:none;width:36px;${hiddenStyle}">`
 }

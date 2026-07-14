@@ -28,11 +28,16 @@ describe("AuthCallbackPage", () => {
   it("exchanges OAuth codes and redirects to the success screen", async () => {
     const exchangeCodeForSession = vi.fn().mockResolvedValue({ error: null })
     const getSession = vi.fn()
+    const getUser = vi.fn().mockResolvedValue({
+      data: { user: { id: "user_1" } },
+      error: null,
+    })
 
     createClientMock.mockReturnValue({
       auth: {
         exchangeCodeForSession,
         getSession,
+        getUser,
       },
     } as never)
     window.history.replaceState(
@@ -63,15 +68,21 @@ describe("AuthCallbackPage", () => {
       expect(routerReplaceMock).toHaveBeenCalledWith("/login?auth=success")
     })
     expect(getSession).not.toHaveBeenCalled()
+    expect(getUser).toHaveBeenCalledTimes(1)
   })
 
   it("verifies magic-link callbacks while showing the email button loading state", async () => {
     const verifyOtp = vi.fn().mockResolvedValue({ error: null })
     const getSession = vi.fn()
+    const getUser = vi.fn().mockResolvedValue({
+      data: { user: { id: "user_1" } },
+      error: null,
+    })
 
     createClientMock.mockReturnValue({
       auth: {
         getSession,
+        getUser,
         verifyOtp,
       },
     } as never)
@@ -105,5 +116,26 @@ describe("AuthCallbackPage", () => {
       expect(routerReplaceMock).toHaveBeenCalledWith("/login?auth=success")
     })
     expect(getSession).not.toHaveBeenCalled()
+    expect(getUser).toHaveBeenCalledTimes(1)
+  })
+
+  it("fails safely when callback completion has no authenticated user", async () => {
+    const exchangeCodeForSession = vi.fn().mockResolvedValue({ error: null })
+    const getUser = vi.fn().mockResolvedValue({
+      data: { user: null },
+      error: null,
+    })
+    createClientMock.mockReturnValue({
+      auth: { exchangeCodeForSession, getUser },
+    } as never)
+    window.history.replaceState(null, "", "/callback?code=oauth-code")
+
+    render(<AuthCallbackClient initialPendingAction="google" />)
+
+    await waitFor(() => {
+      expect(routerReplaceMock).toHaveBeenCalledWith(
+        "/login?error=callback_failed"
+      )
+    })
   })
 })

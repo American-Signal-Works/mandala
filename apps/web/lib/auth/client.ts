@@ -71,6 +71,13 @@ export async function signOutCurrentSession() {
   )
 }
 
+export async function confirmCurrentSession() {
+  return withAuthFailure(
+    () => createClient().auth.getUser(),
+    (error) => ({ data: { user: null }, error })
+  )
+}
+
 async function withAuthFailure<T, F>(
   request: () => Promise<T>,
   fallback: (error: Error) => F

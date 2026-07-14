@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import {
+  confirmCurrentSession,
   requestEmailMagicLink,
   requestOAuthSignIn,
   signOutCurrentSession,
@@ -152,6 +153,32 @@ describe("auth client helpers", () => {
     const result = await signOutCurrentSession()
 
     expect(result.error).toBeInstanceOf(Error)
+    expect(result.error?.message).toBe("fetch failed")
+  })
+
+  it("confirms the current user before showing authentication success", async () => {
+    const getUser = vi.fn().mockResolvedValue({
+      data: { user: { id: "user_1" } },
+      error: null,
+    })
+    createClientMock.mockReturnValue({ auth: { getUser } } as never)
+
+    const result = await confirmCurrentSession()
+
+    expect(getUser).toHaveBeenCalledTimes(1)
+    expect(result.data.user).toMatchObject({ id: "user_1" })
+  })
+
+  it("fails closed when session confirmation throws", async () => {
+    createClientMock.mockReturnValue({
+      auth: {
+        getUser: vi.fn().mockRejectedValue(new Error("fetch failed")),
+      },
+    } as never)
+
+    const result = await confirmCurrentSession()
+
+    expect(result.data.user).toBeNull()
     expect(result.error?.message).toBe("fetch failed")
   })
 })

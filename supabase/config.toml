@@ -135,6 +135,12 @@ max_catalogs = 2
 [functions.send-auth-email]
 verify_jwt = false
 
+[functions.email-delivery-worker]
+verify_jwt = false
+
+[functions.resend-delivery-webhook]
+verify_jwt = false
+
 # Analytics Buckets is available to Supabase Pro plan.
 # [storage.analytics.buckets.my-warehouse]
 
@@ -225,7 +231,7 @@ max_frequency = "1s"
 # Number of characters used in the email OTP.
 otp_length = 6
 # Number of seconds before the email OTP expires (defaults to 1 hour).
-otp_expiry = 300
+otp_expiry = 3600
 
 # Use a production-ready SMTP server.
 # For Resend, production sending requires a verified sending domain/subdomain.

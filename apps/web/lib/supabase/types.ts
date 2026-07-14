@@ -870,6 +870,243 @@ export type Database = {
         }
         Relationships: []
       }
+      email_deliveries: {
+        Row: {
+          attempt_count: number
+          claim_expires_at: string | null
+          claim_token: string | null
+          company_id: string
+          created_at: string
+          id: string
+          idempotency_key: string
+          last_error_category: string | null
+          next_attempt_at: string
+          payload_reference: string
+          provider_email_id: string | null
+          provider_event_at: string | null
+          recipient_email: string
+          recipient_hash: string
+          state: string
+          template_key: string
+          template_version: string
+          terminal_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          attempt_count?: number
+          claim_expires_at?: string | null
+          claim_token?: string | null
+          company_id: string
+          created_at?: string
+          id?: string
+          idempotency_key: string
+          last_error_category?: string | null
+          next_attempt_at?: string
+          payload_reference: string
+          provider_email_id?: string | null
+          provider_event_at?: string | null
+          recipient_email: string
+          recipient_hash: string
+          state?: string
+          template_key: string
+          template_version: string
+          terminal_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          attempt_count?: number
+          claim_expires_at?: string | null
+          claim_token?: string | null
+          company_id?: string
+          created_at?: string
+          id?: string
+          idempotency_key?: string
+          last_error_category?: string | null
+          next_attempt_at?: string
+          payload_reference?: string
+          provider_email_id?: string | null
+          provider_event_at?: string | null
+          recipient_email?: string
+          recipient_hash?: string
+          state?: string
+          template_key?: string
+          template_version?: string
+          terminal_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_deliveries_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      email_delivery_attempts: {
+        Row: {
+          attempt_number: number
+          claim_token: string
+          company_id: string
+          delivery_id: string
+          error_category: string | null
+          finished_at: string | null
+          id: string
+          provider_email_id: string | null
+          started_at: string
+          state: string
+        }
+        Insert: {
+          attempt_number: number
+          claim_token: string
+          company_id: string
+          delivery_id: string
+          error_category?: string | null
+          finished_at?: string | null
+          id?: string
+          provider_email_id?: string | null
+          started_at?: string
+          state?: string
+        }
+        Update: {
+          attempt_number?: number
+          claim_token?: string
+          company_id?: string
+          delivery_id?: string
+          error_category?: string | null
+          finished_at?: string | null
+          id?: string
+          provider_email_id?: string | null
+          started_at?: string
+          state?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_delivery_attempts_delivery_id_company_id_fkey"
+            columns: ["delivery_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "email_deliveries"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "email_delivery_attempts_delivery_id_company_id_fkey"
+            columns: ["delivery_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "email_delivery_owner_status"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      email_delivery_events: {
+        Row: {
+          applied: boolean
+          company_id: string
+          delivery_id: string
+          event_type: string
+          id: string
+          occurred_at: string
+          provider_email_id: string
+          provider_event_id: string
+          received_at: string
+          safe_reason: string | null
+        }
+        Insert: {
+          applied?: boolean
+          company_id: string
+          delivery_id: string
+          event_type: string
+          id?: string
+          occurred_at: string
+          provider_email_id: string
+          provider_event_id: string
+          received_at?: string
+          safe_reason?: string | null
+        }
+        Update: {
+          applied?: boolean
+          company_id?: string
+          delivery_id?: string
+          event_type?: string
+          id?: string
+          occurred_at?: string
+          provider_email_id?: string
+          provider_event_id?: string
+          received_at?: string
+          safe_reason?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_delivery_events_delivery_id_company_id_fkey"
+            columns: ["delivery_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "email_deliveries"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "email_delivery_events_delivery_id_company_id_fkey"
+            columns: ["delivery_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "email_delivery_owner_status"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      email_suppressions: {
+        Row: {
+          active: boolean
+          company_id: string
+          created_at: string
+          id: string
+          reason: string
+          recipient_hash: string
+          source_delivery_id: string | null
+          updated_at: string
+        }
+        Insert: {
+          active?: boolean
+          company_id: string
+          created_at?: string
+          id?: string
+          reason: string
+          recipient_hash: string
+          source_delivery_id?: string | null
+          updated_at?: string
+        }
+        Update: {
+          active?: boolean
+          company_id?: string
+          created_at?: string
+          id?: string
+          reason?: string
+          recipient_hash?: string
+          source_delivery_id?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_suppressions_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "email_suppressions_source_delivery_id_company_id_fkey"
+            columns: ["source_delivery_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "email_deliveries"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "email_suppressions_source_delivery_id_company_id_fkey"
+            columns: ["source_delivery_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "email_delivery_owner_status"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
       external_record_links: {
         Row: {
           company_id: string
@@ -2585,6 +2822,50 @@ export type Database = {
       }
     }
     Views: {
+      email_delivery_owner_status: {
+        Row: {
+          attempt_count: number | null
+          company_id: string | null
+          created_at: string | null
+          id: string | null
+          owner_status: string | null
+          state: string | null
+          template_key: string | null
+          template_version: string | null
+          updated_at: string | null
+        }
+        Insert: {
+          attempt_count?: number | null
+          company_id?: string | null
+          created_at?: string | null
+          id?: string | null
+          owner_status?: never
+          state?: string | null
+          template_key?: string | null
+          template_version?: string | null
+          updated_at?: string | null
+        }
+        Update: {
+          attempt_count?: number | null
+          company_id?: string | null
+          created_at?: string | null
+          id?: string | null
+          owner_status?: never
+          state?: string | null
+          template_key?: string | null
+          template_version?: string | null
+          updated_at?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_deliveries_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       workflow_control_request_audit: {
         Row: {
           actor_id: string | null
@@ -2619,6 +2900,20 @@ export type Database = {
         }
         Returns: Json
       }
+      claim_due_email_deliveries: {
+        Args: { p_lease_seconds?: number; p_limit?: number }
+        Returns: {
+          attempt_number: number
+          claim_token: string
+          company_id: string
+          delivery_id: string
+          idempotency_key: string
+          payload_reference: string
+          recipient_email: string
+          template_key: string
+          template_version: string
+        }[]
+      }
       company_role_rank: { Args: { role: string }; Returns: number }
       configure_company_connector_installation: {
         Args: {
@@ -2647,6 +2942,44 @@ export type Database = {
       disable_own_company_membership: {
         Args: { p_company_id: string }
         Returns: boolean
+      }
+      enqueue_email_delivery: {
+        Args: {
+          p_company_id: string
+          p_due_at?: string
+          p_idempotency_key: string
+          p_payload_reference: string
+          p_recipient_email: string
+          p_template_key: string
+          p_template_version: string
+        }
+        Returns: {
+          attempt_count: number
+          claim_expires_at: string | null
+          claim_token: string | null
+          company_id: string
+          created_at: string
+          id: string
+          idempotency_key: string
+          last_error_category: string | null
+          next_attempt_at: string
+          payload_reference: string
+          provider_email_id: string | null
+          provider_event_at: string | null
+          recipient_email: string
+          recipient_hash: string
+          state: string
+          template_key: string
+          template_version: string
+          terminal_at: string | null
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "email_deliveries"
+          isOneToOne: true
+          isSetofReturn: false
+        }
       }
       execute_mock_workflow_action: {
         Args: {
@@ -2744,6 +3077,57 @@ export type Database = {
           p_control_request_id: string
           p_input_hash: string
           p_payload: Json
+        }
+        Returns: Json
+      }
+      purge_terminal_email_delivery_pii: {
+        Args: { p_before?: string }
+        Returns: number
+      }
+      record_email_delivery_result: {
+        Args: {
+          p_claim_token: string
+          p_delivery_id: string
+          p_error_category?: string
+          p_finished_at?: string
+          p_outcome: string
+          p_provider_email_id?: string
+        }
+        Returns: {
+          attempt_count: number
+          claim_expires_at: string | null
+          claim_token: string | null
+          company_id: string
+          created_at: string
+          id: string
+          idempotency_key: string
+          last_error_category: string | null
+          next_attempt_at: string
+          payload_reference: string
+          provider_email_id: string | null
+          provider_event_at: string | null
+          recipient_email: string
+          recipient_hash: string
+          state: string
+          template_key: string
+          template_version: string
+          terminal_at: string | null
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "email_deliveries"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
+      record_email_delivery_webhook_event: {
+        Args: {
+          p_event_type: string
+          p_occurred_at: string
+          p_provider_email_id: string
+          p_provider_event_id: string
+          p_safe_reason?: string
         }
         Returns: Json
       }
