@@ -6,6 +6,40 @@ on:
     branches: [main]
 
 jobs:
+  cli:
+    name: CLI (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    env:
+      MANDALA_BIN_DIR: ${{ runner.temp }}/mandala-bin
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: pnpm/action-setup@v5
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 22
+          cache: "pnpm"
+
+      - name: Install
+        run: pnpm install --frozen-lockfile
+
+      - name: CLI checks
+        run: pnpm --filter @workspace/cli lint && pnpm --filter @workspace/cli typecheck && pnpm --filter @workspace/cli test
+
+      - name: Link CLI
+        run: pnpm cli:link
+
+      - name: Verify linked command
+        shell: pwsh
+        run: |
+          $launcher = if ($IsWindows) { "mandala.cmd" } else { "mandala" }
+          & (Join-Path $env:MANDALA_BIN_DIR $launcher) help --json
+
   ci:
     runs-on: ubuntu-latest
     steps:

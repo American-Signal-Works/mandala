@@ -1,4 +1,4 @@
-import { mkdtemp, readdir, stat, symlink } from "node:fs/promises"
+import { mkdtemp, readFile, readdir, stat, symlink } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Writable } from "node:stream"
@@ -65,6 +65,42 @@ describe("secure local persistence", () => {
     await store.deleteSession()
 
     await expect(store.readSession()).resolves.toBeNull()
+  })
+
+  it("protects Windows sessions without storing plaintext tokens", async () => {
+    const directory = await temporaryDirectory()
+    const sessionProtector = {
+      protect: async (value: string) =>
+        Buffer.from(value.split("").reverse().join(""), "utf8").toString(
+          "base64"
+        ),
+      unprotect: async (value: string) =>
+        Buffer.from(value, "base64")
+          .toString("utf8")
+          .split("")
+          .reverse()
+          .join(""),
+    }
+    const store = new SecureStore(directory, {
+      platform: "win32",
+      sessionProtector,
+    })
+    await store.writeSession({
+      schemaVersion: 1,
+      accessToken: "access-secret",
+      refreshToken: "refresh-secret",
+      expiresAt: 2_000_000_000,
+      user: { id: userId, email: "user@example.com" },
+    })
+
+    const source = await readFile(store.sessionPath, "utf8")
+    expect(source).toContain('"protection": "windows-dpapi"')
+    expect(source).not.toContain("access-secret")
+    expect(source).not.toContain("refresh-secret")
+    await expect(store.readSession()).resolves.toMatchObject({
+      accessToken: "access-secret",
+      refreshToken: "refresh-secret",
+    })
   })
 
   it.skipIf(process.platform === "win32")(

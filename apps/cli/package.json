@@ -7,7 +7,7 @@
     "mandala": "./dist/index.js"
   },
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && chmod +x dist/index.js",
+    "build": "tsc -p tsconfig.build.json && node -e \"if (process.platform !== 'win32') require('node:fs').chmodSync('dist/index.js', 0o755)\"",
     "lint": "eslint .",
     "pretest": "pnpm --dir ../.. --filter @workspace/control-plane build && pnpm build",
     "test": "vitest run",
@@ -37,7 +37,8 @@
   },
   "os": [
     "darwin",
-    "linux"
+    "linux",
+    "win32"
   ],
   "files": [
     "dist"

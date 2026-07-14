@@ -1,10 +1,11 @@
 // seed/seed.ts
 // Run with: pnpm seed
+import { execFile } from "node:child_process"
 import path from "node:path"
+import { promisify } from "node:util"
 import { createClient } from "@supabase/supabase-js"
 
 const SUPABASE_URL = process.env.SEED_SUPABASE_URL ?? "http://127.0.0.1:54321"
-const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY ?? ""
 const SEED_USER_EMAIL = process.env.SEED_USER_EMAIL ?? "seed@example.com"
 const SEED_USER_PASSWORD = process.env.SEED_USER_PASSWORD ?? "supersecure123"
 const DEMO_COMPANY_ID =
@@ -16,14 +17,15 @@ const SEED_MANDALA_DEMO =
   (process.env.SEED_MANDALA_DEMO !== "false" && isLoopback(SUPABASE_URL))
 
 async function main() {
-  if (!SERVICE_KEY) {
+  const serviceKey = await resolveServiceRoleKey()
+  if (!serviceKey) {
     console.error(
       "SUPABASE_SERVICE_ROLE_KEY not set. Source it from supabase status or apps/web/.env.local."
     )
     process.exit(1)
   }
 
-  const admin = createClient(SUPABASE_URL, SERVICE_KEY, {
+  const admin = createClient(SUPABASE_URL, serviceKey, {
     auth: { autoRefreshToken: false, persistSession: false },
   })
 
@@ -98,6 +100,25 @@ async function main() {
   console.log("For the IBKR sample import, choose:")
   console.log(`  ${csvPath}`)
   console.log("")
+}
+
+async function resolveServiceRoleKey(): Promise<string> {
+  const configured = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim()
+  if (configured) return configured
+
+  try {
+    const { stdout } = await promisify(execFile)(
+      process.platform === "win32" ? "supabase.exe" : "supabase",
+      ["status", "-o", "json"],
+      { encoding: "utf8" }
+    )
+    const status = JSON.parse(stdout) as { SERVICE_ROLE_KEY?: unknown }
+    return typeof status.SERVICE_ROLE_KEY === "string"
+      ? status.SERVICE_ROLE_KEY
+      : ""
+  } catch {
+    return ""
+  }
 }
 
 async function seedMandalaDemo(
@@ -241,7 +262,10 @@ async function seedSyntheticCommerceConnector(
     )
   }
   const effectByDefinition = new Map(
-    capabilityDefinitions.map((definition) => [definition.id, definition.effect])
+    capabilityDefinitions.map((definition) => [
+      definition.id,
+      definition.effect,
+    ])
   )
 
   for (const version of capabilityVersions) {
@@ -260,7 +284,10 @@ async function seedSyntheticCommerceConnector(
         },
         { onConflict: "company_id,installation_id,capability_version_id" }
       )
-    if (grantError) throw new Error(`Failed to grant synthetic capability: ${grantError.message}`)
+    if (grantError)
+      throw new Error(
+        `Failed to grant synthetic capability: ${grantError.message}`
+      )
 
     const { error: capabilityPolicyError } = await admin
       .from("company_capability_policies")
@@ -298,7 +325,9 @@ async function seedSyntheticCommerceConnector(
       { onConflict: "installation_id,company_id" }
     )
   if (healthError) {
-    throw new Error(`Failed to mark synthetic connector healthy: ${healthError.message}`)
+    throw new Error(
+      `Failed to mark synthetic connector healthy: ${healthError.message}`
+    )
   }
 }
 

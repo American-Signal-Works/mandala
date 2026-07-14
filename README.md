@@ -36,6 +36,10 @@ pnpm db:types
 pnpm dev
 ```
 
+In Windows PowerShell, use
+`Copy-Item .env.example apps/web/.env.local` instead of `cp`. The remaining
+commands are the same.
+
 Visit http://localhost:3000.
 
 ## Scripts
@@ -59,7 +63,20 @@ pnpm cli:link
 mandala auth login --email seed@example.com
 ```
 
-If `~/.local/bin` is not already on `PATH`, add it to your shell configuration or set `MANDALA_BIN_DIR` to another user-writable directory that is on `PATH` before running `pnpm cli:link`.
+On macOS and Linux, the command is linked into `~/.local/bin`. On Windows it is
+created in `%LOCALAPPDATA%\Mandala\bin`. Add that directory to `PATH`, or set
+`MANDALA_BIN_DIR` to a directory already on `PATH`, before running
+`pnpm cli:link`. To use the default location immediately in PowerShell:
+
+```powershell
+$env:Path += ";$env:LOCALAPPDATA\Mandala\bin"
+mandala
+```
+
+Windows stores Mandala's local config and session under
+`%APPDATA%\Mandala`. macOS uses Application Support and Linux uses the XDG
+config directory. Windows login tokens are encrypted for the current Windows
+account using the operating system's Data Protection API.
 
 Open [local Inbucket](http://127.0.0.1:54324), open the newest message for `seed@example.com`, and follow its magic link while the CLI is waiting. Then start the conversational terminal:
 
