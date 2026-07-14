@@ -1,11 +1,12 @@
-import { NextResponse } from "next/server"
 import { workItemDetailResponseSchema } from "@workspace/control-plane"
 import { z } from "zod"
-import {
-  ControlPlaneQueryError,
-  getWorkflowItemDetail,
-} from "@/lib/mandala/control-plane/queries"
+import { getWorkflowItemDetail } from "@/lib/mandala/control-plane/queries"
+import { sanitizeLegacyItemDetail } from "@/lib/mandala/control-plane/public-projection"
 import { authenticateRequest } from "@/lib/supabase/request"
+import {
+  controlPlaneErrorResponse,
+  privateJson,
+} from "../../control-plane-http"
 
 const requestSchema = z.object({
   companyId: z.string().uuid(),
@@ -17,8 +18,7 @@ export async function GET(
   context: { params: Promise<{ itemId: string }> }
 ) {
   const auth = await authenticateRequest(request)
-  if (!auth)
-    return NextResponse.json({ error: "unauthorized" }, { status: 401 })
+  if (!auth) return privateJson({ error: "unauthorized" }, 401)
 
   const url = new URL(request.url)
   const parsed = requestSchema.safeParse({
@@ -26,9 +26,9 @@ export async function GET(
     itemId: (await context.params).itemId,
   })
   if (!parsed.success) {
-    return NextResponse.json(
+    return privateJson(
       { error: "invalid_request", issues: parsed.error.flatten().fieldErrors },
-      { status: 400 }
+      400
     )
   }
 
@@ -38,16 +38,10 @@ export async function GET(
       companyId: parsed.data.companyId,
       itemId: parsed.data.itemId,
     })
-    return NextResponse.json(workItemDetailResponseSchema.parse(detail), {
-      headers: { "cache-control": "private, no-store" },
-    })
+    return privateJson(
+      workItemDetailResponseSchema.parse(sanitizeLegacyItemDetail(detail))
+    )
   } catch (error) {
-    if (
-      error instanceof ControlPlaneQueryError &&
-      error.code === "item_not_found"
-    ) {
-      return NextResponse.json({ error: "item_not_found" }, { status: 404 })
-    }
-    return NextResponse.json({ error: "item_detail_failed" }, { status: 500 })
+    return controlPlaneErrorResponse(error, "item_detail_failed")
   }
 }

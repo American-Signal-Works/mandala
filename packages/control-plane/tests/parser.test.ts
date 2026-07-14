@@ -15,6 +15,7 @@ describe("deterministic control parser", () => {
     [`run fixture baseline`, "run_fixture", true],
     [`approve ${itemId}`, "record_decision", true],
     [`reject ${itemId} because stale source`, "record_decision", true],
+    [`resolve ${itemId}`, "record_decision", true],
     [`execute ${itemId}`, "execute_mock_action", true],
   ] as const)("resolves %s", (phrase, kind, confirmationRequired) => {
     const outcome = parseControlPhrase(phrase, { companyId })

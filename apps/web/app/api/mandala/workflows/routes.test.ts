@@ -5,8 +5,11 @@ import {
   executeMockWorkflowActionRpc,
   getCompanyMembership,
   persistFixtureRun,
-  recordWorkflowDecisionRpc,
 } from "@/lib/mandala/workflows"
+import {
+  ControlPlaneQueryError,
+  recordWorkflowDecisionV2,
+} from "@/lib/mandala/control-plane/queries"
 import { POST as runFixture } from "./fixtures/route"
 import { POST as recordDecision } from "./decisions/route"
 import { POST as executeAction } from "./executions/route"
@@ -19,14 +22,19 @@ vi.mock("@/lib/mandala/workflows", async (importOriginal) => {
     ...original,
     getCompanyMembership: vi.fn(),
     persistFixtureRun: vi.fn(),
-    recordWorkflowDecisionRpc: vi.fn(),
     executeMockWorkflowActionRpc: vi.fn(),
   }
+})
+vi.mock("@/lib/mandala/control-plane/queries", async (importOriginal) => {
+  const original =
+    await importOriginal<typeof import("@/lib/mandala/control-plane/queries")>()
+  return { ...original, recordWorkflowDecisionV2: vi.fn() }
 })
 
 const companyId = "20000000-0000-0000-0000-000000000001"
 const draftId = "37000000-0000-0000-0000-000000000001"
 const decisionId = "38000000-0000-0000-0000-000000000001"
+const itemId = "33000000-0000-0000-0000-000000000001"
 const controlRequestId = "39000000-0000-4000-8000-000000000001"
 const user = { id: "10000000-0000-0000-0000-000000000002" }
 
@@ -117,19 +125,22 @@ describe("Mandala workflow API routes", () => {
 
     expect(response.status).toBe(400)
     expect(await response.json()).toMatchObject({ error: "invalid_request" })
-    expect(recordWorkflowDecisionRpc).not.toHaveBeenCalled()
+    expect(recordWorkflowDecisionV2).not.toHaveBeenCalled()
   })
 
   it("maps decision authorization errors without exposing database messages", async () => {
-    vi.mocked(recordWorkflowDecisionRpc).mockRejectedValue(
-      new WorkflowRpcError("forbidden", "42501")
+    vi.mocked(recordWorkflowDecisionV2).mockRejectedValue(
+      new ControlPlaneQueryError("forbidden", "42501")
     )
 
     const response = await recordDecision(
       jsonRequest("/decisions", {
         companyId,
+        workItemId: itemId,
         actionDraftId: draftId,
         decision: "approve",
+        expectedVersion: "v1",
+        idempotencyKey: "web:00000000-0000-4000-8000-000000000003",
       })
     )
 
@@ -138,23 +149,30 @@ describe("Mandala workflow API routes", () => {
   })
 
   it("returns a successful atomic decision result", async () => {
-    vi.mocked(recordWorkflowDecisionRpc).mockResolvedValue({
+    vi.mocked(recordWorkflowDecisionV2).mockResolvedValue({
       decision: { id: decisionId, decision: "approve" },
       draft: { id: draftId, status: "approved" },
-      item: { id: "33000000-0000-0000-0000-000000000001", status: "approved" },
+      item: { id: itemId, status: "approved" },
       executionToken: {
         id: "39000000-0000-0000-0000-000000000001",
         rawToken: "a".repeat(64),
         expiresAt: "2026-07-09T12:15:00.000Z",
       },
+      duplicate: false,
+      needsTokenReissue: false,
+      priorState: { itemStatus: "active", draftStatus: "pending_review" },
+      resultState: { itemStatus: "approved", draftStatus: "approved" },
+      version: "v2",
     })
 
     const response = await recordDecision(
       jsonRequest("/decisions", {
         companyId,
+        workItemId: itemId,
         actionDraftId: draftId,
         decision: "approve",
-        control: { inputHash: "b".repeat(64) },
+        expectedVersion: "v1",
+        idempotencyKey: "web:00000000-0000-4000-8000-000000000004",
       })
     )
 
@@ -164,12 +182,146 @@ describe("Mandala workflow API routes", () => {
       decision: { id: decisionId },
       executionToken: { rawToken: "a".repeat(64) },
     })
-    expect(recordWorkflowDecisionRpc).toHaveBeenCalledWith(
+    expect(recordWorkflowDecisionV2).toHaveBeenCalledWith(
       expect.objectContaining({
-        clientSurface: "web",
-        inputHash: "b".repeat(64),
+        workItemId: itemId,
+        expectedVersion: "v1",
+        idempotencyKey: "web:00000000-0000-4000-8000-000000000004",
       })
     )
+  })
+
+  it("records resolve without a draft and maps stale reviews to conflict", async () => {
+    vi.mocked(recordWorkflowDecisionV2).mockResolvedValueOnce({
+      decision: { id: decisionId, decision: "resolve" },
+      draft: null,
+      item: { id: itemId, status: "resolved" },
+      executionToken: null,
+      duplicate: false,
+      needsTokenReissue: false,
+      priorState: { itemStatus: "blocked", draftStatus: null },
+      resultState: { itemStatus: "resolved", draftStatus: null },
+      version: "v2",
+    })
+
+    const resolved = await recordDecision(
+      jsonRequest("/decisions", {
+        companyId,
+        workItemId: itemId,
+        decision: "resolve",
+        expectedVersion: "v1",
+        idempotencyKey: "web:00000000-0000-4000-8000-000000000005",
+      })
+    )
+    expect(resolved.status).toBe(200)
+    await expect(resolved.json()).resolves.toMatchObject({
+      draft: null,
+      item: { status: "resolved" },
+      duplicate: false,
+      needsTokenReissue: false,
+    })
+    expect(recordWorkflowDecisionV2).toHaveBeenLastCalledWith(
+      expect.objectContaining({ actionDraftId: undefined, decision: "resolve" })
+    )
+
+    vi.mocked(recordWorkflowDecisionV2).mockRejectedValueOnce(
+      new ControlPlaneQueryError("stale_version", "40001")
+    )
+    const stale = await recordDecision(
+      jsonRequest("/decisions", {
+        companyId,
+        workItemId: itemId,
+        actionDraftId: draftId,
+        decision: "approve",
+        expectedVersion: "v1",
+        idempotencyKey: "web:00000000-0000-4000-8000-000000000006",
+      })
+    )
+    expect(stale.status).toBe(409)
+    await expect(stale.json()).resolves.toEqual({ error: "stale_version" })
+
+    vi.mocked(recordWorkflowDecisionV2).mockRejectedValueOnce(
+      new ControlPlaneQueryError("stale_draft", "40001")
+    )
+    const staleDraft = await recordDecision(
+      jsonRequest("/decisions", {
+        companyId,
+        workItemId: itemId,
+        actionDraftId: draftId,
+        decision: "reject",
+        expectedVersion: "v1",
+        idempotencyKey: "web:00000000-0000-4000-8000-000000000007",
+        reason: "Not needed",
+      })
+    )
+    expect(staleDraft.status).toBe(409)
+    await expect(staleDraft.json()).resolves.toEqual({ error: "stale_draft" })
+  })
+
+  it("signals token reissue for an idempotent approval replay", async () => {
+    vi.mocked(recordWorkflowDecisionV2).mockResolvedValueOnce({
+      decision: { id: decisionId, decision: "approve" },
+      draft: { id: draftId, status: "approved" },
+      item: { id: itemId, status: "approved" },
+      executionToken: null,
+      duplicate: true,
+      needsTokenReissue: true,
+      priorState: { itemStatus: "active", draftStatus: "pending_review" },
+      resultState: { itemStatus: "approved", draftStatus: "approved" },
+      version: "v2",
+    })
+
+    const response = await recordDecision(
+      jsonRequest("/decisions", {
+        companyId,
+        workItemId: itemId,
+        actionDraftId: draftId,
+        decision: "approve",
+        expectedVersion: "v1",
+        idempotencyKey: "web:00000000-0000-4000-8000-000000000007",
+      })
+    )
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      duplicate: true,
+      needsTokenReissue: true,
+      executionToken: null,
+    })
+  })
+
+  it("preserves token reissue for an idempotent edit replay", async () => {
+    vi.mocked(recordWorkflowDecisionV2).mockResolvedValueOnce({
+      decision: { id: decisionId, decision: "edit" },
+      draft: { id: draftId, status: "approved" },
+      item: { id: itemId, status: "approved" },
+      executionToken: null,
+      duplicate: true,
+      needsTokenReissue: true,
+      priorState: { itemStatus: "active", draftStatus: "pending_review" },
+      resultState: { itemStatus: "approved", draftStatus: "approved" },
+      version: "v2",
+    })
+
+    const response = await recordDecision(
+      jsonRequest("/decisions", {
+        companyId,
+        workItemId: itemId,
+        actionDraftId: draftId,
+        decision: "edit",
+        expectedVersion: "v1",
+        idempotencyKey: "web:00000000-0000-4000-8000-000000000008",
+        reason: "Correct quantity",
+        editedPayload: { lines: [{ quantity: 12 }] },
+      })
+    )
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      decision: { decision: "edit" },
+      needsTokenReissue: true,
+      executionToken: null,
+    })
   })
 
   it("returns 401 and structured 400 for invalid execution requests", async () => {

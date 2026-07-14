@@ -1534,6 +1534,7 @@ function agentControlApi(
     listCompanies: unsupported,
     listWorkItems: unsupported,
     getWorkItem: unsupported,
+    getWorkItemReview: unsupported,
     askWorkItem: unsupported,
     runFixture: unsupported,
     recordDecision: unsupported,

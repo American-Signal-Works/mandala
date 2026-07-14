@@ -3,7 +3,7 @@ import {
   ControlPlaneQueryError,
   getWorkflowItemDetail,
   listAccessibleCompanies,
-  listWorkflowItems,
+  listWorkflowQueue,
 } from "@/lib/mandala/control-plane/queries"
 import { authenticateRequest } from "@/lib/supabase/request"
 import { GET as listCompanies } from "./companies/route"
@@ -17,7 +17,7 @@ vi.mock("@/lib/mandala/control-plane/queries", async (importOriginal) => {
   return {
     ...original,
     listAccessibleCompanies: vi.fn(),
-    listWorkflowItems: vi.fn(),
+    listWorkflowQueue: vi.fn(),
     getWorkflowItemDetail: vi.fn(),
   }
 })
@@ -69,7 +69,10 @@ describe("Mandala control-plane read routes", () => {
   })
 
   it("validates and forwards bounded item-list filters", async () => {
-    vi.mocked(listWorkflowItems).mockResolvedValue([])
+    vi.mocked(listWorkflowQueue).mockResolvedValue({
+      items: [],
+      nextPage: null,
+    })
 
     const response = await listItems(
       new Request(
@@ -78,12 +81,24 @@ describe("Mandala control-plane read routes", () => {
     )
 
     expect(response.status).toBe(200)
-    await expect(response.json()).resolves.toEqual({ items: [] })
-    expect(listWorkflowItems).toHaveBeenCalledWith({
+    await expect(response.json()).resolves.toEqual({
+      items: [],
+      nextCursor: null,
+    })
+    expect(listWorkflowQueue).toHaveBeenCalledWith({
       supabase: auth.supabase,
-      companyId,
-      statuses: ["active", "approved"],
-      limit: 25,
+      query: {
+        companyId,
+        statuses: ["active", "approved"],
+        itemTypes: [],
+        priorities: [],
+        sourceTypes: [],
+        ownerRoles: [],
+        assigneeIds: [],
+        sort: { key: "priority", direction: "desc" },
+        limit: 25,
+      },
+      page: undefined,
     })
   })
 
@@ -96,7 +111,7 @@ describe("Mandala control-plane read routes", () => {
 
     expect(response.status).toBe(400)
     expect(await response.json()).toMatchObject({ error: "invalid_request" })
-    expect(listWorkflowItems).not.toHaveBeenCalled()
+    expect(listWorkflowQueue).not.toHaveBeenCalled()
   })
 
   it("returns item detail and maps tenant-safe absence to 404", async () => {
@@ -142,6 +157,62 @@ describe("Mandala control-plane read routes", () => {
     )
     expect(missing.status).toBe(404)
     await expect(missing.json()).resolves.toEqual({ error: "item_not_found" })
+  })
+
+  it("redacts nested secrets, memory references, and traces from item detail", async () => {
+    vi.mocked(getWorkflowItemDetail).mockResolvedValueOnce({
+      item: {
+        id: itemId,
+        workflowRunId: "31000000-0000-0000-0000-000000000001",
+        itemType: "example_review",
+        title: "Review example",
+        status: "active",
+        priority: 50,
+        resolutionState: { safe: true, AccessToken: "private" },
+        createdAt: "2026-07-09T12:00:00.000Z",
+        updatedAt: "2026-07-09T12:00:00.000Z",
+      },
+      contextPacket: {
+        id: "34000000-0000-0000-0000-000000000001",
+        sources: [{ type: "fixture", connectorCredentials: "private" }],
+        facts: { sku: "SKU-123", API_TOKEN: "private" },
+        memoryRefs: [{ id: "private" }],
+        freshnessState: "fresh",
+        warnings: [],
+        createdAt: "2026-07-09T12:00:00.000Z",
+      },
+      recommendation: null,
+      evidence: null,
+      draft: null,
+      decision: null,
+      attempt: null,
+      auditEvents: [
+        {
+          id: "32000000-0000-0000-0000-000000000001",
+          eventType: "review_created",
+          summary: "Review created",
+          payload: { safe: true, Hidden_Reasoning: "private" },
+          trace: { langsmith: "private" },
+          createdAt: "2026-07-09T12:00:00.000Z",
+        },
+      ],
+    } as never)
+
+    const response = await inspectItem(
+      new Request(
+        `http://localhost/api/mandala/workflows/items/${itemId}?companyId=${companyId}`
+      ),
+      { params: Promise.resolve({ itemId }) }
+    )
+
+    expect(response.status).toBe(200)
+    expect(response.headers.get("cache-control")).toBe("private, no-store")
+    const body = await response.json()
+    expect(body.contextPacket.memoryRefs).toEqual([])
+    expect(body.auditEvents[0].trace).toEqual({})
+    expect(JSON.stringify(body)).not.toMatch(
+      /private|credential|api_token|hidden_reasoning|langsmith/i
+    )
   })
 
   it("requires authentication for every read route", async () => {

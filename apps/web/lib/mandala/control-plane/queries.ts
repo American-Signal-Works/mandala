@@ -1,4 +1,9 @@
 import type { WorkflowSupabaseClient } from "@/lib/mandala/workflows"
+import { workItemReviewDataSchema } from "@workspace/control-plane"
+import { z } from "zod"
+import type { Json } from "@/lib/supabase/types"
+import type { NormalizedQueueQuery } from "./queue-query"
+import { sanitizePublicProjection } from "./public-projection"
 
 export class ControlPlaneQueryError extends Error {
   constructor(
@@ -7,10 +12,243 @@ export class ControlPlaneQueryError extends Error {
       | "item_list_failed"
       | "item_detail_failed"
       | "item_not_found"
+      | "queue_failed"
+      | "review_failed"
+      | "activity_failed"
+      | "decision_failed"
+      | "unauthorized"
+      | "forbidden"
+      | "invalid_queue_query"
+      | "invalid_queue_cursor"
+      | "queue_query_too_broad"
+      | "invalid_review_request"
+      | "invalid_activity_request"
+      | "invalid_decision"
+      | "draft_not_found"
+      | "review_not_approvable"
+      | "idempotency_key_reused"
+      | "stale_draft"
+      | "stale_version"
+      | "invalid_state"
+      | "warnings_not_acknowledged"
+      | "edited_payload_invalid"
+      | "edit_reason_required"
+      | "edited_payload_shape_changed"
+      | "edited_payload_identity_changed"
+      | "edited_payload_value_invalid"
+      | "edited_payload_not_allowed",
+    readonly databaseCode?: string
   ) {
     super(code)
     this.name = "ControlPlaneQueryError"
   }
+}
+
+export const queueSnapshotPageSchema = z
+  .object({
+    snapshotId: z.string().uuid(),
+    position: z.number().int().min(0),
+    snapshotAt: z.string().datetime({ offset: true }),
+  })
+  .strict()
+
+export const activityPageSchema = z
+  .object({
+    beforeCreatedAt: z.string().datetime({ offset: true }),
+    beforeId: z.string().uuid(),
+  })
+  .strict()
+
+const rowSchema = z.record(z.string(), z.unknown())
+const queueRpcResultSchema = z
+  .object({
+    items: z.array(rowSchema),
+    nextPage: queueSnapshotPageSchema.nullable(),
+  })
+  .strict()
+const activityRpcResultSchema = z
+  .object({
+    items: z.array(rowSchema),
+    nextPage: activityPageSchema.nullable(),
+  })
+  .strict()
+const reviewRpcResultSchema = rowSchema
+const decisionV2ResultSchema = z
+  .object({
+    decision: rowSchema,
+    draft: rowSchema.nullable(),
+    item: rowSchema,
+    executionToken: rowSchema.nullable(),
+    duplicate: z.boolean(),
+    needsTokenReissue: z.boolean(),
+    priorState: rowSchema,
+    resultState: rowSchema,
+    version: z.string().min(1).max(500),
+  })
+  .strict()
+
+export type QueueSnapshotPage = z.infer<typeof queueSnapshotPageSchema>
+export type ActivityPage = z.infer<typeof activityPageSchema>
+
+export async function listWorkflowQueue(input: {
+  supabase: WorkflowSupabaseClient
+  query: NormalizedQueueQuery
+  page?: QueueSnapshotPage
+}) {
+  const payload = {
+    search: input.query.search,
+    statuses: input.query.statuses,
+    itemTypes: input.query.itemTypes,
+    priorities: input.query.priorities,
+    sourceTypes: input.query.sourceTypes,
+    ownerRoles: input.query.ownerRoles,
+    assigneeIds: input.query.assigneeIds,
+    sort: input.query.sort,
+    limit: input.query.limit,
+    ...(input.page
+      ? {
+          snapshotId: input.page.snapshotId,
+          position: input.page.position,
+        }
+      : {}),
+  }
+  const result = await callJsonRpc(input.supabase, "list_workflow_queue_v1", {
+    p_company_id: input.query.companyId,
+    p_query: payload as unknown as Json,
+  })
+  if (result.error) throwControlPlaneRpcError(result.error, "queue_failed")
+  return sanitizePublicProjection(queueRpcResultSchema.parse(result.data))
+}
+
+export async function getWorkflowReview(input: {
+  supabase: WorkflowSupabaseClient
+  companyId: string
+  itemId: string
+  activityLimit: number
+  activityPage?: ActivityPage
+}) {
+  const result = await callJsonRpc(input.supabase, "get_workflow_review_v1", {
+    p_company_id: input.companyId,
+    p_workflow_item_id: input.itemId,
+    p_activity_limit: input.activityLimit,
+    p_activity_before_created_at: input.activityPage?.beforeCreatedAt ?? null,
+    p_activity_before_id: input.activityPage?.beforeId ?? null,
+  })
+  if (result.error) {
+    throwControlPlaneRpcError(result.error, "review_failed", true)
+  }
+  return sanitizePublicProjection(reviewRpcResultSchema.parse(result.data))
+}
+
+export async function listWorkflowActivity(input: {
+  supabase: WorkflowSupabaseClient
+  companyId: string
+  itemId: string
+  limit: number
+  page?: ActivityPage
+}) {
+  const result = await callJsonRpc(
+    input.supabase,
+    "list_workflow_activity_v1",
+    {
+      p_company_id: input.companyId,
+      p_workflow_item_id: input.itemId,
+      p_limit: input.limit,
+      p_before_created_at: input.page?.beforeCreatedAt ?? null,
+      p_before_id: input.page?.beforeId ?? null,
+    }
+  )
+  if (result.error) {
+    throwControlPlaneRpcError(result.error, "activity_failed", true)
+  }
+  return sanitizePublicProjection(activityRpcResultSchema.parse(result.data))
+}
+
+export async function recordWorkflowDecisionV2(input: {
+  supabase: WorkflowSupabaseClient
+  companyId: string
+  workItemId: string
+  actionDraftId?: string
+  decision: "approve" | "edit" | "reject" | "request_rework" | "resolve"
+  expectedVersion: string
+  idempotencyKey: string
+  reason?: string
+  warningsAcknowledged?: boolean
+  editedPayload?: Json
+}) {
+  const result = await callJsonRpc(
+    input.supabase,
+    "record_workflow_decision_v2",
+    {
+      p_company_id: input.companyId,
+      p_workflow_item_id: input.workItemId,
+      p_action_draft_id: input.actionDraftId ?? null,
+      p_decision: input.decision,
+      p_expected_version: input.expectedVersion,
+      p_idempotency_key: input.idempotencyKey,
+      p_reason: input.reason ?? null,
+      p_warnings_acknowledged: input.warningsAcknowledged ?? false,
+      p_edited_payload: input.editedPayload ?? null,
+    }
+  )
+  if (result.error) {
+    throwControlPlaneRpcError(result.error, "decision_failed")
+  }
+  return decisionV2ResultSchema.parse(result.data)
+}
+
+type JsonRpcResult = {
+  data: unknown
+  error: { message: string; code?: string } | null
+}
+
+async function callJsonRpc(
+  supabase: WorkflowSupabaseClient,
+  name: string,
+  args: Record<string, unknown>
+): Promise<JsonRpcResult> {
+  const rpc = supabase.rpc as unknown as (
+    functionName: string,
+    functionArgs: Record<string, unknown>
+  ) => Promise<JsonRpcResult>
+  return rpc(name, args)
+}
+
+function throwControlPlaneRpcError(
+  error: { message: string; code?: string },
+  fallback: ControlPlaneQueryError["code"],
+  tenantSafeItem = false
+): never {
+  const codes: Array<ControlPlaneQueryError["code"]> = [
+    "unauthorized",
+    "forbidden",
+    "item_not_found",
+    "invalid_queue_query",
+    "invalid_queue_cursor",
+    "queue_query_too_broad",
+    "invalid_review_request",
+    "invalid_activity_request",
+    "invalid_decision",
+    "draft_not_found",
+    "review_not_approvable",
+    "idempotency_key_reused",
+    "stale_draft",
+    "stale_version",
+    "invalid_state",
+    "warnings_not_acknowledged",
+    "edited_payload_invalid",
+    "edit_reason_required",
+    "edited_payload_shape_changed",
+    "edited_payload_identity_changed",
+    "edited_payload_value_invalid",
+    "edited_payload_not_allowed",
+  ]
+  const matched = codes.find((code) => error.message.includes(code)) ?? fallback
+  const code =
+    tenantSafeItem && (matched === "forbidden" || matched === "item_not_found")
+      ? "item_not_found"
+      : matched
+  throw new ControlPlaneQueryError(code, error.code)
 }
 
 export async function listAccessibleCompanies(input: {
@@ -44,256 +282,69 @@ export async function listAccessibleCompanies(input: {
   }))
 }
 
-export async function listWorkflowItems(input: {
-  supabase: WorkflowSupabaseClient
-  companyId: string
-  statuses?: string[]
-  limit: number
-}) {
-  let query = input.supabase
-    .from("workflow_items")
-    .select(
-      "id, workflow_run_id, item_type, title, status, priority, resolution_state, created_at, updated_at"
-    )
-    .eq("company_id", input.companyId)
-    .order("priority", { ascending: false })
-    .order("updated_at", { ascending: false })
-    .limit(input.limit)
-
-  if (input.statuses?.length) query = query.in("status", input.statuses)
-  const { data: items, error: itemError } = await query
-  if (itemError) throw new ControlPlaneQueryError("item_list_failed")
-  if (items.length === 0) return []
-
-  const { data: drafts, error: draftError } = await input.supabase
-    .from("workflow_action_drafts")
-    .select("id, workflow_item_id, action_type, status, updated_at")
-    .eq("company_id", input.companyId)
-    .in(
-      "workflow_item_id",
-      items.map((item) => item.id)
-    )
-    .order("updated_at", { ascending: false })
-  if (draftError) throw new ControlPlaneQueryError("item_list_failed")
-
-  const latestDraftByItem = new Map<
-    string,
-    { id: string; actionType: string; status: string; updatedAt: string }
-  >()
-  for (const draft of drafts) {
-    if (!latestDraftByItem.has(draft.workflow_item_id)) {
-      latestDraftByItem.set(draft.workflow_item_id, {
-        id: draft.id,
-        actionType: draft.action_type,
-        status: draft.status,
-        updatedAt: draft.updated_at,
-      })
-    }
-  }
-
-  return items.map((item) => ({
-    id: item.id,
-    workflowRunId: item.workflow_run_id,
-    itemType: item.item_type,
-    title: item.title,
-    status: item.status,
-    priority: item.priority,
-    resolutionState: item.resolution_state,
-    draft: latestDraftByItem.get(item.id) ?? null,
-    createdAt: item.created_at,
-    updatedAt: item.updated_at,
-  }))
-}
-
 export async function getWorkflowItemDetail(input: {
   supabase: WorkflowSupabaseClient
   companyId: string
   itemId: string
 }) {
-  const { data: item, error: itemError } = await input.supabase
-    .from("workflow_items")
-    .select(
-      "id, workflow_run_id, item_type, title, status, priority, resolution_state, created_at, updated_at"
-    )
-    .eq("company_id", input.companyId)
-    .eq("id", input.itemId)
-    .maybeSingle()
-
-  if (itemError) throw new ControlPlaneQueryError("item_detail_failed")
-  if (!item) throw new ControlPlaneQueryError("item_not_found")
-
-  const [context, recommendation, evidence, draft, decision, attempt, audit] =
-    await Promise.all([
-      input.supabase
-        .from("workflow_context_packets")
-        .select(
-          "id, sources, facts, memory_refs, freshness_state, warnings, created_at"
-        )
-        .eq("company_id", input.companyId)
-        .eq("workflow_item_id", input.itemId)
-        .order("created_at", { ascending: false })
-        .limit(1),
-      input.supabase
-        .from("workflow_recommendation_runs")
-        .select(
-          "id, status, rationale_summary, warning_state, warnings, confidence, freshness_state, output, created_at"
-        )
-        .eq("company_id", input.companyId)
-        .eq("workflow_item_id", input.itemId)
-        .order("created_at", { ascending: false })
-        .limit(1),
-      input.supabase
-        .from("workflow_evidence_snapshots")
-        .select("id, source_refs, assumptions, warnings, evidence, created_at")
-        .eq("company_id", input.companyId)
-        .eq("workflow_item_id", input.itemId)
-        .order("created_at", { ascending: false })
-        .limit(1),
-      input.supabase
-        .from("workflow_action_drafts")
-        .select(
-          "id, workflow_run_id, workflow_item_id, action_type, status, payload, edit_policy, updated_at"
-        )
-        .eq("company_id", input.companyId)
-        .eq("workflow_item_id", input.itemId)
-        .order("created_at", { ascending: false })
-        .limit(1),
-      input.supabase
-        .from("workflow_decisions")
-        .select(
-          "id, action_draft_id, decision, reason, warnings_acknowledged, created_at"
-        )
-        .eq("company_id", input.companyId)
-        .eq("workflow_item_id", input.itemId)
-        .order("created_at", { ascending: false })
-        .limit(1),
-      input.supabase
-        .from("workflow_action_attempts")
-        .select(
-          "id, action_draft_id, decision_id, action_type, mode, status, result_payload, mock_external_id, error_message, created_at, completed_at"
-        )
-        .eq("company_id", input.companyId)
-        .eq("workflow_item_id", input.itemId)
-        .order("created_at", { ascending: false })
-        .limit(1),
-      input.supabase
-        .from("workflow_audit_events")
-        .select("id, event_type, summary, payload, trace, created_at")
-        .eq("company_id", input.companyId)
-        .eq("workflow_item_id", input.itemId)
-        .order("created_at", { ascending: false })
-        .limit(50),
-    ])
-
-  for (const result of [
-    context,
-    recommendation,
-    evidence,
-    draft,
-    decision,
-    attempt,
-    audit,
-  ]) {
-    if (result.error) throw new ControlPlaneQueryError("item_detail_failed")
-  }
-
-  const contextRow = context.data?.[0]
-  const recommendationRow = recommendation.data?.[0]
-  const evidenceRow = evidence.data?.[0]
-  const draftRow = draft.data?.[0]
-  const decisionRow = decision.data?.[0]
-  const attemptRow = attempt.data?.[0]
+  const review = await getWorkflowReview({
+    supabase: input.supabase,
+    companyId: input.companyId,
+    itemId: input.itemId,
+    activityLimit: 50,
+  })
+  const activity = activityRpcResultSchema.parse(review.activity)
+  const parsed = workItemReviewDataSchema.parse({
+    ...review,
+    activity: { items: activity.items },
+  })
 
   return {
     item: {
-      id: item.id,
-      workflowRunId: item.workflow_run_id,
-      itemType: item.item_type,
-      title: item.title,
-      status: item.status,
-      priority: item.priority,
-      resolutionState: item.resolution_state,
-      createdAt: item.created_at,
-      updatedAt: item.updated_at,
+      id: parsed.item.id,
+      workflowRunId: parsed.item.workflowRunId,
+      itemType: parsed.item.itemType,
+      title: parsed.item.title,
+      status: parsed.item.status,
+      priority: parsed.item.priority,
+      resolutionState: {},
+      createdAt: parsed.item.createdAt,
+      updatedAt: parsed.item.updatedAt,
     },
-    contextPacket: contextRow
+    contextPacket: parsed.recordSnapshot
       ? {
-          id: contextRow.id,
-          sources: contextRow.sources,
-          facts: contextRow.facts,
-          memoryRefs: contextRow.memory_refs,
-          freshnessState: contextRow.freshness_state,
-          warnings: contextRow.warnings,
-          createdAt: contextRow.created_at,
+          id: parsed.recordSnapshot.contextPacketId,
+          sources: parsed.recordSnapshot.sources,
+          facts: parsed.recordSnapshot.facts,
+          memoryRefs: [],
+          freshnessState: parsed.recordSnapshot.freshnessState,
+          warnings: parsed.recordSnapshot.warnings,
+          createdAt: parsed.recordSnapshot.capturedAt,
         }
       : null,
-    recommendation: recommendationRow
+    recommendation: parsed.recommendation,
+    evidence: parsed.evidence,
+    draft: parsed.draft
       ? {
-          id: recommendationRow.id,
-          status: recommendationRow.status,
-          rationaleSummary: recommendationRow.rationale_summary,
-          warningState: recommendationRow.warning_state,
-          warnings: recommendationRow.warnings,
-          confidence: recommendationRow.confidence,
-          freshnessState: recommendationRow.freshness_state,
-          output: recommendationRow.output,
-          createdAt: recommendationRow.created_at,
+          id: parsed.draft.id,
+          workflowRunId: parsed.item.workflowRunId,
+          workflowItemId: parsed.item.id,
+          actionType: parsed.draft.actionType,
+          status: parsed.draft.status,
+          payload: parsed.draft.payload,
+          editPolicy: parsed.draft.editPolicy,
+          updatedAt: parsed.draft.updatedAt,
         }
       : null,
-    evidence: evidenceRow
-      ? {
-          id: evidenceRow.id,
-          sourceRefs: evidenceRow.source_refs,
-          assumptions: evidenceRow.assumptions,
-          warnings: evidenceRow.warnings,
-          evidence: evidenceRow.evidence,
-          createdAt: evidenceRow.created_at,
-        }
-      : null,
-    draft: draftRow
-      ? {
-          id: draftRow.id,
-          workflowRunId: draftRow.workflow_run_id,
-          workflowItemId: draftRow.workflow_item_id,
-          actionType: draftRow.action_type,
-          status: draftRow.status,
-          payload: draftRow.payload,
-          editPolicy: draftRow.edit_policy,
-          updatedAt: draftRow.updated_at,
-        }
-      : null,
-    decision: decisionRow
-      ? {
-          id: decisionRow.id,
-          actionDraftId: decisionRow.action_draft_id,
-          decision: decisionRow.decision,
-          reason: decisionRow.reason,
-          warningsAcknowledged: decisionRow.warnings_acknowledged,
-          createdAt: decisionRow.created_at,
-        }
-      : null,
-    attempt: attemptRow
-      ? {
-          id: attemptRow.id,
-          actionDraftId: attemptRow.action_draft_id,
-          decisionId: attemptRow.decision_id,
-          actionType: attemptRow.action_type,
-          mode: attemptRow.mode,
-          status: attemptRow.status,
-          resultPayload: attemptRow.result_payload,
-          mockExternalId: attemptRow.mock_external_id,
-          errorMessage: attemptRow.error_message,
-          createdAt: attemptRow.created_at,
-          completedAt: attemptRow.completed_at,
-        }
-      : null,
-    auditEvents: (audit.data ?? []).map((event) => ({
+    decision: null,
+    attempt: null,
+    auditEvents: parsed.activity.items.map((event) => ({
       id: event.id,
-      eventType: event.event_type,
+      eventType: event.type,
       summary: event.summary,
-      payload: event.payload,
-      trace: event.trace,
-      createdAt: event.created_at,
+      payload: event.details,
+      trace: {},
+      createdAt: event.createdAt,
     })),
   }
 }

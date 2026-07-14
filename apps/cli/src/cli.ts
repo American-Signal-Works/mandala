@@ -406,6 +406,7 @@ async function handleWork(
     action === "approve" ||
     action === "edit" ||
     action === "reject" ||
+    action === "resolve" ||
     action === "rework" ||
     action === "decide"
   ) {
@@ -413,7 +414,7 @@ async function handleWork(
   }
   throw new CliError(
     "unknown_command",
-    "Use: mandala work list|inspect|show|ask|approve|edit|reject|rework|decide|execute."
+    "Use: mandala work list|inspect|show|ask|approve|edit|reject|resolve|rework|decide|execute."
   )
 }
 
@@ -474,7 +475,7 @@ async function askWork(
 }
 
 async function decideWork(
-  action: "approve" | "edit" | "reject" | "rework" | "decide",
+  action: "approve" | "edit" | "reject" | "resolve" | "rework" | "decide",
   args: string[],
   input: Parameters<typeof executeCommand>[0]
 ): Promise<unknown> {
@@ -482,6 +483,7 @@ async function decideWork(
     approve: { type: "boolean" },
     edit: { type: "boolean" },
     reject: { type: "boolean" },
+    resolve: { type: "boolean" },
     rework: { type: "boolean" },
     execute: { type: "boolean" },
     reason: { type: "string" },
@@ -737,9 +739,10 @@ async function executeResolvedDecision(
   companyName: string,
   options: { executeAfterDecision?: boolean }
 ): Promise<unknown> {
-  const detail = await input
-    .getApi()
-    .getWorkItem(intent.companyId, intent.itemId)
+  const [detail, review] = await Promise.all([
+    input.getApi().getWorkItem(intent.companyId, intent.itemId),
+    input.getApi().getWorkItemReview(intent.companyId, intent.itemId),
+  ])
   setAuditLinks(input.audit, detail)
   const warnings = collectWarnings(detail)
   const current = await requireResolved(
@@ -752,7 +755,7 @@ async function executeResolvedDecision(
   )
   if (current.kind !== "record_decision")
     throw new CliError("invalid_intent", "Expected a decision intent.")
-  if (!detail.draft)
+  if (current.decision !== "resolve" && !detail.draft)
     throw new CliError(
       "draft_not_found",
       "The selected work item has no reviewable action draft."
@@ -762,7 +765,7 @@ async function executeResolvedDecision(
     current.decision === "edit"
       ? jsonObjectSchema.parse(
           applyJsonPointerAssignments(
-            detail.draft.payload,
+            detail.draft?.payload ?? {},
             current.patches ?? []
           )
         )
@@ -773,18 +776,23 @@ async function executeResolvedDecision(
     item: detail.item,
     warnings,
     changes: current.patches,
-    actionType: detail.draft.actionType,
-    draft: {
-      ...detail.draft,
-      payload: editedPayload ?? detail.draft.payload,
-    },
+    actionType: detail.draft?.actionType,
+    draft: detail.draft
+      ? {
+          ...detail.draft,
+          payload: editedPayload ?? detail.draft.payload,
+        }
+      : undefined,
   })
   if (!confirmed) throw commandCancelled()
 
   const result = await input.getApi().recordDecision({
     companyId: current.companyId,
-    actionDraftId: detail.draft.id,
+    workItemId: current.itemId,
+    ...(detail.draft ? { actionDraftId: detail.draft.id } : {}),
     decision: current.decision,
+    expectedVersion: review.version,
+    idempotencyKey: `cli:${randomUUID()}`,
     reason: current.reason,
     warningsAcknowledged: current.warningsAcknowledged,
     editedPayload,
@@ -799,6 +807,11 @@ async function executeResolvedDecision(
       "execution_token_missing",
       "The approved decision did not return an execution capability."
     )
+  if (!result.draft || !detail.draft)
+    throw new CliError(
+      "draft_not_found",
+      "The approved decision did not return an action draft."
+    )
 
   const executionIntent: ControlIntent = {
     kind: "execute_mock_action",
@@ -806,7 +819,9 @@ async function executeResolvedDecision(
     itemId: current.itemId,
     risk: "mock_execution",
   }
-  const approvedPayload = jsonObjectSchema.parse(result.draft.payload)
+  const approvedPayload = jsonObjectSchema.parse(
+    editedPayload ?? detail.draft.payload
+  )
   const executeConfirmed = await input.confirm({
     intent: executionIntent,
     companyName,
@@ -1222,12 +1237,12 @@ function executionOutput(result: unknown): unknown {
 }
 
 function decisionFromCommand(
-  action: "approve" | "edit" | "reject" | "rework" | "decide",
+  action: "approve" | "edit" | "reject" | "resolve" | "rework" | "decide",
   values: Record<string, unknown>
 ): DecisionKind | undefined {
   if (action !== "decide") {
     if (
-      ["approve", "edit", "reject", "rework"].some(
+      ["approve", "edit", "reject", "resolve", "rework"].some(
         (flag) => values[flag] === true
       )
     ) {
@@ -1239,13 +1254,13 @@ function decisionFromCommand(
     return action === "rework" ? "request_rework" : action
   }
 
-  const selected = ["approve", "edit", "reject", "rework"].filter(
+  const selected = ["approve", "edit", "reject", "resolve", "rework"].filter(
     (flag) => values[flag] === true
   )
   if (selected.length !== 1) {
     throw new CliError(
       "clarification_required",
-      "Choose exactly one of --approve, --edit, --reject, or --rework."
+      "Choose exactly one of --approve, --edit, --reject, --resolve, or --rework."
     )
   }
   const decision = selected[0]
@@ -1348,8 +1363,9 @@ Workflows
   mandala work approve <item-id> [--ack-warnings]
   mandala work edit <item-id> --set <pointer=value> --reason <reason> [--ack-warnings]
   mandala work reject <item-id> --reason <reason>
+  mandala work resolve <item-id>
   mandala work rework <item-id> --reason <reason>
-  mandala work decide <item-id> --approve|--edit|--reject|--rework
+  mandala work decide <item-id> --approve|--edit|--reject|--resolve|--rework
   mandala work execute <item-id>
   mandala parse <bounded phrase>
   mandala chat [bounded phrase]
