@@ -1,12 +1,21 @@
 import { describe, expect, it } from "vitest"
 import {
+  renderActivityHistory,
   renderAssistantMessage,
+  renderDecisionResult,
   renderDraftPreview,
+  renderEvidenceSummary,
+  renderExecutionResult,
   renderHeader,
+  renderHomeSummary,
   renderHumanResult,
+  renderInbox,
+  renderInboxItemOverview,
   renderInboxSummary,
+  renderProcurementReview,
   sanitizeTerminalText,
 } from "../src/terminal/index.js"
+import { terminalTextWidth, wrapTerminalText } from "../src/terminal/table.js"
 
 const itemId = "40000000-0000-4000-8000-000000000001"
 const draftId = "50000000-0000-4000-8000-000000000001"
@@ -22,6 +31,31 @@ describe("terminal renderer", () => {
     expect(output).toContain("Hello. What would you like")
     expect(output).not.toContain("\u001b")
     expect(output).not.toContain("+---")
+  })
+
+  it("preserves readable paragraphs and bullet lines in assistant answers", () => {
+    const output = renderAssistantMessage(
+      "648 units is reasonable.\n\nWhy:\n- It covers 40 days.\n- Lead time is 26 days.",
+      { width: 40 }
+    )
+
+    expect(output).toContain(
+      "648 units is reasonable.\n\nWhy:\n- It covers 40 days."
+    )
+    expect(output).toContain("\n- Lead time is 26 days.")
+  })
+
+  it("wraps CJK, emoji, and combining graphemes by terminal cell width", () => {
+    const output = wrapTerminalText(
+      "库存提醒 📦 cafe\u0301 库存提醒 📦 cafe\u0301 库存提醒",
+      24
+    )
+
+    expect(output).toContain("📦")
+    expect(output).toContain("cafe\u0301")
+    expect(
+      output.split("\n").every((line) => terminalTextWidth(line) <= 24)
+    ).toBe(true)
   })
 
   it("retains every known detail section and unknown nested field", () => {
@@ -234,6 +268,175 @@ describe("terminal renderer", () => {
       )
     }
   )
+
+  it.each([40, 80, 120])(
+    "renders the product review flow within %s columns",
+    (width) => {
+      const detail = productDetail()
+      const outputs = [
+        renderHomeSummary(
+          {
+            context: {
+              companyName: "Mandala Local Demo",
+              mode: "mock",
+            },
+            items: [
+              detail.item,
+              {
+                title: "Old completed work",
+                status: "resolved",
+                type: "Status",
+              },
+            ],
+            itemCount: 1,
+            warningCount: 2,
+          },
+          { width }
+        ),
+        renderInbox(
+          { items: [detail.item, { title: "Done", status: "resolved" }] },
+          { width }
+        ),
+        renderInboxItemOverview(detail, { width }),
+        renderProcurementReview(detail, { width }),
+        renderEvidenceSummary(detail, { width }),
+        renderDecisionResult(detail, { width }),
+        renderExecutionResult(detail, { width }),
+        renderActivityHistory(detail, { width }),
+      ]
+
+      for (const output of outputs) {
+        expect(output).not.toContain("\u001b")
+        expect(output.split("\n").every((line) => line.length <= width)).toBe(
+          true
+        )
+      }
+      expect(outputs[0]).toContain("Workspace")
+      expect(outputs[1]).toContain("1 active")
+      expect(outputs[1]).not.toContain("Done")
+      expect(outputs[2]).toContain("Why it exists")
+      expect(outputs[3]).toContain("Current stock")
+      expect(outputs[4]).toContain("Memory provenance")
+      expect(outputs[5]).toContain("APPROVE")
+      expect(outputs[6]).toContain("MOCK ONLY")
+      expect(outputs[7]).toContain("audit-marker")
+    }
+  )
+
+  it("projects canonical procurement facts, evidence, and warning severity", () => {
+    const detail = productDetail()
+    const review = renderProcurementReview(detail, { width: 120 })
+    const evidence = renderEvidenceSummary(detail, { width: 120 })
+
+    for (const marker of [
+      "8 units",
+      "31 units / 30 days",
+      "12 units",
+      "24",
+      "Acme Supply",
+      "ShipHero inventory",
+    ]) {
+      expect(`${review}\n${evidence}`).toContain(marker)
+    }
+    expect(review).toContain("Warning · Blocking")
+    expect(review).toContain("Vendor is missing a destination code")
+    expect(review).toContain("Warning · Informational")
+    expect(review).toContain("Sales increased 42%")
+    expect(evidence).toContain("Current as of 10:42 AM")
+  })
+
+  it("makes mock execution unmistakable and supports confirmation previews", () => {
+    const preview = renderExecutionResult(
+      {
+        preview: true,
+        actionType: "create_purchase_order",
+        draft: {
+          payload: { vendor: "Acme Supply", quantity: 24 },
+        },
+        mode: "mock",
+        status: "awaiting_confirmation",
+      },
+      { width: 80 }
+    )
+    const decision = renderDecisionResult(
+      {
+        preview: true,
+        decision: "approve",
+        reason: "Inventory checks confirmed",
+        warningsAcknowledged: true,
+      },
+      { width: 80 }
+    )
+
+    expect(preview).toContain("Approval execution · MOCK")
+    expect(preview).toContain("create_purchase_order")
+    expect(preview).toContain("No live external record was created")
+    expect(decision).toContain("APPROVE")
+    expect(decision).toContain("Confirm decision")
+    expect(decision).toContain("Inventory checks confirmed")
+    expect(decision).not.toContain("Decision recorded")
+  })
+
+  it("treats canonical blocked recommendation warnings as blocking", () => {
+    const detail = productDetail()
+    const output = renderEvidenceSummary(
+      {
+        ...detail,
+        recommendation: {
+          ...detail.recommendation,
+          warningState: "blocked",
+          warnings: ["Destination code is missing."],
+        },
+        evidence: {
+          ...detail.evidence,
+          warnings: ["Destination code is missing."],
+        },
+      },
+      { width: 100 }
+    )
+
+    expect(output).toContain("Warning · Blocking")
+    expect(output).toContain("Destination code is missing.")
+    expect(output).not.toContain("Blocking          None")
+    expect(output).not.toMatch(
+      /Warning · Informational\s+Destination code is missing\./
+    )
+  })
+
+  it("redacts and sanitizes every product projection before rendering", () => {
+    const secret = "must-not-render-product"
+    const malicious = `safe\u001b[2J authorization Bearer ${secret}`
+    const input = {
+      companyName: malicious,
+      items: [{ title: malicious, warnings: [malicious] }],
+      item: { title: malicious },
+      recommendation: { rationaleSummary: malicious },
+      evidence: { assumptions: [malicious] },
+      decision: { kind: "approve", reason: malicious },
+      attempt: {
+        mode: "mock",
+        status: "succeeded",
+        mockExternalId: malicious,
+      },
+      auditEvents: [{ summary: malicious }],
+      rawToken: secret,
+    }
+    const outputs = [
+      renderHomeSummary(input),
+      renderInbox(input),
+      renderInboxItemOverview(input),
+      renderProcurementReview(input),
+      renderEvidenceSummary(input),
+      renderDecisionResult(input),
+      renderExecutionResult(input),
+      renderActivityHistory(input),
+    ]
+
+    for (const output of outputs) {
+      expect(output).not.toContain(secret)
+      expect(hasUnsafeControls(output)).toBe(false)
+    }
+  })
 })
 
 function completeDetail() {
@@ -272,6 +475,101 @@ function completeDetail() {
     attempt: { status: "succeeded", resultPayload: { note: "result-marker" } },
     auditEvents: [{ eventType: "executed", summary: "audit-marker" }],
     futureSection: { nested: [{ preserved: "future-marker" }] },
+  }
+}
+
+function productDetail() {
+  return {
+    item: {
+      id: itemId,
+      title: "Reorder review · SKU-1042",
+      type: "Review",
+      status: "active",
+      priority: "urgent",
+      source: "ShipHero",
+      ownerRole: "Inventory manager",
+      waitingAge: "2h",
+      requiredAttention: "Review the proposed reorder",
+      nextAction: "Approve, edit, request rework, or reject",
+    },
+    contextPacket: {
+      trigger: "Stock is below the reorder point",
+      sources: ["ShipHero inventory", "Shopify sales"],
+      sourceRefs: ["inventory/SKU-1042", "sales/SKU-1042"],
+      freshnessState: "Current as of 10:42 AM",
+      createdAt: "2026-07-12T10:42:00-07:00",
+      facts: {
+        availableInventory: "8 units",
+        reorderPoint: "12 units",
+        recent30DaySales: "31 units / 30 days",
+        openPOs: "None",
+      },
+      blockingWarnings: [
+        {
+          blocking: true,
+          message: "Vendor is missing a destination code",
+        },
+      ],
+      warnings: [
+        {
+          severity: "informational",
+          message: "Sales increased 42%",
+        },
+      ],
+      memoryRefs: ["prior approved reorder"],
+    },
+    recommendation: {
+      rationaleSummary: "Order 24 units from Acme Supply",
+      confidence: 0.91,
+      output: {
+        recommendedQuantity: 24,
+        vendor: "Acme Supply",
+        flags: ["unusual sales spike"],
+      },
+      availableActions: ["Approve", "Edit", "Request rework", "Reject"],
+    },
+    evidence: {
+      trigger: "Below reorder point after a sales spike",
+      assumptions: ["Demand remains stable"],
+      missingData: ["Destination code"],
+      confidence: 0.91,
+      memoryProvenance: ["prior approved reorder"],
+      rationale: "Stock and recent sales support replenishment",
+    },
+    draft: {
+      id: draftId,
+      payload: {
+        vendor: "Acme Supply",
+        lines: [{ sku: "SKU-1042", quantity: 24 }],
+      },
+    },
+    decision: {
+      kind: "approve",
+      actorEmail: "seed@example.com",
+      reason: "Inventory and open-PO checks confirmed",
+      decidedAt: "2026-07-12T10:45:00-07:00",
+      stateBefore: "active",
+      stateAfter: "approved",
+      warningsAcknowledged: true,
+    },
+    attempt: {
+      status: "succeeded",
+      mode: "mock",
+      actionType: "create_purchase_order",
+      mockExternalId: "mock_po_01J",
+      resultPayload: { outcome: "Purchase order simulated" },
+      completedAt: "2026-07-12T10:46:00-07:00",
+      auditEventId: "evt_01J",
+    },
+    auditEvents: [
+      {
+        eventType: "executed",
+        createdAt: "2026-07-12T10:46:00-07:00",
+        actorEmail: "seed@example.com",
+        summary: "Mock execution completed",
+        auditReference: "audit-marker",
+      },
+    ],
   }
 }
 

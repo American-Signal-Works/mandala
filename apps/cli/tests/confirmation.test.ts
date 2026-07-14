@@ -46,7 +46,7 @@ describe("interactive confirmation", () => {
     expect(output.value).toContain("Draft Preview")
     expect(output.value).toContain("quantity")
     expect(output.value).toContain("144")
-    expect(output.value).toContain("editable")
+    expect(output.value).toContain("Editable")
     expect(output.value).toContain("true")
     expect(output.value).toContain("rawToken")
     expect(output.value).toContain("[REDACTED]")

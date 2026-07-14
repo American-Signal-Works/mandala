@@ -286,6 +286,13 @@ export const workItemDetailResponseSchema = workItemDetailSchema
 export const workItemDetailEnvelopeSchema =
   apiSuccessEnvelopeSchema(workItemDetailSchema)
 
+export const workItemQuestionRequestSchema = z
+  .object({
+    companyId: z.string().uuid(),
+    question: z.string().trim().min(1).max(2_000),
+  })
+  .strict()
+
 const intentBaseSchema = z.object({ companyId: z.string().uuid() })
 
 export const runFixtureIntentSchema = intentBaseSchema
@@ -482,6 +489,20 @@ export const controlParseTraceSchema = z
   })
   .strict()
 
+export const workItemQuestionDataSchema = z
+  .object({
+    answer: z.string().trim().min(1).max(5_000),
+    model: z.string().min(1).max(200),
+    durationMs: z.number().int().min(0),
+    trace: controlParseTraceSchema.nullable(),
+  })
+  .strict()
+
+export const workItemQuestionResponseSchema = workItemQuestionDataSchema
+export const workItemQuestionEnvelopeSchema = apiSuccessEnvelopeSchema(
+  workItemQuestionDataSchema
+)
+
 export const controlParseDataSchema = z
   .object({
     outcome: controlOutcomeSchema,
@@ -614,6 +635,8 @@ export const fixtureRunDataSchema = z
     recommendation: jsonObjectSchema.nullable().optional(),
     draft: jsonObjectSchema.nullable().optional(),
     auditEvents: z.array(jsonObjectSchema).optional(),
+    dataset: jsonObjectSchema.optional(),
+    agentRun: jsonObjectSchema.optional(),
   })
   .strict()
 export const fixtureRunResponseSchema = fixtureRunDataSchema
@@ -740,6 +763,10 @@ export type ApiErrorEnvelope = z.infer<typeof apiErrorEnvelopeSchema>
 export type CompanySummary = z.infer<typeof companySummarySchema>
 export type WorkItemSummary = z.infer<typeof workItemSummarySchema>
 export type WorkItemDetail = z.infer<typeof workItemDetailSchema>
+export type WorkItemQuestionRequest = z.infer<
+  typeof workItemQuestionRequestSchema
+>
+export type WorkItemQuestionData = z.infer<typeof workItemQuestionDataSchema>
 export type JsonPointerPatch = z.infer<typeof jsonPointerPatchSchema>
 export type DecisionKind = z.infer<typeof decisionKindSchema>
 export type ControlIntent = z.infer<typeof controlIntentSchema>

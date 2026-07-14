@@ -24,4 +24,9 @@ export const registeredFixtureScenarios = [
     id: "reject_reorder",
     description: "Creates a draft suitable for rejection review.",
   },
+  {
+    id: "synthetic_agent_run",
+    description:
+      "Builds Mandala Bean Co. with 1,200 products plus sales/events, then runs a traced read-only test agent.",
+  },
 ] as const

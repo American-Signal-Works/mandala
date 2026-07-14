@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto"
 import { NextResponse } from "next/server"
 import {
   fixtureRunRequestSchema as sharedFixtureRunRequestSchema,
@@ -8,10 +9,14 @@ import { authenticateRequest } from "@/lib/supabase/request"
 import { deriveControlInputHash } from "@/lib/mandala/control-plane/input-hash"
 import {
   WorkflowMemoryStore,
+  SyntheticProcurementAgentError,
   classifyWorkflowRpcError,
+  generateSyntheticCommerceDataset,
   persistFixtureRun,
   getCompanyMembership,
   runProcurementFixtureScenario,
+  runSyntheticProcurementAgentScenario,
+  runSyntheticProcurementTestAgent,
 } from "@/lib/mandala/workflows"
 
 const fixtureScenarioSchema = z.enum([
@@ -22,6 +27,7 @@ const fixtureScenarioSchema = z.enum([
   "no_action",
   "edit_reorder",
   "reject_reorder",
+  "synthetic_agent_run",
 ])
 const fixtureRunRequestSchema = sharedFixtureRunRequestSchema.extend({
   scenarioId: fixtureScenarioSchema,
@@ -64,12 +70,40 @@ export async function POST(request: Request) {
   }
 
   const store = new WorkflowMemoryStore()
-  const result = runProcurementFixtureScenario({
-    store,
-    companyId: parsed.data.companyId,
-    actorUserId: user.id,
-    scenarioId: parsed.data.scenarioId,
-  })
+  let agentRun: Awaited<
+    ReturnType<typeof runSyntheticProcurementTestAgent>
+  > | null = null
+  let result: ReturnType<typeof runProcurementFixtureScenario>
+  if (parsed.data.scenarioId === "synthetic_agent_run") {
+    const dataset = generateSyntheticCommerceDataset({
+      seed: `${parsed.data.companyId}:${randomUUID()}`,
+    })
+    try {
+      agentRun = await runSyntheticProcurementTestAgent({ dataset })
+    } catch (error) {
+      const errorClass =
+        error instanceof SyntheticProcurementAgentError
+          ? error.errorClass
+          : "model_error"
+      return NextResponse.json(
+        { error: "test_agent_unavailable", errorClass },
+        { status: 503 }
+      )
+    }
+    result = runSyntheticProcurementAgentScenario({
+      store,
+      companyId: parsed.data.companyId,
+      actorUserId: user.id,
+      agent: agentRun,
+    })
+  } else {
+    result = runProcurementFixtureScenario({
+      store,
+      companyId: parsed.data.companyId,
+      actorUserId: user.id,
+      scenarioId: parsed.data.scenarioId,
+    })
+  }
 
   try {
     const persistence = await persistFixtureRun({
@@ -91,6 +125,12 @@ export async function POST(request: Request) {
           workflowRun: persistence.run,
           eventId: persistence.eventId,
           itemId: persistence.itemId ?? null,
+          ...(agentRun
+            ? {
+                dataset: agentRun.dataset,
+                agentRun: projectAgentRun(agentRun),
+              }
+            : {}),
         }),
         { headers: { "cache-control": "private, no-store" } }
       )
@@ -112,6 +152,12 @@ export async function POST(request: Request) {
       recommendation: result.recommendation,
       draft: result.draft,
       auditEvents: result.auditEvents,
+      ...(agentRun
+        ? {
+            dataset: agentRun.dataset,
+            agentRun: projectAgentRun(agentRun),
+          }
+        : {}),
     }),
     { headers: { "cache-control": "private, no-store" } }
   )
@@ -127,4 +173,16 @@ async function parseJson(request: Request): Promise<unknown> {
 
 function canRunFixture(role: string): boolean {
   return role === "owner" || role === "admin"
+}
+
+function projectAgentRun(
+  agent: Awaited<ReturnType<typeof runSyntheticProcurementTestAgent>>
+) {
+  return {
+    model: agent.model,
+    trace: agent.trace,
+    toolCallCount: agent.toolCalls.length,
+    toolsUsed: [...new Set(agent.toolCalls.map((call) => call.name))],
+    selection: agent.selection,
+  }
 }

@@ -5,37 +5,46 @@ export type ProcurementFixtureScenarioId =
   | "stale_inventory"
   | "no_action"
   | "edit_reorder"
-  | "reject_reorder";
+  | "reject_reorder"
+  | "synthetic_agent_run"
+
+export type StaticProcurementFixtureScenarioId = Exclude<
+  ProcurementFixtureScenarioId,
+  "synthetic_agent_run"
+>
 
 export type ProcurementSkuSnapshot = {
-  sku: string;
-  title: string;
-  vendor: string;
-  inventoryOnHand: number;
-  inboundUnits: number;
-  reorderPoint: number;
-  safetyStockUnits: number;
-  vendorMinimumOrderQuantity: number;
-  vendorPackSize: number;
-  leadTimeDays: number;
-  recent30DaySales: number;
-  trailing90DaySales: number;
-  seasonalIndex: number;
-  recentSpikeMultiplier: number;
-  dataFreshnessHours: number;
-  duplicateOpenOrderUnits: number;
-};
+  sku: string
+  title: string
+  vendor: string
+  inventoryOnHand: number
+  inboundUnits: number
+  reorderPoint: number
+  safetyStockUnits: number
+  vendorMinimumOrderQuantity: number
+  vendorPackSize: number
+  leadTimeDays: number
+  recent30DaySales: number
+  trailing90DaySales: number
+  seasonalIndex: number
+  recentSpikeMultiplier: number
+  dataFreshnessHours: number
+  duplicateOpenOrderUnits: number
+}
 
 export type ProcurementFixtureScenario = {
-  id: ProcurementFixtureScenarioId;
-  title: string;
-  sourceSnapshotId: string;
-  runReason: string;
-  expectedReviewDecision?: "edit" | "reject";
-  sku: ProcurementSkuSnapshot;
-};
+  id: ProcurementFixtureScenarioId
+  title: string
+  sourceSnapshotId: string
+  runReason: string
+  expectedReviewDecision?: "edit" | "reject"
+  sku: ProcurementSkuSnapshot
+}
 
-export const procurementFixtureScenarios: Record<ProcurementFixtureScenarioId, ProcurementFixtureScenario> = {
+export const procurementFixtureScenarios: Record<
+  StaticProcurementFixtureScenarioId,
+  ProcurementFixtureScenario
+> = {
   clean_reorder: {
     id: "clean_reorder",
     title: "Clean reorder recommendation",
@@ -64,7 +73,8 @@ export const procurementFixtureScenarios: Record<ProcurementFixtureScenarioId, P
     id: "sales_spike_warning",
     title: "Reorder with sales spike warning",
     sourceSnapshotId: "inventory-snapshot-2026-07-09-spike",
-    runReason: "Inventory below reorder point and recent sales velocity is unusually high.",
+    runReason:
+      "Inventory below reorder point and recent sales velocity is unusually high.",
     sku: {
       sku: "MDL-CHAI-002",
       title: "Mandala Cardamom Chai",
@@ -88,7 +98,8 @@ export const procurementFixtureScenarios: Record<ProcurementFixtureScenarioId, P
     id: "duplicate_open_order",
     title: "Duplicate open order risk",
     sourceSnapshotId: "inventory-snapshot-2026-07-09-duplicate",
-    runReason: "Inventory is low but an existing open order covers projected need.",
+    runReason:
+      "Inventory is low but an existing open order covers projected need.",
     sku: {
       sku: "MDL-COCOA-003",
       title: "Mandala Drinking Cocoa",
@@ -112,7 +123,8 @@ export const procurementFixtureScenarios: Record<ProcurementFixtureScenarioId, P
     id: "stale_inventory",
     title: "Stale inventory data",
     sourceSnapshotId: "inventory-snapshot-2026-07-02-stale",
-    runReason: "Inventory is below reorder point but source data is too stale to recommend execution.",
+    runReason:
+      "Inventory is below reorder point but source data is too stale to recommend execution.",
     sku: {
       sku: "MDL-HONEY-004",
       title: "Mandala Wildflower Honey",
@@ -136,7 +148,8 @@ export const procurementFixtureScenarios: Record<ProcurementFixtureScenarioId, P
     id: "no_action",
     title: "Inventory above reorder point",
     sourceSnapshotId: "inventory-snapshot-2026-07-09-no-action",
-    runReason: "Inventory is above reorder point, so the event should be suppressed.",
+    runReason:
+      "Inventory is above reorder point, so the event should be suppressed.",
     sku: {
       sku: "MDL-JAM-005",
       title: "Mandala Berry Jam",
@@ -160,7 +173,8 @@ export const procurementFixtureScenarios: Record<ProcurementFixtureScenarioId, P
     id: "edit_reorder",
     title: "Reorder requiring a quantity edit",
     sourceSnapshotId: "inventory-snapshot-2026-07-09-edit",
-    runReason: "Inventory is low and the fixture expects a reviewer to edit the proposed quantity.",
+    runReason:
+      "Inventory is low and the fixture expects a reviewer to edit the proposed quantity.",
     expectedReviewDecision: "edit",
     sku: {
       sku: "MDL-MATCHA-006",
@@ -185,7 +199,8 @@ export const procurementFixtureScenarios: Record<ProcurementFixtureScenarioId, P
     id: "reject_reorder",
     title: "Reorder requiring rejection",
     sourceSnapshotId: "inventory-snapshot-2026-07-09-reject",
-    runReason: "Inventory is low and the fixture expects the reviewer to reject the proposed action.",
+    runReason:
+      "Inventory is low and the fixture expects the reviewer to reject the proposed action.",
     expectedReviewDecision: "reject",
     sku: {
       sku: "MDL-OOLONG-007",
@@ -206,8 +221,12 @@ export const procurementFixtureScenarios: Record<ProcurementFixtureScenarioId, P
       duplicateOpenOrderUnits: 0,
     },
   },
-};
+}
 
-export function getProcurementFixtureScenario(id: ProcurementFixtureScenarioId): ProcurementFixtureScenario {
-  return procurementFixtureScenarios[id];
+export function getProcurementFixtureScenario<
+  ScenarioId extends StaticProcurementFixtureScenarioId,
+>(id: ScenarioId): ProcurementFixtureScenario & { id: ScenarioId } {
+  return procurementFixtureScenarios[id] as ProcurementFixtureScenario & {
+    id: ScenarioId
+  }
 }

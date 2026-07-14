@@ -9,7 +9,7 @@ const SEED_USER_EMAIL = process.env.SEED_USER_EMAIL ?? "seed@example.com"
 const SEED_USER_PASSWORD = process.env.SEED_USER_PASSWORD ?? "supersecure123"
 const DEMO_COMPANY_ID =
   process.env.SEED_COMPANY_ID ?? "60000000-0000-4000-8000-000000000001"
-const DEMO_COMPANY_NAME = process.env.SEED_COMPANY_NAME ?? "Mandala Local Demo"
+const DEMO_COMPANY_NAME = process.env.SEED_COMPANY_NAME ?? "Mandala Bean Co."
 const RESET = process.argv.includes("--reset")
 const SEED_MANDALA_DEMO =
   process.env.SEED_MANDALA_DEMO === "true" ||
@@ -135,6 +135,8 @@ async function seedMandalaDemo(
     process.exit(1)
   }
 
+  await seedSyntheticCommerceConnector(admin, userId)
+
   const { error: policyError } = await admin
     .from("company_approval_policies")
     .upsert(
@@ -154,6 +156,150 @@ async function seedMandalaDemo(
   }
 
   console.log(`Seeded demo company: ${DEMO_COMPANY_NAME}`)
+}
+
+async function seedSyntheticCommerceConnector(
+  admin: ReturnType<typeof createClient>,
+  userId: string
+) {
+  const { data: connector, error: connectorError } = await admin
+    .from("connector_definitions")
+    .select("id")
+    .eq("connector_key", "mandala.synthetic-commerce")
+    .single()
+  if (connectorError || !connector) {
+    throw new Error(
+      `Synthetic connector definition unavailable: ${connectorError?.message ?? "missing"}`
+    )
+  }
+
+  const { data: connectorVersion, error: versionError } = await admin
+    .from("connector_definition_versions")
+    .select("id, schema_hash")
+    .eq("connector_definition_id", connector.id)
+    .eq("version", "1.0.0")
+    .single()
+  if (versionError || !connectorVersion) {
+    throw new Error(
+      `Synthetic connector version unavailable: ${versionError?.message ?? "missing"}`
+    )
+  }
+
+  const { data: installation, error: installationError } = await admin
+    .from("company_connector_installations")
+    .upsert(
+      {
+        company_id: DEMO_COMPANY_ID,
+        connector_definition_id: connector.id,
+        connector_version_id: connectorVersion.id,
+        display_name: "Mandala Bean Co. Synthetic Commerce",
+        status: "connected",
+        installed_by: userId,
+      },
+      { onConflict: "company_id,connector_definition_id" }
+    )
+    .select("id")
+    .single()
+  if (installationError || !installation) {
+    throw new Error(
+      `Failed to install synthetic connector: ${installationError?.message ?? "missing"}`
+    )
+  }
+
+  const { data: offerings, error: offeringsError } = await admin
+    .from("connector_capability_offerings")
+    .select("capability_version_id")
+    .eq("connector_version_id", connectorVersion.id)
+  if (offeringsError || !offerings?.length) {
+    throw new Error(
+      `Synthetic connector capabilities unavailable: ${offeringsError?.message ?? "missing"}`
+    )
+  }
+
+  const capabilityVersionIds = offerings.map(
+    (offering) => offering.capability_version_id
+  )
+  const { data: capabilityVersions, error: capabilitiesError } = await admin
+    .from("capability_definition_versions")
+    .select("id, capability_definition_id")
+    .in("id", capabilityVersionIds)
+  if (capabilitiesError || !capabilityVersions) {
+    throw new Error(
+      `Synthetic capability versions unavailable: ${capabilitiesError?.message ?? "missing"}`
+    )
+  }
+  const { data: capabilityDefinitions, error: definitionsError } = await admin
+    .from("capability_definitions")
+    .select("id, effect")
+    .in(
+      "id",
+      capabilityVersions.map((version) => version.capability_definition_id)
+    )
+  if (definitionsError || !capabilityDefinitions) {
+    throw new Error(
+      `Synthetic capability metadata unavailable: ${definitionsError?.message ?? "missing"}`
+    )
+  }
+  const effectByDefinition = new Map(
+    capabilityDefinitions.map((definition) => [definition.id, definition.effect])
+  )
+
+  for (const version of capabilityVersions) {
+    const effect = effectByDefinition.get(version.capability_definition_id)
+    const { error: grantError } = await admin
+      .from("company_connector_capability_grants")
+      .upsert(
+        {
+          company_id: DEMO_COMPANY_ID,
+          installation_id: installation.id,
+          capability_version_id: version.id,
+          status: "active",
+          granted_by: userId,
+          revoked_by: null,
+          revoked_at: null,
+        },
+        { onConflict: "company_id,installation_id,capability_version_id" }
+      )
+    if (grantError) throw new Error(`Failed to grant synthetic capability: ${grantError.message}`)
+
+    const { error: capabilityPolicyError } = await admin
+      .from("company_capability_policies")
+      .upsert(
+        {
+          company_id: DEMO_COMPANY_ID,
+          capability_version_id: version.id,
+          enabled: true,
+          minimum_role: effect === "read" ? "member" : "approver",
+          allow_model_processing: effect === "read",
+          require_human_approval: effect !== "read",
+          max_rows: 2_500,
+          max_bytes: 1_048_576,
+          updated_by: userId,
+        },
+        { onConflict: "company_id,capability_version_id" }
+      )
+    if (capabilityPolicyError) {
+      throw new Error(
+        `Failed to configure synthetic capability policy: ${capabilityPolicyError.message}`
+      )
+    }
+  }
+
+  const { error: healthError } = await admin
+    .from("company_connector_health")
+    .upsert(
+      {
+        company_id: DEMO_COMPANY_ID,
+        installation_id: installation.id,
+        status: "healthy",
+        observed_schema_hash: connectorVersion.schema_hash,
+        details: { source: "seed", credentialFree: true },
+      },
+      { onConflict: "installation_id,company_id" }
+    )
+  if (healthError) {
+    throw new Error(`Failed to mark synthetic connector healthy: ${healthError.message}`)
+  }
 }
 
 function isLoopback(value: string): boolean {

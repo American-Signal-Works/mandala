@@ -133,6 +133,26 @@ describe("CLI commands", () => {
     expect(stdout.value).not.toContain('"ok":true')
   })
 
+  it("asks a read-only question about one selected work item", async () => {
+    const api = fakeApi()
+    const question = "Is 648 a good reorder quantity?"
+
+    expect(
+      await command(
+        ["work", "ask", itemId, "--question", question, "--json"],
+        api
+      )
+    ).toBe(0)
+
+    expect(api.askWorkItem).toHaveBeenCalledWith(itemId, {
+      companyId,
+      question,
+    })
+    expect(api.recordDecision).not.toHaveBeenCalled()
+    expect(api.execute).not.toHaveBeenCalled()
+    expect(stdout.value).toContain('"answer"')
+  })
+
   it("applies a generic JSON Pointer edit through the decide alias", async () => {
     const api = fakeApi()
 
@@ -707,9 +727,39 @@ async function command(
 
 function fakeApi(overrides: Partial<ControlApi> = {}) {
   return {
+    listAgents: vi.fn(async () => ({ agents: [] })),
+    installAgent: vi.fn(async () => {
+      throw new Error("Agent installation is not used by this test.")
+    }),
+    validateAgent: vi.fn(async () => ({
+      valid: false,
+      diagnostics: [],
+      preview: null,
+    })),
+    testAgent: vi.fn(async () => ({
+      agentId: itemId,
+      workflowRunId: runId,
+      status: "completed" as const,
+      itemId: null,
+    })),
+    activateAgent: vi.fn(async () => {
+      throw new Error("Agent activation is not used by this test.")
+    }),
+    deactivateAgent: vi.fn(async () => {
+      throw new Error("Agent deactivation is not used by this test.")
+    }),
+    rollbackAgent: vi.fn(async () => {
+      throw new Error("Agent rollback is not used by this test.")
+    }),
     listCompanies: vi.fn(async () => ({ companies: [] })),
     listWorkItems: vi.fn(async () => ({ items: [] })),
     getWorkItem: vi.fn(async () => detail()),
+    askWorkItem: vi.fn(async () => ({
+      answer: "The draft is supported by the selected item's current facts.",
+      model: "injected-test-model",
+      durationMs: 1,
+      trace: null,
+    })),
     runFixture: vi.fn(async () => ({
       duplicate: false,
       workflowRun: { id: runId },

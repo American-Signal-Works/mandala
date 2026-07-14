@@ -133,6 +133,51 @@ describe.sequential("PKCE magic-link authentication", () => {
     ).rejects.toMatchObject({ code: "auth_callback_timeout" })
     await expect(store.readSession()).resolves.toBeNull()
   })
+
+  it("cancels a pending magic-link callback and releases the loopback port", async () => {
+    const signInWithOtp = vi.fn().mockResolvedValue({ error: null })
+    vi.mocked(createClient).mockReturnValue({
+      auth: {
+        signInWithOtp,
+        exchangeCodeForSession: vi.fn(),
+      },
+    } as never)
+    const controller = new AbortController()
+    const login = loginWithMagicLink({
+      email: "user@example.com",
+      environment,
+      signal: controller.signal,
+      store,
+      timeoutMs: 1_000,
+    })
+    await vi.waitFor(() => expect(signInWithOtp).toHaveBeenCalled())
+
+    controller.abort()
+
+    await expect(login).rejects.toMatchObject({ code: "auth_cancelled" })
+    await expect(store.readSession()).resolves.toBeNull()
+    await expect(fetch(authCallbackUrl)).rejects.toThrow()
+  })
+
+  it("explains when an email is not part of the local demo", async () => {
+    vi.mocked(createClient).mockReturnValue({
+      auth: {
+        signInWithOtp: vi.fn().mockResolvedValue({
+          error: { code: "otp_disabled", status: 422 },
+        }),
+        exchangeCodeForSession: vi.fn(),
+      },
+    } as never)
+
+    await expect(
+      loginWithMagicLink({
+        email: "unknown@example.com",
+        environment,
+        store,
+        timeoutMs: 1_000,
+      })
+    ).rejects.toMatchObject({ code: "unknown_local_user" })
+  })
 })
 
 it("refreshes an expired session and atomically replaces its tokens", async () => {
@@ -155,6 +200,41 @@ it("refreshes an expired session and atomically replaces its tokens", async () =
   await expect(store.readSession()).resolves.toMatchObject({
     accessToken: "fresh-access",
     refreshToken: "fresh-refresh",
+  })
+})
+
+it("clears an invalid saved session and selected company", async () => {
+  await store.writeConfig({
+    schemaVersion: 1,
+    mode: "mock",
+    selectedCompany: {
+      id: "20000000-0000-4000-8000-000000000099",
+      name: "Old workspace",
+    },
+  })
+  await store.writeSession({
+    schemaVersion: 1,
+    accessToken: "expired-access",
+    refreshToken: "missing-refresh",
+    expiresAt: 1,
+    user: { id: userId, email: "user@example.com" },
+  })
+  vi.mocked(createClient).mockReturnValue({
+    auth: {
+      refreshSession: vi.fn().mockResolvedValue({
+        data: { session: null },
+        error: { code: "refresh_token_not_found", status: 400 },
+      }),
+    },
+  } as never)
+
+  const manager = new SessionManager(store, environment)
+  await expect(manager.getAccessToken()).rejects.toMatchObject({
+    code: "session_expired",
+  })
+  await expect(store.readSession()).resolves.toBeNull()
+  await expect(store.readConfig()).resolves.toMatchObject({
+    selectedCompany: null,
   })
 })
 

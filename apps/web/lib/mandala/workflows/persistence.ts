@@ -141,6 +141,18 @@ const workflowRpcStatuses: Record<string, number> = {
   unsafe_workflow_spec: 400,
   unsafe_workflow_action: 400,
   invalid_audit_actor: 400,
+  invalid_compiled_workflow_payload: 400,
+  invalid_compiled_workflow_contract: 400,
+  invalid_compiled_review_graph: 400,
+  unsafe_compiled_workflow_action: 400,
+  workflow_not_found: 404,
+  workflow_not_successfully_compiled: 409,
+  binding_snapshot_not_activatable: 409,
+  workflow_capability_binding_unhealthy: 503,
+  compiled_workflow_manifest_mismatch: 409,
+  workflow_run_id_conflict: 409,
+  compiled_event_key_conflict: 409,
+  compiled_item_key_conflict: 409,
 }
 
 export class WorkflowRpcError extends Error {
@@ -190,23 +202,7 @@ export async function persistFixtureRun(input: {
   clientSurface: WorkflowClientSurface
   controlRequestId?: string
 }): Promise<PersistFixtureResult> {
-  const { result } = input
-  const payload = {
-    company_id: result.run.companyId,
-    definition: mapDefinition(result.definition),
-    run: mapRun(result.run),
-    event: mapEvent(result.event),
-    item: result.item ? mapItem(result.item) : null,
-    context_packet: result.contextPacket
-      ? mapContextPacket(result.contextPacket)
-      : null,
-    recommendation: result.recommendation
-      ? mapRecommendation(result.recommendation)
-      : null,
-    evidence: result.evidence ? mapEvidence(result.evidence) : null,
-    draft: result.draft ? mapDraft(result.draft) : null,
-    audit_events: result.auditEvents.map(mapAuditEvent),
-  } as unknown as Json
+  const payload = createWorkflowFixturePersistencePayload(input.result)
 
   const { data, error } = input.controlRequestId
     ? await input.supabase.rpc(
@@ -225,6 +221,27 @@ export async function persistFixtureRun(input: {
       })
   if (error) throwRpcError(error.message, error.code)
   return persistFixtureResultSchema.parse(data)
+}
+
+export function createWorkflowFixturePersistencePayload(
+  result: WorkflowFixtureRunResult
+): Json {
+  return {
+    company_id: result.run.companyId,
+    definition: mapDefinition(result.definition),
+    run: mapRun(result.run),
+    event: mapEvent(result.event),
+    item: result.item ? mapItem(result.item) : null,
+    context_packet: result.contextPacket
+      ? mapContextPacket(result.contextPacket)
+      : null,
+    recommendation: result.recommendation
+      ? mapRecommendation(result.recommendation)
+      : null,
+    evidence: result.evidence ? mapEvidence(result.evidence) : null,
+    draft: result.draft ? mapDraft(result.draft) : null,
+    audit_events: result.auditEvents.map(mapAuditEvent),
+  } as unknown as Json
 }
 
 export async function recordWorkflowDecisionRpc(input: {

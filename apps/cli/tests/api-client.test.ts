@@ -2,6 +2,35 @@ import { describe, expect, it, vi } from "vitest"
 import { ApiClient } from "../src/api-client.js"
 
 describe("API client", () => {
+  it("classifies a refused connection as definitely unavailable", async () => {
+    const refusal = Object.assign(new Error("connect refused"), {
+      code: "ECONNREFUSED",
+    })
+    const client = new ApiClient(
+      "http://127.0.0.1:3000",
+      { getAccessToken: vi.fn().mockResolvedValue("access") },
+      vi
+        .fn<typeof fetch>()
+        .mockRejectedValue(new TypeError("fetch failed", { cause: refusal }))
+    )
+
+    await expect(client.listCompanies()).rejects.toMatchObject({
+      code: "api_unavailable",
+    })
+  })
+
+  it("keeps an unclassified transport failure ambiguous", async () => {
+    const client = new ApiClient(
+      "http://127.0.0.1:3000",
+      { getAccessToken: vi.fn().mockResolvedValue("access") },
+      vi.fn<typeof fetch>().mockRejectedValue(new TypeError("fetch failed"))
+    )
+
+    await expect(client.listCompanies()).rejects.toMatchObject({
+      code: "network_error",
+    })
+  })
+
   it("retries one unauthorized response with a forced session refresh", async () => {
     const getAccessToken = vi
       .fn()
@@ -194,6 +223,36 @@ describe("API client", () => {
     })
   })
 
+  it("posts selected-item questions to the read-only question route", async () => {
+    const itemId = "40000000-0000-4000-8000-000000000001"
+    const request = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        answer: "The quantity covers roughly 40 days of recent demand.",
+        model: "openai/gpt-5.4-mini",
+        durationMs: 25,
+        trace: null,
+      })
+    )
+    const client = new ApiClient(
+      "http://127.0.0.1:3000",
+      { getAccessToken: vi.fn().mockResolvedValue("access") },
+      request
+    )
+
+    await client.askWorkItem(itemId, {
+      companyId: "20000000-0000-4000-8000-000000000001",
+      question: "Is 648 a good quantity?",
+    })
+
+    expect(request.mock.calls[0]?.[0]).toBe(
+      `http://127.0.0.1:3000/api/mandala/workflows/items/${itemId}/questions`
+    )
+    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toEqual({
+      companyId: "20000000-0000-4000-8000-000000000001",
+      question: "Is 648 a good quantity?",
+    })
+  })
+
   it("posts terminal transitions for an existing control request", async () => {
     const controlRequestId = "90000000-0000-4000-8000-000000000001"
     const request = vi
@@ -220,4 +279,83 @@ describe("API client", () => {
       resolutionStatus: "blocked",
     })
   })
+
+  it("uses the bounded agent management routes and request contracts", async () => {
+    const companyId = "20000000-0000-4000-8000-000000000001"
+    const agentId = "a0000000-0000-4000-8000-000000000001"
+    const agent = agentResponse(agentId, companyId)
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json({ agents: [agent] }))
+      .mockResolvedValueOnce(Response.json({ agent, created: true }))
+      .mockResolvedValueOnce(
+        Response.json({ valid: false, diagnostics: [], preview: null })
+      )
+      .mockResolvedValueOnce(
+        Response.json({
+          agentId,
+          workflowRunId: "30000000-0000-4000-8000-000000000001",
+          status: "completed",
+          itemId: null,
+        })
+      )
+      .mockImplementation(async () =>
+        Response.json({ agent, action: "lifecycle_changed" })
+      )
+    const client = new ApiClient(
+      "http://127.0.0.1:3000",
+      { getAccessToken: vi.fn().mockResolvedValue("access") },
+      request
+    )
+
+    await client.listAgents(companyId)
+    await client.installAgent({
+      companyId,
+      skillMarkdown: "# Inventory agent",
+      activate: false,
+    })
+    await client.validateAgent({
+      companyId,
+      skillMarkdown: "# Inventory agent",
+    })
+    await client.testAgent(agentId, { companyId, seed: "coffee-shop" })
+    await client.activateAgent(agentId, { companyId, reason: "Ready" })
+    await client.deactivateAgent(agentId, { companyId, reason: "Pause" })
+    await client.rollbackAgent(agentId, { companyId, version: "0.9.0" })
+
+    expect(request.mock.calls.map(([url]) => url)).toEqual([
+      `http://127.0.0.1:3000/api/mandala/agents?companyId=${companyId}`,
+      "http://127.0.0.1:3000/api/mandala/agents",
+      "http://127.0.0.1:3000/api/mandala/agents/validate",
+      `http://127.0.0.1:3000/api/mandala/agents/${agentId}/test-runs`,
+      `http://127.0.0.1:3000/api/mandala/agents/${agentId}/activate`,
+      `http://127.0.0.1:3000/api/mandala/agents/${agentId}/deactivate`,
+      `http://127.0.0.1:3000/api/mandala/agents/${agentId}/rollback`,
+    ])
+    expect(JSON.parse(String(request.mock.calls[6]?.[1]?.body))).toEqual({
+      companyId,
+      version: "0.9.0",
+    })
+  })
 })
+
+function agentResponse(agentId: string, companyId: string) {
+  return {
+    id: agentId,
+    companyId,
+    workflowKey: "inventory-replenishment",
+    workflowType: "procurement_reorder_review",
+    name: "Inventory replenishment",
+    version: "1.0.0",
+    status: "active",
+    skillSchemaVersion: "1",
+    compilerVersion: "1",
+    skillDigest: "a".repeat(64),
+    manifestDigest: "b".repeat(64),
+    active: true,
+    capabilities: [],
+    diagnostics: [],
+    createdAt: "2026-07-13T12:00:00.000Z",
+    updatedAt: "2026-07-13T12:00:00.000Z",
+  }
+}

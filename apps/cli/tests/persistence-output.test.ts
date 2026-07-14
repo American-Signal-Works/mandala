@@ -100,6 +100,10 @@ describe("secret-free output", () => {
         nested: {
           refresh_token: "refresh-secret",
           executionToken: { id: "public", rawToken: "action-secret" },
+          password: "password-secret",
+          apiKey: "api-secret",
+          private_key: "private-secret",
+          credential: "credential-secret",
         },
       })
     ).toEqual({
@@ -107,6 +111,10 @@ describe("secret-free output", () => {
       nested: {
         refresh_token: "[REDACTED]",
         executionToken: { id: "public", rawToken: "[REDACTED]" },
+        password: "[REDACTED]",
+        apiKey: "[REDACTED]",
+        private_key: "[REDACTED]",
+        credential: "[REDACTED]",
       },
     })
   })
