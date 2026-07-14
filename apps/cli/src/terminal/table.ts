@@ -6,6 +6,9 @@ const MAX_WIDTH = 120
 const MIN_WIDTH = 24
 const NARROW_WIDTH = 70
 const MAX_GRID_FIELDS = 5
+const GRAPHEME_SEGMENTER = new Intl.Segmenter(undefined, {
+  granularity: "grapheme",
+})
 
 const ASCII_CHARS = {
   top: "-",
@@ -126,25 +129,78 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 export function isScalar(value: unknown): boolean {
-  return value === null || (typeof value !== "object" && !Array.isArray(value))
+  return value === null || typeof value !== "object"
 }
 
 export function wrapTerminalText(value: string, requestedWidth?: number): string {
   const width = normalizeTerminalWidth(requestedWidth)
   const safe = sanitizeTerminalText(value)
-  if (safe.length <= width) return safe
+  return safe
+    .split("\n")
+    .flatMap((line) => wrapTerminalLine(line, width))
+    .join("\n")
+}
 
-  const lines: string[] = []
-  let remaining = safe
-  while (remaining.length > width) {
-    const candidate = remaining.slice(0, width + 1)
-    const breakAt = candidate.lastIndexOf(" ")
-    const splitAt = breakAt > Math.floor(width / 2) ? breakAt : width
-    lines.push(remaining.slice(0, splitAt).trimEnd())
-    remaining = remaining.slice(splitAt).trimStart()
+/** Approximate terminal cell width by grapheme, including common CJK, emoji,
+ * combining-mark, and zero-width-joiner sequences. */
+export function terminalTextWidth(value: string): number {
+  const safe = sanitizeTerminalText(value)
+  let width = 0
+  for (const { segment } of GRAPHEME_SEGMENTER.segment(safe)) {
+    if (segment === "\n") continue
+    if (/\p{Extended_Pictographic}/u.test(segment) || containsWideCharacter(segment))
+      width += 2
+    else if (!/^\p{Mark}+$/u.test(segment)) width += 1
   }
-  if (remaining) lines.push(remaining)
-  return lines.join("\n")
+  return width
+}
+
+function wrapTerminalLine(value: string, width: number): string[] {
+  if (terminalTextWidth(value) <= width) return [value]
+  let remaining = [...GRAPHEME_SEGMENTER.segment(value)].map(
+    ({ segment }) => segment
+  )
+  const lines: string[] = []
+  while (graphemesWidth(remaining) > width) {
+    let used = 0
+    let splitAt = 0
+    let lastSpace = -1
+    for (let index = 0; index < remaining.length; index += 1) {
+      const segment = remaining[index] ?? ""
+      const next = terminalTextWidth(segment)
+      if (used + next > width) break
+      used += next
+      splitAt = index + 1
+      if (segment === " " && used > Math.floor(width / 2)) lastSpace = index
+    }
+    if (lastSpace >= 0) splitAt = lastSpace
+    splitAt = Math.max(1, splitAt)
+    lines.push(remaining.slice(0, splitAt).join("").trimEnd())
+    remaining = remaining.slice(splitAt)
+    while (remaining[0] === " ") remaining.shift()
+  }
+  if (remaining.length > 0) lines.push(remaining.join(""))
+  return lines
+}
+
+function graphemesWidth(graphemes: readonly string[]): number {
+  return graphemes.reduce((total, grapheme) => total + terminalTextWidth(grapheme), 0)
+}
+
+function containsWideCharacter(value: string): boolean {
+  return [...value].some((character) => {
+    const code = character.codePointAt(0) ?? 0
+    return (
+      (code >= 0x1100 && code <= 0x115f) ||
+      (code >= 0x2e80 && code <= 0xa4cf) ||
+      (code >= 0xac00 && code <= 0xd7a3) ||
+      (code >= 0xf900 && code <= 0xfaff) ||
+      (code >= 0xfe10 && code <= 0xfe6f) ||
+      (code >= 0xff00 && code <= 0xff60) ||
+      (code >= 0xffe0 && code <= 0xffe6) ||
+      (code >= 0x20000 && code <= 0x3fffd)
+    )
+  })
 }
 
 function renderFieldRows(rows: FieldRow[], width: number): string {

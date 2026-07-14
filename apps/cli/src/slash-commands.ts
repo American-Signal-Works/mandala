@@ -9,8 +9,19 @@ export type SlashCommandName =
   | "/login"
   | "/auth-status"
   | "/logout"
+  | "/workspace"
   | "/companies"
   | "/company"
+  | "/agents"
+  | "/agent-list"
+  | "/agent-show"
+  | "/agent-validate"
+  | "/agent-install"
+  | "/agent-test"
+  | "/agent-activate"
+  | "/agent-deactivate"
+  | "/agent-versions"
+  | "/agent-rollback"
   | "/inbox"
   | "/purchase-requests"
   | "/fixtures"
@@ -21,6 +32,7 @@ export type SlashCommandName =
   | "/evidence"
   | "/draft"
   | "/history"
+  | "/detail"
   | "/approve"
   | "/reject"
   | "/deny"
@@ -37,6 +49,7 @@ export type SlashCommandName =
 export type SlashCommandKind =
   | "auth"
   | "company"
+  | "agent"
   | "view"
   | "fixture"
   | "selection"
@@ -45,7 +58,20 @@ export type SlashCommandKind =
   | "local"
 
 export type SlashArgumentMode = "none" | "required"
-export type SlashAvailability = "always" | "selection" | "approved-selection"
+export type SlashAvailability =
+  | "always"
+  | "selection"
+  | "decision-selection"
+  | "approved-selection"
+
+export type SlashCommandGroup =
+  | "Account"
+  | "Review work"
+  | "Agents"
+  | "Inspect selected"
+  | "Decide"
+  | "Sandbox"
+  | "Session"
 
 export type SlashViewDefinition = {
   backendArgs: readonly ["work", "list"]
@@ -60,6 +86,7 @@ export type SlashCommandDefinition = {
   availability: SlashAvailability
   command: SlashCommandName
   description: string
+  group: SlashCommandGroup
   kind: SlashCommandKind
   paletteVisible: boolean
   usage: string
@@ -68,8 +95,19 @@ export type SlashCommandDefinition = {
     | "login"
     | "auth-status"
     | "logout"
+    | "workspace"
     | "companies"
     | "company"
+    | "agents"
+    | "agent-list"
+    | "agent-show"
+    | "agent-validate"
+    | "agent-install"
+    | "agent-test"
+    | "agent-activate"
+    | "agent-deactivate"
+    | "agent-versions"
+    | "agent-rollback"
     | "fixtures"
     | "run-fixture"
     | "open"
@@ -78,6 +116,7 @@ export type SlashCommandDefinition = {
     | "evidence"
     | "draft"
     | "history"
+    | "detail"
     | "approve"
     | "reject"
     | "rework"
@@ -87,11 +126,10 @@ export type SlashCommandDefinition = {
 }
 
 export const slashCommands = [
-  command("/", "local", "Show available commands", "/", {
+  command("/", "local", "Open the command palette", "/", {
     paletteVisible: false,
   }),
   command("/login", "auth", "Sign in with a magic link", "/login [email]", {
-    argumentMode: "required",
     backendAction: "login",
   }),
   command(
@@ -104,15 +142,123 @@ export const slashCommands = [
   command("/logout", "auth", "Sign out and clear context", "/logout", {
     backendAction: "logout",
   }),
-  command("/companies", "company", "List authorized companies", "/companies", {
+  command(
+    "/workspace",
+    "company",
+    "Choose an authorized workspace",
+    "/workspace",
+    { backendAction: "workspace" }
+  ),
+  command("/companies", "company", "List authorized workspaces", "/companies", {
     backendAction: "companies",
+    paletteVisible: false,
   }),
   command(
     "/company",
     "company",
-    "Switch to an authorized company",
+    "Switch to an authorized workspace",
     "/company <row-or-id>",
-    { argumentMode: "required", backendAction: "company" }
+    {
+      argumentMode: "required",
+      backendAction: "company",
+      paletteVisible: false,
+    }
+  ),
+  command(
+    "/agents",
+    "agent",
+    "Manage the agents in this workspace",
+    "/agents",
+    { backendAction: "agents" }
+  ),
+  command(
+    "/agent-list",
+    "agent",
+    "List workspace agents without opening a menu",
+    "/agent-list",
+    { backendAction: "agent-list", paletteVisible: false }
+  ),
+  command("/agent-show", "agent", "Show one agent", "/agent-show <row-or-id>", {
+    argumentMode: "required",
+    backendAction: "agent-show",
+    paletteVisible: false,
+  }),
+  command(
+    "/agent-validate",
+    "agent",
+    "Validate an agent skill file",
+    "/agent-validate <skill-file>",
+    {
+      argumentMode: "required",
+      backendAction: "agent-validate",
+      paletteVisible: false,
+    }
+  ),
+  command(
+    "/agent-install",
+    "agent",
+    "Validate and install an inactive agent skill",
+    "/agent-install <skill-file>",
+    {
+      argumentMode: "required",
+      backendAction: "agent-install",
+      paletteVisible: false,
+    }
+  ),
+  command(
+    "/agent-test",
+    "agent",
+    "Run an agent safely in Sandbox",
+    "/agent-test <row-or-id>",
+    {
+      argumentMode: "required",
+      backendAction: "agent-test",
+      paletteVisible: false,
+    }
+  ),
+  command(
+    "/agent-activate",
+    "agent",
+    "Make an agent available for new work",
+    "/agent-activate <row-or-id>",
+    {
+      argumentMode: "required",
+      backendAction: "agent-activate",
+      paletteVisible: false,
+    }
+  ),
+  command(
+    "/agent-deactivate",
+    "agent",
+    "Stop an agent from starting new work",
+    "/agent-deactivate <row-or-id>",
+    {
+      argumentMode: "required",
+      backendAction: "agent-deactivate",
+      paletteVisible: false,
+    }
+  ),
+  command(
+    "/agent-versions",
+    "agent",
+    "List installed versions of an agent",
+    "/agent-versions <row-or-id>",
+    {
+      argumentMode: "required",
+      backendAction: "agent-versions",
+      paletteVisible: false,
+    }
+  ),
+  command(
+    "/agent-rollback",
+    "agent",
+    "Restore an earlier installed agent version",
+    "/agent-rollback <row-or-id> <version>",
+    {
+      argumentMode: "required",
+      backendAction: "agent-rollback",
+      paletteVisible: false,
+    }
   ),
   command("/inbox", "view", "Show actionable work", "/inbox", {
     view: {
@@ -155,6 +301,7 @@ export const slashCommands = [
     {
       argumentMode: "required",
       backendAction: "open",
+      paletteVisible: false,
     }
   ),
   command(
@@ -189,11 +336,21 @@ export const slashCommands = [
     backendAction: "history",
   }),
   command(
+    "/detail",
+    "detail",
+    "Show complete selected-item detail",
+    "/detail",
+    {
+      availability: "selection",
+      backendAction: "detail",
+    }
+  ),
+  command(
     "/approve",
     "mutation",
     "Approve the selected work item",
     "/approve [row-or-id] [--ack-warnings]",
-    { availability: "selection", backendAction: "approve" }
+    { availability: "decision-selection", backendAction: "approve" }
   ),
   command(
     "/reject",
@@ -201,7 +358,7 @@ export const slashCommands = [
     "Reject the selected work item",
     "/reject [row-or-id] [--reason <reason>]",
     {
-      availability: "selection",
+      availability: "decision-selection",
       backendAction: "reject",
       paletteVisible: false,
     }
@@ -213,7 +370,7 @@ export const slashCommands = [
     "/deny [row-or-id] [--reason <reason>]",
     {
       aliasFor: "/reject",
-      availability: "selection",
+      availability: "decision-selection",
       backendAction: "reject",
     }
   ),
@@ -222,14 +379,14 @@ export const slashCommands = [
     "mutation",
     "Return the selected work item for rework",
     "/rework [row-or-id] [--reason <reason>]",
-    { availability: "selection", backendAction: "rework" }
+    { availability: "decision-selection", backendAction: "rework" }
   ),
   command(
     "/edit",
     "mutation",
     "Edit and approve the selected draft",
     "/edit [row-or-id] [--set <pointer=value>] [--reason <reason>]",
-    { availability: "selection", backendAction: "edit" }
+    { availability: "decision-selection", backendAction: "edit" }
   ),
   command(
     "/execute",
@@ -284,19 +441,63 @@ export function getSlashCommand(
   return registry.get(name as SlashCommandName)
 }
 
+export function isSlashCommandAvailable(
+  definition: SlashCommandDefinition,
+  selectedStatus?: string
+): boolean {
+  switch (definition.availability) {
+    case "selection":
+      return selectedStatus !== undefined
+    case "decision-selection":
+      return selectedStatus === "active" || selectedStatus === "blocked"
+    case "approved-selection":
+      return selectedStatus === "approved"
+    default:
+      return true
+  }
+}
+
 export function parseSlashCommand(line: string): SlashParseResult {
   const tokenized = tokenize(line.trim())
   if (!tokenized.ok) return tokenized
   const [name, ...args] = tokenized.tokens
   const definition = name ? getSlashCommand(name) : undefined
   if (!definition) {
+    const suggestion = suggestSlashCommands(name ?? "", paletteSlashCommands)[0]
     return {
       ok: false,
       code: "unknown_slash_command",
-      message: "Unknown slash command. Use /help to see available commands.",
+      message: suggestion
+        ? `Unknown slash command. Did you mean ${suggestion.command}? Type / to browse available commands.`
+        : "Unknown slash command. Type / to browse available commands.",
     }
   }
   return { ok: true, value: { args, definition } }
+}
+
+export function suggestSlashCommands(
+  input: string,
+  definitions: readonly SlashCommandDefinition[] = paletteSlashCommands
+): SlashCommandDefinition[] {
+  const query = input.replace(/^\//, "").trim().toLowerCase()
+  if (!query) return [...definitions]
+  const direct = definitions.filter(({ command, description }) => {
+    return (
+      command.slice(1).toLowerCase().includes(query) ||
+      description.toLowerCase().includes(query)
+    )
+  })
+  if (direct.length > 0) return direct
+  if (query.length < 3) return []
+  const threshold = query.length > 7 ? 3 : 2
+  return definitions
+    .map((definition) => ({
+      definition,
+      distance: editDistance(query, definition.command.slice(1).toLowerCase()),
+    }))
+    .filter(({ distance }) => distance <= threshold)
+    .sort((left, right) => left.distance - right.distance)
+    .map(({ definition }) => definition)
 }
 
 export function completeSlashCommand(line: string): [string[], string] {
@@ -331,10 +532,49 @@ function command(
     availability: "always",
     command: commandName,
     description,
+    group: groupForKind(kind),
     kind,
     paletteVisible: true,
     usage,
     ...extra,
+  }
+}
+
+function editDistance(left: string, right: string): number {
+  const previous = Array.from({ length: right.length + 1 }, (_, index) => index)
+  for (let leftIndex = 1; leftIndex <= left.length; leftIndex += 1) {
+    const current = [leftIndex]
+    for (let rightIndex = 1; rightIndex <= right.length; rightIndex += 1) {
+      current[rightIndex] = Math.min(
+        (current[rightIndex - 1] ?? 0) + 1,
+        (previous[rightIndex] ?? 0) + 1,
+        (previous[rightIndex - 1] ?? 0) +
+          (left[leftIndex - 1] === right[rightIndex - 1] ? 0 : 1)
+      )
+    }
+    previous.splice(0, previous.length, ...current)
+  }
+  return previous[right.length] ?? Math.max(left.length, right.length)
+}
+
+function groupForKind(kind: SlashCommandKind): SlashCommandGroup {
+  switch (kind) {
+    case "auth":
+    case "company":
+      return "Account"
+    case "agent":
+      return "Agents"
+    case "view":
+    case "selection":
+      return "Review work"
+    case "detail":
+      return "Inspect selected"
+    case "mutation":
+      return "Decide"
+    case "fixture":
+      return "Sandbox"
+    case "local":
+      return "Session"
   }
 }
 

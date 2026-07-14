@@ -1,4 +1,13 @@
 import {
+  agentActionRequestSchema,
+  agentActionResponseSchema,
+  agentInstallRequestSchema,
+  agentInstallResponseSchema,
+  agentListResponseSchema,
+  agentTestRunRequestSchema,
+  agentTestRunResponseSchema,
+  agentValidateRequestSchema,
+  agentValidateResponseSchema,
   companiesResponseSchema,
   controlRequestCreateRequestSchema,
   controlRequestCreateResponseSchema,
@@ -16,6 +25,14 @@ import {
   fixtureRunResponseSchema,
   workItemDetailResponseSchema,
   workItemListResponseSchema,
+  workItemQuestionRequestSchema,
+  workItemQuestionResponseSchema,
+  type AgentActionRequest,
+  type AgentInstallRequest,
+  type AgentSummary,
+  type AgentTestRunRequest,
+  type AgentValidateRequest,
+  type AgentValidateResponse,
   type CompanySummary,
   type ControlRequestCreateRequest,
   type ControlRequestTransitionRequest,
@@ -30,19 +47,48 @@ import {
   type FixtureRunData,
   type FixtureRunRequest,
   type WorkItemDetail,
+  type WorkItemQuestionData,
+  type WorkItemQuestionRequest,
   type WorkItemSummary,
 } from "@workspace/control-plane"
 import type { z } from "zod"
 import type { SessionAccess } from "./auth.js"
 import { CliError } from "./errors.js"
 
+type AgentActionData = z.infer<typeof agentActionResponseSchema>
+type AgentInstallData = z.infer<typeof agentInstallResponseSchema>
+type AgentTestRunData = z.infer<typeof agentTestRunResponseSchema>
+
 export interface ControlApi {
+  listAgents(companyId: string): Promise<{ agents: AgentSummary[] }>
+  installAgent(request: AgentInstallRequest): Promise<AgentInstallData>
+  validateAgent(request: AgentValidateRequest): Promise<AgentValidateResponse>
+  testAgent(
+    agentId: string,
+    request: AgentTestRunRequest
+  ): Promise<AgentTestRunData>
+  activateAgent(
+    agentId: string,
+    request: AgentActionRequest
+  ): Promise<AgentActionData>
+  deactivateAgent(
+    agentId: string,
+    request: AgentActionRequest
+  ): Promise<AgentActionData>
+  rollbackAgent(
+    agentId: string,
+    request: AgentActionRequest
+  ): Promise<AgentActionData>
   listCompanies(): Promise<{ companies: CompanySummary[] }>
   listWorkItems(
     companyId: string,
     status?: string
   ): Promise<{ items: WorkItemSummary[] }>
   getWorkItem(companyId: string, itemId: string): Promise<WorkItemDetail>
+  askWorkItem(
+    itemId: string,
+    request: WorkItemQuestionRequest
+  ): Promise<WorkItemQuestionData>
   runFixture(request: FixtureRunRequest): Promise<FixtureRunData>
   recordDecision(request: DecisionRequest): Promise<DecisionData>
   issueExecutionToken(
@@ -69,6 +115,80 @@ export class ApiClient implements ControlApi {
     this.baseUrl = baseUrl.replace(/\/$/, "")
   }
 
+  listAgents(companyId: string): Promise<{ agents: AgentSummary[] }> {
+    const query = new URLSearchParams({ companyId })
+    return this.request(
+      `/api/mandala/agents?${query.toString()}`,
+      agentListResponseSchema
+    )
+  }
+
+  installAgent(request: AgentInstallRequest): Promise<AgentInstallData> {
+    return this.request("/api/mandala/agents", agentInstallResponseSchema, {
+      method: "POST",
+      body: agentInstallRequestSchema.parse(request),
+    })
+  }
+
+  validateAgent(request: AgentValidateRequest): Promise<AgentValidateResponse> {
+    return this.request(
+      "/api/mandala/agents/validate",
+      agentValidateResponseSchema,
+      {
+        method: "POST",
+        body: agentValidateRequestSchema.parse(request),
+      }
+    )
+  }
+
+  testAgent(
+    agentId: string,
+    request: AgentTestRunRequest
+  ): Promise<AgentTestRunData> {
+    return this.agentActionRequest(
+      agentId,
+      "test-runs",
+      agentTestRunResponseSchema,
+      agentTestRunRequestSchema.parse(request)
+    )
+  }
+
+  activateAgent(
+    agentId: string,
+    request: AgentActionRequest
+  ): Promise<AgentActionData> {
+    return this.agentActionRequest(
+      agentId,
+      "activate",
+      agentActionResponseSchema,
+      agentActionRequestSchema.parse(request)
+    )
+  }
+
+  deactivateAgent(
+    agentId: string,
+    request: AgentActionRequest
+  ): Promise<AgentActionData> {
+    return this.agentActionRequest(
+      agentId,
+      "deactivate",
+      agentActionResponseSchema,
+      agentActionRequestSchema.parse(request)
+    )
+  }
+
+  rollbackAgent(
+    agentId: string,
+    request: AgentActionRequest
+  ): Promise<AgentActionData> {
+    return this.agentActionRequest(
+      agentId,
+      "rollback",
+      agentActionResponseSchema,
+      agentActionRequestSchema.parse(request)
+    )
+  }
+
   listCompanies(): Promise<{ companies: CompanySummary[] }> {
     return this.request("/api/mandala/companies", companiesResponseSchema)
   }
@@ -90,6 +210,20 @@ export class ApiClient implements ControlApi {
     return this.request(
       `/api/mandala/workflows/items/${encodeURIComponent(itemId)}?${query.toString()}`,
       workItemDetailResponseSchema
+    )
+  }
+
+  askWorkItem(
+    itemId: string,
+    request: WorkItemQuestionRequest
+  ): Promise<WorkItemQuestionData> {
+    return this.request(
+      `/api/mandala/workflows/items/${encodeURIComponent(itemId)}/questions`,
+      workItemQuestionResponseSchema,
+      {
+        method: "POST",
+        body: workItemQuestionRequestSchema.parse(request),
+      }
     )
   }
 
@@ -176,6 +310,19 @@ export class ApiClient implements ControlApi {
     )
   }
 
+  private agentActionRequest<T>(
+    agentId: string,
+    action: string,
+    schema: z.ZodType<T>,
+    body: unknown
+  ): Promise<T> {
+    return this.request(
+      `/api/mandala/agents/${encodeURIComponent(agentId)}/${action}`,
+      schema,
+      { method: "POST", body }
+    )
+  }
+
   private async request<T>(
     path: string,
     schema: z.ZodType<T>,
@@ -216,13 +363,36 @@ export class ApiClient implements ControlApi {
         body:
           options.body === undefined ? undefined : JSON.stringify(options.body),
       })
-    } catch {
+    } catch (error) {
+      if (isDefinitelyUnavailable(error)) {
+        throw new CliError(
+          "api_unavailable",
+          "The Mandala API is not accepting connections."
+        )
+      }
       throw new CliError(
         "network_error",
         "The Mandala API could not be reached."
       )
     }
   }
+}
+
+function isDefinitelyUnavailable(error: unknown): boolean {
+  const unavailableCodes = new Set([
+    "ECONNREFUSED",
+    "EHOSTUNREACH",
+    "ENETUNREACH",
+    "ENOTFOUND",
+  ])
+  let current = error
+  for (let depth = 0; depth < 4; depth += 1) {
+    if (!isRecord(current)) return false
+    if (typeof current.code === "string" && unavailableCodes.has(current.code))
+      return true
+    current = current.cause
+  }
+  return false
 }
 
 async function parseResponseJson(response: Response): Promise<unknown> {

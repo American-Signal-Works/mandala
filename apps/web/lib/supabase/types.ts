@@ -38,11 +38,16 @@ export type Database = {
         Row: {
           company_id: string
           compile_result: Json
+          compiled_at: string | null
+          compiled_manifest_hash: string | null
+          compiler_diagnostics: Json | null
+          compiler_version: string | null
           created_at: string
           created_by: string | null
           id: string
           name: string
           skill_markdown: string | null
+          skill_source_hash: string | null
           spec: Json
           status: string
           updated_at: string
@@ -54,11 +59,16 @@ export type Database = {
         Insert: {
           company_id: string
           compile_result?: Json
+          compiled_at?: string | null
+          compiled_manifest_hash?: string | null
+          compiler_diagnostics?: Json | null
+          compiler_version?: string | null
           created_at?: string
           created_by?: string | null
           id?: string
           name: string
           skill_markdown?: string | null
+          skill_source_hash?: string | null
           spec: Json
           status?: string
           updated_at?: string
@@ -70,11 +80,16 @@ export type Database = {
         Update: {
           company_id?: string
           compile_result?: Json
+          compiled_at?: string | null
+          compiled_manifest_hash?: string | null
+          compiler_diagnostics?: Json | null
+          compiler_version?: string | null
           created_at?: string
           created_by?: string | null
           id?: string
           name?: string
           skill_markdown?: string | null
+          skill_source_hash?: string | null
           spec?: Json
           status?: string
           updated_at?: string
@@ -89,6 +104,115 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      capability_definition_versions: {
+        Row: {
+          capability_definition_id: string
+          created_at: string
+          id: string
+          input_schema: Json
+          output_schema: Json
+          schema_hash: string
+          status: string
+          version: string
+        }
+        Insert: {
+          capability_definition_id: string
+          created_at?: string
+          id?: string
+          input_schema: Json
+          output_schema: Json
+          schema_hash: string
+          status?: string
+          version: string
+        }
+        Update: {
+          capability_definition_id?: string
+          created_at?: string
+          id?: string
+          input_schema?: Json
+          output_schema?: Json
+          schema_hash?: string
+          status?: string
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "capability_definition_versions_capability_definition_id_fkey"
+            columns: ["capability_definition_id"]
+            isOneToOne: false
+            referencedRelation: "capability_definitions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      capability_definitions: {
+        Row: {
+          capability_key: string
+          created_at: string
+          description: string
+          display_name: string
+          effect: string
+          id: string
+          risk_class: string
+          status: string
+        }
+        Insert: {
+          capability_key: string
+          created_at?: string
+          description?: string
+          display_name: string
+          effect: string
+          id?: string
+          risk_class: string
+          status?: string
+        }
+        Update: {
+          capability_key?: string
+          created_at?: string
+          description?: string
+          display_name?: string
+          effect?: string
+          id?: string
+          risk_class?: string
+          status?: string
+        }
+        Relationships: []
+      }
+      capability_field_classifications: {
+        Row: {
+          capability_version_id: string
+          classification: string
+          created_at: string
+          json_pointer: string
+          model_allowed: boolean
+          terminal_allowed: boolean
+        }
+        Insert: {
+          capability_version_id: string
+          classification: string
+          created_at?: string
+          json_pointer: string
+          model_allowed?: boolean
+          terminal_allowed?: boolean
+        }
+        Update: {
+          capability_version_id?: string
+          classification?: string
+          created_at?: string
+          json_pointer?: string
+          model_allowed?: boolean
+          terminal_allowed?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "capability_field_classifications_capability_version_id_fkey"
+            columns: ["capability_version_id"]
+            isOneToOne: false
+            referencedRelation: "capability_definition_versions"
             referencedColumns: ["id"]
           },
         ]
@@ -338,6 +462,224 @@ export type Database = {
           },
         ]
       }
+      company_capability_policies: {
+        Row: {
+          allow_model_processing: boolean
+          capability_version_id: string
+          company_id: string
+          created_at: string
+          enabled: boolean
+          id: string
+          max_bytes: number
+          max_rows: number
+          minimum_role: string
+          require_human_approval: boolean
+          updated_at: string
+          updated_by: string
+        }
+        Insert: {
+          allow_model_processing?: boolean
+          capability_version_id: string
+          company_id: string
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          max_bytes?: number
+          max_rows?: number
+          minimum_role?: string
+          require_human_approval?: boolean
+          updated_at?: string
+          updated_by: string
+        }
+        Update: {
+          allow_model_processing?: boolean
+          capability_version_id?: string
+          company_id?: string
+          created_at?: string
+          enabled?: boolean
+          id?: string
+          max_bytes?: number
+          max_rows?: number
+          minimum_role?: string
+          require_human_approval?: boolean
+          updated_at?: string
+          updated_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_capability_policies_capability_version_id_fkey"
+            columns: ["capability_version_id"]
+            isOneToOne: false
+            referencedRelation: "capability_definition_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_capability_policies_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_connector_capability_grants: {
+        Row: {
+          capability_version_id: string
+          company_id: string
+          granted_at: string
+          granted_by: string
+          id: string
+          installation_id: string
+          revoked_at: string | null
+          revoked_by: string | null
+          status: string
+        }
+        Insert: {
+          capability_version_id: string
+          company_id: string
+          granted_at?: string
+          granted_by: string
+          id?: string
+          installation_id: string
+          revoked_at?: string | null
+          revoked_by?: string | null
+          status?: string
+        }
+        Update: {
+          capability_version_id?: string
+          company_id?: string
+          granted_at?: string
+          granted_by?: string
+          id?: string
+          installation_id?: string
+          revoked_at?: string | null
+          revoked_by?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_connector_capability_gr_installation_id_company_id_fkey"
+            columns: ["installation_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "company_connector_installations"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "company_connector_capability_grants_capability_version_id_fkey"
+            columns: ["capability_version_id"]
+            isOneToOne: false
+            referencedRelation: "capability_definition_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_connector_capability_grants_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_connector_health: {
+        Row: {
+          checked_at: string
+          company_id: string
+          details: Json
+          installation_id: string
+          observed_schema_hash: string | null
+          status: string
+        }
+        Insert: {
+          checked_at?: string
+          company_id: string
+          details?: Json
+          installation_id: string
+          observed_schema_hash?: string | null
+          status?: string
+        }
+        Update: {
+          checked_at?: string
+          company_id?: string
+          details?: Json
+          installation_id?: string
+          observed_schema_hash?: string | null
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_connector_health_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_connector_health_installation_id_company_id_fkey"
+            columns: ["installation_id", "company_id"]
+            isOneToOne: true
+            referencedRelation: "company_connector_installations"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      company_connector_installations: {
+        Row: {
+          company_id: string
+          connector_definition_id: string
+          connector_version_id: string
+          created_at: string
+          display_name: string
+          id: string
+          installed_by: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          connector_definition_id: string
+          connector_version_id: string
+          created_at?: string
+          display_name: string
+          id?: string
+          installed_by: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          connector_definition_id?: string
+          connector_version_id?: string
+          created_at?: string
+          display_name?: string
+          id?: string
+          installed_by?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_connector_installatio_connector_version_id_connect_fkey"
+            columns: ["connector_version_id", "connector_definition_id"]
+            isOneToOne: false
+            referencedRelation: "connector_definition_versions"
+            referencedColumns: ["id", "connector_definition_id"]
+          },
+          {
+            foreignKeyName: "company_connector_installations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_connector_installations_connector_definition_id_fkey"
+            columns: ["connector_definition_id"]
+            isOneToOne: false
+            referencedRelation: "connector_definitions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       company_memberships: {
         Row: {
           company_id: string
@@ -420,6 +762,110 @@ export type Database = {
           rows_added?: number
           rows_skipped_duplicate?: number
           rows_skipped_unsupported?: number
+          status?: string
+        }
+        Relationships: []
+      }
+      connector_capability_offerings: {
+        Row: {
+          capability_version_id: string
+          connector_version_id: string
+          created_at: string
+          provider_operation: string
+        }
+        Insert: {
+          capability_version_id: string
+          connector_version_id: string
+          created_at?: string
+          provider_operation: string
+        }
+        Update: {
+          capability_version_id?: string
+          connector_version_id?: string
+          created_at?: string
+          provider_operation?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "connector_capability_offerings_capability_version_id_fkey"
+            columns: ["capability_version_id"]
+            isOneToOne: false
+            referencedRelation: "capability_definition_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "connector_capability_offerings_connector_version_id_fkey"
+            columns: ["connector_version_id"]
+            isOneToOne: false
+            referencedRelation: "connector_definition_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      connector_definition_versions: {
+        Row: {
+          connector_definition_id: string
+          created_at: string
+          id: string
+          manifest: Json
+          manifest_hash: string
+          schema_hash: string
+          status: string
+          version: string
+        }
+        Insert: {
+          connector_definition_id: string
+          created_at?: string
+          id?: string
+          manifest: Json
+          manifest_hash: string
+          schema_hash: string
+          status?: string
+          version: string
+        }
+        Update: {
+          connector_definition_id?: string
+          created_at?: string
+          id?: string
+          manifest?: Json
+          manifest_hash?: string
+          schema_hash?: string
+          status?: string
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "connector_definition_versions_connector_definition_id_fkey"
+            columns: ["connector_definition_id"]
+            isOneToOne: false
+            referencedRelation: "connector_definitions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      connector_definitions: {
+        Row: {
+          connector_key: string
+          created_at: string
+          description: string
+          display_name: string
+          id: string
+          status: string
+        }
+        Insert: {
+          connector_key: string
+          created_at?: string
+          description?: string
+          display_name: string
+          id?: string
+          status?: string
+        }
+        Update: {
+          connector_key?: string
+          created_at?: string
+          description?: string
+          display_name?: string
+          id?: string
           status?: string
         }
         Relationships: []
@@ -907,6 +1353,123 @@ export type Database = {
           },
         ]
       }
+      workflow_activation_events: {
+        Row: {
+          actor_id: string
+          binding_snapshot_id: string
+          company_id: string
+          created_at: string
+          event_type: string
+          id: string
+          previous_workflow_id: string | null
+          workflow_id: string
+          workflow_key: string
+        }
+        Insert: {
+          actor_id: string
+          binding_snapshot_id: string
+          company_id: string
+          created_at?: string
+          event_type: string
+          id?: string
+          previous_workflow_id?: string | null
+          workflow_id: string
+          workflow_key: string
+        }
+        Update: {
+          actor_id?: string
+          binding_snapshot_id?: string
+          company_id?: string
+          created_at?: string
+          event_type?: string
+          id?: string
+          previous_workflow_id?: string | null
+          workflow_id?: string
+          workflow_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_activation_events_binding_snapshot_id_company_id__fkey"
+            columns: ["binding_snapshot_id", "company_id", "workflow_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_binding_snapshots"
+            referencedColumns: ["id", "company_id", "workflow_id"]
+          },
+          {
+            foreignKeyName: "workflow_activation_events_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workflow_activation_events_previous_workflow_id_company_id_fkey"
+            columns: ["previous_workflow_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "agent_workflows"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "workflow_activation_events_workflow_id_company_id_fkey"
+            columns: ["workflow_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "agent_workflows"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      workflow_activations: {
+        Row: {
+          activated_at: string
+          activated_by: string
+          activation_sequence: number
+          binding_snapshot_id: string
+          company_id: string
+          workflow_id: string
+          workflow_key: string
+        }
+        Insert: {
+          activated_at?: string
+          activated_by: string
+          activation_sequence?: number
+          binding_snapshot_id: string
+          company_id: string
+          workflow_id: string
+          workflow_key: string
+        }
+        Update: {
+          activated_at?: string
+          activated_by?: string
+          activation_sequence?: number
+          binding_snapshot_id?: string
+          company_id?: string
+          workflow_id?: string
+          workflow_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_activations_binding_snapshot_id_company_id_workfl_fkey"
+            columns: ["binding_snapshot_id", "company_id", "workflow_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_binding_snapshots"
+            referencedColumns: ["id", "company_id", "workflow_id"]
+          },
+          {
+            foreignKeyName: "workflow_activations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workflow_activations_workflow_id_company_id_fkey"
+            columns: ["workflow_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "agent_workflows"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
       workflow_audit_events: {
         Row: {
           actor_id: string | null
@@ -968,6 +1531,148 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "workflow_runs"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      workflow_binding_snapshot_events: {
+        Row: {
+          actor_id: string | null
+          binding_snapshot_id: string
+          company_id: string
+          created_at: string
+          event_type: string
+          id: string
+          reason: string
+        }
+        Insert: {
+          actor_id?: string | null
+          binding_snapshot_id: string
+          company_id: string
+          created_at?: string
+          event_type: string
+          id?: string
+          reason: string
+        }
+        Update: {
+          actor_id?: string | null
+          binding_snapshot_id?: string
+          company_id?: string
+          created_at?: string
+          event_type?: string
+          id?: string
+          reason?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_binding_snapshot_eve_binding_snapshot_id_company__fkey"
+            columns: ["binding_snapshot_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_binding_snapshots"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "workflow_binding_snapshot_events_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workflow_binding_snapshots: {
+        Row: {
+          company_id: string
+          created_at: string
+          created_by: string
+          grant_digest: string
+          id: string
+          manifest_hash: string
+          workflow_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          created_by: string
+          grant_digest: string
+          id?: string
+          manifest_hash: string
+          workflow_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          grant_digest?: string
+          id?: string
+          manifest_hash?: string
+          workflow_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_binding_snapshots_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workflow_binding_snapshots_workflow_id_company_id_fkey"
+            columns: ["workflow_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "agent_workflows"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      workflow_capability_bindings: {
+        Row: {
+          binding_snapshot_id: string
+          capability_version_id: string
+          company_id: string
+          created_at: string
+          grant_id: string
+          id: string
+          requirement_key: string
+        }
+        Insert: {
+          binding_snapshot_id: string
+          capability_version_id: string
+          company_id: string
+          created_at?: string
+          grant_id: string
+          id?: string
+          requirement_key: string
+        }
+        Update: {
+          binding_snapshot_id?: string
+          capability_version_id?: string
+          company_id?: string
+          created_at?: string
+          grant_id?: string
+          id?: string
+          requirement_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_capability_bindings_binding_snapshot_id_company_i_fkey"
+            columns: ["binding_snapshot_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_binding_snapshots"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "workflow_capability_bindings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workflow_capability_bindings_grant_id_company_id_capabilit_fkey"
+            columns: ["grant_id", "company_id", "capability_version_id"]
+            isOneToOne: false
+            referencedRelation: "company_connector_capability_grants"
+            referencedColumns: ["id", "company_id", "capability_version_id"]
           },
         ]
       }
@@ -1716,6 +2421,85 @@ export type Database = {
           },
         ]
       }
+      workflow_resume_outbox: {
+        Row: {
+          attempts: number
+          available_at: string
+          binding_snapshot_id: string | null
+          checkpoint: Json
+          company_id: string
+          completed_at: string | null
+          created_at: string
+          dedupe_key: string
+          event_type: string
+          id: string
+          leased_until: string | null
+          node_key: string
+          payload: Json
+          status: string
+          updated_at: string
+          workflow_run_id: string
+        }
+        Insert: {
+          attempts?: number
+          available_at?: string
+          binding_snapshot_id?: string | null
+          checkpoint?: Json
+          company_id: string
+          completed_at?: string | null
+          created_at?: string
+          dedupe_key: string
+          event_type: string
+          id?: string
+          leased_until?: string | null
+          node_key: string
+          payload?: Json
+          status?: string
+          updated_at?: string
+          workflow_run_id: string
+        }
+        Update: {
+          attempts?: number
+          available_at?: string
+          binding_snapshot_id?: string | null
+          checkpoint?: Json
+          company_id?: string
+          completed_at?: string | null
+          created_at?: string
+          dedupe_key?: string
+          event_type?: string
+          id?: string
+          leased_until?: string | null
+          node_key?: string
+          payload?: Json
+          status?: string
+          updated_at?: string
+          workflow_run_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_resume_outbox_binding_snapshot_id_company_id_fkey"
+            columns: ["binding_snapshot_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_binding_snapshots"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "workflow_resume_outbox_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workflow_resume_outbox_workflow_run_id_company_id_fkey"
+            columns: ["workflow_run_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_runs"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
       workflow_runs: {
         Row: {
           company_id: string
@@ -1730,6 +2514,7 @@ export type Database = {
           started_at: string
           started_by: string | null
           status: string
+          workflow_binding_snapshot_id: string | null
           workflow_id: string
           workflow_type: string
         }
@@ -1746,6 +2531,7 @@ export type Database = {
           started_at?: string
           started_by?: string | null
           status: string
+          workflow_binding_snapshot_id?: string | null
           workflow_id: string
           workflow_type: string
         }
@@ -1762,10 +2548,18 @@ export type Database = {
           started_at?: string
           started_by?: string | null
           status?: string
+          workflow_binding_snapshot_id?: string | null
           workflow_id?: string
           workflow_type?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "workflow_runs_binding_snapshot_company_fkey"
+            columns: ["workflow_binding_snapshot_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_binding_snapshots"
+            referencedColumns: ["id", "company_id"]
+          },
           {
             foreignKeyName: "workflow_runs_company_id_fkey"
             columns: ["company_id"]
@@ -1808,61 +2602,7 @@ export type Database = {
           workflow_item_id: string | null
           workflow_run_id: string | null
         }
-        Insert: {
-          actor_id?: string | null
-          client_surface?: string | null
-          company_id?: string | null
-          created_at?: string | null
-          id?: string | null
-          langsmith_run_id?: string | null
-          langsmith_trace_id?: string | null
-          normalized_intent?: Json | null
-          parser_kind?: string | null
-          resolution_status?: string | null
-          risk_class?: string | null
-          updated_at?: string | null
-          workflow_item_id?: string | null
-          workflow_run_id?: string | null
-        }
-        Update: {
-          actor_id?: string | null
-          client_surface?: string | null
-          company_id?: string | null
-          created_at?: string | null
-          id?: string | null
-          langsmith_run_id?: string | null
-          langsmith_trace_id?: string | null
-          normalized_intent?: Json | null
-          parser_kind?: string | null
-          resolution_status?: string | null
-          risk_class?: string | null
-          updated_at?: string | null
-          workflow_item_id?: string | null
-          workflow_run_id?: string | null
-        }
-        Relationships: [
-          {
-            foreignKeyName: "workflow_control_requests_company_id_fkey"
-            columns: ["company_id"]
-            isOneToOne: false
-            referencedRelation: "companies"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "workflow_control_requests_item_company_fkey"
-            columns: ["workflow_item_id", "company_id"]
-            isOneToOne: false
-            referencedRelation: "workflow_items"
-            referencedColumns: ["id", "company_id"]
-          },
-          {
-            foreignKeyName: "workflow_control_requests_run_company_fkey"
-            columns: ["workflow_run_id", "company_id"]
-            isOneToOne: false
-            referencedRelation: "workflow_runs"
-            referencedColumns: ["id", "company_id"]
-          },
-        ]
+        Relationships: []
       }
     }
     Functions: {
@@ -1870,10 +2610,39 @@ export type Database = {
         Args: { p_company_id: string }
         Returns: Json
       }
+      activate_agent_workflow: {
+        Args: {
+          p_binding_snapshot_id: string
+          p_company_id: string
+          p_expected_current_workflow_id?: string
+          p_workflow_id: string
+        }
+        Returns: Json
+      }
       company_role_rank: { Args: { role: string }; Returns: number }
+      configure_company_connector_installation: {
+        Args: {
+          p_company_id: string
+          p_connector_version_id: string
+          p_display_name: string
+        }
+        Returns: Json
+      }
       configure_workflow_control_parser_trust: {
         Args: { p_server_secret: string }
         Returns: undefined
+      }
+      create_workflow_binding_snapshot: {
+        Args: { p_bindings: Json; p_company_id: string; p_workflow_id: string }
+        Returns: Json
+      }
+      deactivate_agent_workflow: {
+        Args: {
+          p_company_id: string
+          p_expected_current_workflow_id: string
+          p_workflow_key: string
+        }
+        Returns: Json
       }
       disable_own_company_membership: {
         Args: { p_company_id: string }
@@ -1920,6 +2689,45 @@ export type Database = {
       has_company_role: {
         Args: { minimum_role: string; target_company_id: string }
         Returns: boolean
+      }
+      install_agent_workflow_version: {
+        Args: {
+          p_company_id: string
+          p_compile_result: Json
+          p_manifest: Json
+          p_skill_markdown: string
+        }
+        Returns: Json
+      }
+      list_workflow_control_request_audit: {
+        Args: never
+        Returns: {
+          actor_id: string
+          client_surface: string
+          company_id: string
+          created_at: string
+          id: string
+          langsmith_run_id: string
+          langsmith_trace_id: string
+          normalized_intent: Json
+          parser_kind: string
+          resolution_status: string
+          risk_class: string
+          updated_at: string
+          workflow_item_id: string
+          workflow_run_id: string
+        }[]
+      }
+      persist_compiled_workflow_review_controlled: {
+        Args: {
+          p_binding_snapshot_id: string
+          p_client_surface: string
+          p_company_id: string
+          p_input_hash: string
+          p_payload: Json
+          p_workflow_id: string
+        }
+        Returns: Json
       }
       persist_workflow_fixture_run: { Args: { p_payload: Json }; Returns: Json }
       persist_workflow_fixture_run_controlled: {
@@ -2027,6 +2835,58 @@ export type Database = {
       release_workflow_control_parser_lease: {
         Args: { p_company_id: string; p_lease_id: string }
         Returns: undefined
+      }
+      rollback_agent_workflow: {
+        Args: {
+          p_binding_snapshot_id: string
+          p_company_id: string
+          p_expected_current_workflow_id: string
+          p_workflow_id: string
+        }
+        Returns: Json
+      }
+      set_company_approval_policy_controlled: {
+        Args: {
+          p_action_type: string
+          p_company_id: string
+          p_minimum_role?: string
+          p_require_human_approval?: boolean
+          p_require_warning_acknowledgement?: boolean
+          p_workflow_type: string
+        }
+        Returns: Json
+      }
+      set_company_capability_policy: {
+        Args: {
+          p_allow_model_processing?: boolean
+          p_capability_version_id: string
+          p_company_id: string
+          p_enabled: boolean
+          p_max_bytes?: number
+          p_max_rows?: number
+          p_minimum_role?: string
+          p_require_human_approval?: boolean
+        }
+        Returns: Json
+      }
+      set_company_connector_capability_grant: {
+        Args: {
+          p_capability_version_id: string
+          p_company_id: string
+          p_installation_id: string
+          p_status: string
+        }
+        Returns: Json
+      }
+      set_company_connector_health: {
+        Args: {
+          p_company_id: string
+          p_details?: Json
+          p_installation_id: string
+          p_observed_schema_hash?: string
+          p_status: string
+        }
+        Returns: Json
       }
       transition_workflow_control_request: {
         Args: {

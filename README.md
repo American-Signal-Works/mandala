@@ -79,7 +79,9 @@ Set these server-only values in `apps/web/.env.local` to test conversational par
 
 ```bash
 MANDALA_CONVERSATIONAL_PARSER_ENABLED=true
+MANDALA_TEST_AGENT_ENABLED=true
 MANDALA_CONTROL_PARSER_MODEL=openai/gpt-5.4-mini
+MANDALA_TEST_AGENT_MODEL=openai/gpt-5.4-mini
 MANDALA_CONTROL_INPUT_HASH_KEY=<at-least-32-random-characters>
 MANDALA_CONTROL_BINDING_SECRET=<a-different-32-character-random-secret>
 AI_GATEWAY_API_KEY=...
@@ -99,6 +101,45 @@ Run the versioned synthetic evaluation before enabling the parser by default:
 ```bash
 pnpm --filter web eval:control-parser
 ```
+
+The optional `synthetic_agent_run` Sandbox scenario creates the fictional
+**Mandala Bean Co.** catalog with 1,200 beans, teas, mugs, brewing tools,
+filters, syrups, accessories, and gift products, plus
+90 days of daily sales records and synthetic inventory/business events. A
+traced model can inspect the dataset only through bounded read-only tools and
+select one SKU for review. Deterministic policy code validates the selection,
+calculates the quantity, and persists the normal human-approval Inbox item.
+The model cannot approve or execute the draft.
+
+### Skill-defined agents
+
+Mandala agents are installed from one versioned `SKILL.md`. The file combines
+plain-language decision guidance with a strictly validated YAML contract for
+the data it needs, deterministic safeguards, Inbox records, approvals, and
+allowed actions. Connector definitions and credentials remain system-owned;
+the skill can only request capabilities already installed and permitted for
+the workspace.
+
+Two complete examples live in:
+
+- `skills/procurement-reorder/SKILL.md`
+- `skills/sales-spike-investigator/SKILL.md`
+
+The first creates a guarded mock purchase-order review. The second is a
+read-only investigation and demonstrates that a new workflow does not need a
+custom route, database migration, or runtime adapter.
+
+Durable LangGraph checkpoints use a separate Postgres schema. Local Supabase
+uses its standard database connection automatically. For hosted environments,
+set `MANDALA_WORKFLOW_DATABASE_URL`. You can initialize the schema explicitly:
+
+```bash
+pnpm --filter web workflow:checkpoint:setup
+```
+
+In the terminal, open `/agents` for the guided install, Sandbox test,
+activation, deactivation, and rollback flow. Scripted commands remain
+available for automated testing.
 
 ## Codex workflow
 

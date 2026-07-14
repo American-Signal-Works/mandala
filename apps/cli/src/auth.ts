@@ -22,6 +22,7 @@ export type LoginOptions = {
   environment: RuntimeEnvironment
   store: SecureStore
   onMagicLinkSent?: () => void
+  signal?: AbortSignal
   timeoutMs?: number
 }
 
@@ -35,6 +36,8 @@ export async function loginWithMagicLink(
   const email = emailSchema.safeParse(options.email)
   if (!email.success)
     throw new CliError("invalid_email", "Enter a valid email address.")
+
+  if (options.signal?.aborted) throw authCancelled()
 
   const configuration = getSupabaseEnvironment(options.environment)
   const memoryStorage = new MemoryStorage()
@@ -53,7 +56,8 @@ export async function loginWithMagicLink(
   redirectUrl.searchParams.set("state", callbackState)
   const callback = await openAuthCallback(
     options.timeoutMs ?? callbackTimeoutMs,
-    callbackState
+    callbackState,
+    options.signal
   )
   try {
     const { error } = await supabase.auth.signInWithOtp({
@@ -63,11 +67,21 @@ export async function loginWithMagicLink(
         shouldCreateUser: false,
       },
     })
-    if (error)
+    if (error) {
+      if (
+        isLocalSupabaseUrl(configuration.url) &&
+        authErrorCode(error) === "otp_disabled"
+      ) {
+        throw new CliError(
+          "unknown_local_user",
+          "That email is not part of the local demo."
+        )
+      }
       throw new CliError(
         "magic_link_failed",
         "The authentication email could not be sent."
       )
+    }
     options.onMagicLinkSent?.()
 
     const code = await callback.code
@@ -122,16 +136,51 @@ export class SessionManager implements SessionAccess {
     const { data, error } = await supabase.auth.refreshSession({
       refresh_token: session.refreshToken,
     })
-    if (error || !data.session)
+    if (error || !data.session) {
+      if (isInvalidRefreshToken(error)) {
+        await clearInvalidSession(this.store)
+      }
       throw new CliError(
         "session_expired",
         "The local session has expired. Sign in again."
       )
+    }
 
     const refreshed = toStoredSession(data.session)
     await this.store.writeSession(refreshed)
     return refreshed.accessToken
   }
+}
+
+function authErrorCode(error: unknown): string | undefined {
+  if (!error || typeof error !== "object") return undefined
+  const code = (error as { code?: unknown }).code
+  return typeof code === "string" ? code : undefined
+}
+
+function authErrorStatus(error: unknown): number | undefined {
+  if (!error || typeof error !== "object") return undefined
+  const status = (error as { status?: unknown }).status
+  return typeof status === "number" ? status : undefined
+}
+
+function isInvalidRefreshToken(error: unknown): boolean {
+  const code = authErrorCode(error)
+  return (
+    authErrorStatus(error) === 400 ||
+    code === "refresh_token_not_found" ||
+    code === "refresh_token_already_used"
+  )
+}
+
+async function clearInvalidSession(store: SecureStore): Promise<void> {
+  await store.deleteSession()
+  await store.clearSelectedCompany()
+}
+
+function isLocalSupabaseUrl(value: string): boolean {
+  const hostname = new URL(value).hostname
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]"
 }
 
 function toStoredSession(session: Session): StoredSession {
@@ -168,7 +217,8 @@ class MemoryStorage implements SupportedStorage {
 
 async function openAuthCallback(
   timeoutMs: number,
-  expectedState: string
+  expectedState: string,
+  signal?: AbortSignal
 ): Promise<{
   code: Promise<string>
   close: () => Promise<void>
@@ -181,6 +231,12 @@ async function openAuthCallback(
     resolveCode = resolve
     rejectCode = reject
   })
+  const abort = () => {
+    if (settled) return
+    settled = true
+    rejectCode(authCancelled())
+  }
+  signal?.addEventListener("abort", abort, { once: true })
 
   const server: Server = createServer((request, response) => {
     const url = new URL(request.url ?? "/", authCallbackUrl)
@@ -245,8 +301,13 @@ async function openAuthCallback(
     code,
     close: async () => {
       clearTimeout(timeout)
+      signal?.removeEventListener("abort", abort)
       if (!server.listening) return
       await new Promise<void>((resolve) => server.close(() => resolve()))
     },
   }
+}
+
+function authCancelled(): CliError {
+  return new CliError("auth_cancelled", "Sign in was cancelled.")
 }

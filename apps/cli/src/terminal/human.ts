@@ -96,22 +96,47 @@ export function renderDraftPreview(
   const title = resolved.title ?? "Draft Preview"
 
   if (!isRecord(draft)) return renderStructuredSection(title, draft, width)
-
-  const metadata = Object.fromEntries(
-    Object.entries(draft).filter(
-      ([key]) => key !== "payload" && key !== "editPolicy"
+  const payload = recordOrEmpty(draft.payload)
+  const policy = recordOrEmpty(draft.editPolicy)
+  const lines = arrayAt(payload, ["lines"])
+  const itemSummary = lines.map((line) => {
+    const record = recordOrEmpty(line)
+    const sku = valueText(read(record, ["sku", "item", "itemCode"]), "Item")
+    const quantity = valueText(
+      read(record, ["quantity", "qty"]),
+      "Unknown quantity"
+    )
+    return `${sku} · quantity ${quantity}`
+  })
+  const reasons = lines
+    .map((line) => valueText(read(recordOrEmpty(line), ["reason"])))
+    .filter(Boolean)
+  const additionalPayload = Object.fromEntries(
+    Object.entries(payload).filter(
+      ([key]) => !["lines", "mode", "supplier", "vendor"].includes(key)
     )
   )
-  const sections = [renderStructuredSection(title, metadata, width)]
-  if ("payload" in draft)
-    sections.push(
-      renderStructuredSection("Draft Payload", draft.payload, width)
-    )
-  if ("editPolicy" in draft)
-    sections.push(
-      renderStructuredSection("Edit Policy", draft.editPolicy, width)
-    )
-  return sections.join("\n\n")
+
+  return renderProductSections(
+    title,
+    [
+      ["Action", read(draft, ["actionType", "type"])],
+      ["Status", read(draft, ["status"])],
+      ["Mode", firstValue(payload, draft, ["mode"])],
+      ["Vendor", read(payload, ["vendor", "supplier"])],
+      ["Items", itemSummary],
+      ["Reason", reasons],
+      [
+        "Additional payload",
+        Object.keys(additionalPayload).length > 0
+          ? additionalPayload
+          : undefined,
+      ],
+      ["Editable", read(policy, ["editable"])],
+      ["Reason required", read(policy, ["requireReason"])],
+    ],
+    width
+  )
 }
 
 export function renderAssistantMessage(
@@ -120,11 +145,19 @@ export function renderAssistantMessage(
 ): string {
   const resolved = resolveOptions(options)
   const width = normalizeTerminalWidth(resolved.width)
-  const safeMessage = sanitizeTerminalText(String(redactSecrets(message)))
+  const safeMessage = String(redactSecrets(message))
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => sanitizeTerminalText(line))
+    .join("\n")
   const label = resolved.color
     ? styleText(["bold", "cyan"], "Mandala", { validateStream: false })
     : "Mandala"
-  return `${label}\n${wrapTerminalText(safeMessage, width)}`
+  const wrappedMessage = safeMessage
+    .split("\n")
+    .map((line) => wrapTerminalText(line, width))
+    .join("\n")
+  return `${label}\n${wrappedMessage}`
 }
 
 export function renderHeader(
@@ -200,6 +233,1110 @@ export function renderInboxSummary(
       ? ` - ${warningCount} ${warningCount === 1 ? "has" : "have"} warnings.`
       : "."
   return wrapTerminalText(`${itemText}${warningText}  /inbox`, width)
+}
+
+/** A compact, product-shaped home view. The complete diagnostic renderer remains
+ * available through renderHumanResult for callers that need every field. */
+export function renderHomeSummary(
+  input: unknown,
+  options: HumanRenderOptions | number = {}
+): string {
+  const { width, value } = productInput(input, options)
+  const source = recordOrEmpty(value)
+  const context = recordOrEmpty(source.context)
+  const items = arrayAt(source, ["items"])
+  const active = countAt(source, ["itemCount", "activeCount"], items.length)
+  const urgent = countAt(
+    source,
+    ["urgentCount"],
+    countMatching(items, isUrgent)
+  )
+  const blocked = countAt(
+    source,
+    ["blockedCount"],
+    countMatching(items, isBlocked)
+  )
+  const warnings = countAt(
+    source,
+    ["warningCount"],
+    countMatching(items, itemHasWarnings)
+  )
+  const categories = summarizeCategories(items)
+  const authenticated =
+    read(context, ["authenticated"]) ?? read(source, ["authenticated"])
+  const workspace = firstValue(context, source, [
+    "workspaceName",
+    "companyName",
+    "workspace",
+    "company",
+  ])
+
+  return renderProductSections(
+    resolvedTitle(options, "Home"),
+    [
+      ["Workspace", workspace],
+      [
+        "Mode",
+        environmentLabel(
+          valueText(
+            firstValue(context, source, ["mode", "environment"]),
+            "Unknown"
+          )
+        ),
+      ],
+      ["Active work", active],
+      ["Urgent", urgent],
+      ["Blocked", blocked],
+      ["With warnings", warnings],
+      ["Needs attention", categories],
+      [
+        "Next action",
+        authenticated === false
+          ? "Sign in with /login"
+          : workspace === undefined || workspace === null
+            ? "Choose a workspace with /companies, then /company 1"
+            : active > 0
+              ? "Open the inbox to review work"
+              : "Ask Mandala or refresh the inbox",
+      ],
+    ],
+    width
+  )
+}
+
+/** Concise active-inbox projection. Unknown item fields remain available through
+ * renderHumanResult rather than being silently discarded from diagnostic output. */
+export function renderInbox(
+  input: unknown,
+  options: HumanRenderOptions | number = {}
+): string {
+  const { width, value } = productInput(input, options)
+  const source = Array.isArray(value) ? { items: value } : recordOrEmpty(value)
+  const allItems = arrayAt(source, ["items"])
+  const items = allItems.filter((item) => !isResolved(item))
+  const urgent = countMatching(items, isUrgent)
+  const blocked = countMatching(items, isBlocked)
+  const title = `${resolvedTitle(options, "Inbox")} · ${items.length} active`
+  const wide = width >= 100
+  if (items.length === 0)
+    return `${wrapTerminalText(title, width)}\n${wrapTerminalText("Nothing requires review. Ask Mandala or refresh when new work arrives.", width)}`
+
+  const heading = wrapTerminalText(
+    `${title}${urgent || blocked ? ` · ${urgent} urgent · ${blocked} blocked` : ""}`,
+    width
+  )
+  if (width < 70) {
+    const cards = items.map((item, index) =>
+      renderProductSections(
+        `${index + 1}. ${valueText(read(item, ["title", "summary", "name"]), "Untitled item")}`,
+        inboxRows(item),
+        width
+      )
+    )
+    return [
+      heading,
+      ...cards,
+      wrapTerminalText(
+        "Rows belong to this inbox view. Open a row to review it.",
+        width
+      ),
+    ].join("\n\n")
+  }
+
+  const headers = wide
+    ? [
+        "#",
+        "Needs attention",
+        "Type",
+        "Status",
+        "Priority",
+        "Source",
+        "Owner",
+        "Updated",
+        "Warning",
+      ]
+    : [
+        "#",
+        "Needs attention",
+        "Type",
+        "Status",
+        "Priority",
+        "Source",
+        "Updated",
+      ]
+  const rows = items.map((item, index) => {
+    const values = [
+      String(index + 1),
+      valueText(read(item, ["title", "summary", "name"]), "Untitled item"),
+      valueText(inboxValue(item, ["type", "itemType", "workType"]), "Work"),
+      valueText(inboxValue(item, ["status", "state"]), "Unknown"),
+      valueText(inboxValue(item, ["priority", "urgency"]), "Normal"),
+      valueText(
+        inboxValue(item, ["source", "sourceSystem", "origin"]),
+        "Unknown"
+      ),
+    ]
+    if (wide) {
+      values.push(
+        valueText(
+          inboxValue(item, ["owner", "ownerRole", "role", "assignedTo"]),
+          "Unassigned"
+        )
+      )
+    }
+    values.push(
+      valueText(
+        inboxValue(item, [
+          "waitingAge",
+          "age",
+          "updatedAgo",
+          "waiting",
+          "updatedAt",
+        ]),
+        "—"
+      )
+    )
+    if (wide) values.push(warningLabel(item))
+    return values
+  })
+  return [
+    heading,
+    renderAsciiTable(headers, rows, width),
+    wrapTerminalText(
+      "Rows belong to this inbox view. Open a row to see its context and next action.",
+      width
+    ),
+  ].join("\n")
+}
+
+export function renderInboxItemOverview(
+  input: unknown,
+  options: HumanRenderOptions | number = {}
+): string {
+  const { width, value } = productInput(input, options)
+  const root = recordOrEmpty(value)
+  const item = recordOrEmpty(isRecord(root.item) ? root.item : root)
+  const context = recordOrEmpty(
+    firstValue(root, item, ["contextPacket", "context", "sourceContext"])
+  )
+  const recommendation = recordOrEmpty(root.recommendation)
+  const warnings = collectWarnings(root)
+  return renderProductSections(
+    `${resolvedTitle(options, "Inbox item")} · ${valueText(read(item, ["title", "summary", "name"]), "Untitled item")}`,
+    [
+      ["Type", read(item, ["type", "itemType", "workType"])],
+      ["Status", read(item, ["status", "state"])],
+      ["Priority", read(item, ["priority", "urgency"])],
+      ["Owner", read(item, ["owner", "ownerRole", "role", "assignedTo"])],
+      [
+        "Why it exists",
+        read(item, ["why", "reason", "trigger"]) ??
+          read(context, ["why", "reason", "trigger"]) ??
+          read(recommendation, ["rationaleSummary", "reason", "summary"]),
+      ],
+      [
+        "Needs attention",
+        firstValue(item, context, [
+          "requiredAttention",
+          "attention",
+          "nextWorkflow",
+          "requestedAction",
+        ]),
+      ],
+      [
+        "Source",
+        firstValue(item, context, [
+          "source",
+          "sourceSystem",
+          "origin",
+          "sources",
+        ]),
+      ],
+      [
+        "Source reference",
+        firstValue(item, context, [
+          "sourceReference",
+          "sourceRef",
+          "recordReference",
+          "references",
+        ]),
+      ],
+      [
+        "Freshness",
+        firstValue(item, context, [
+          "freshness",
+          "freshnessState",
+          "asOf",
+          "updatedAt",
+          "createdAt",
+          "sourceTimestamp",
+        ]),
+      ],
+      [
+        "Missing context",
+        firstValue(item, context, [
+          "missingData",
+          "missingContext",
+          "incompleteContext",
+        ]),
+      ],
+      ["Warnings", warnings.all],
+      [
+        "Next action",
+        firstValue(item, context, [
+          "nextAction",
+          "nextWorkflow",
+          "availableActions",
+        ]),
+      ],
+    ],
+    width
+  )
+}
+
+export function renderProcurementReview(
+  input: unknown,
+  options: HumanRenderOptions | number = {}
+): string {
+  const { width, value } = productInput(input, options)
+  const root = recordOrEmpty(value)
+  const item = recordOrEmpty(root.item)
+  const recommendation = recordOrEmpty(
+    isRecord(root.recommendation) ? root.recommendation : root
+  )
+  const output = recordOrEmpty(recommendation.output)
+  const context = recordOrEmpty(root.contextPacket)
+  const facts = recordOrEmpty(context.facts)
+  const draft = recordOrEmpty(root.draft)
+  const payload = recordOrEmpty(draft.payload)
+  const warnings = collectWarnings(root)
+  const title = valueText(
+    firstValue(item, recommendation, ["title", "sku", "itemName", "product"]),
+    "Procurement review"
+  )
+
+  return renderProductSections(
+    `${resolvedTitle(options, "Review")} · ${title}`,
+    [
+      [
+        "Business",
+        read(output, ["businessName"]) ?? read(facts, ["businessName"]),
+      ],
+      [
+        "Product",
+        read(output, ["productTitle"]) ?? read(facts, ["productTitle"]),
+      ],
+      ["Category", read(output, ["category"]) ?? read(facts, ["category"])],
+      [
+        "Recommendation",
+        firstValue(recommendation, output, [
+          "recommendation",
+          "summary",
+          "rationaleSummary",
+          "action",
+        ]),
+      ],
+      [
+        "Why now",
+        firstValue(recommendation, context, [
+          "whyNow",
+          "reason",
+          "trigger",
+          "reorderReason",
+        ]),
+      ],
+      [
+        "Current stock",
+        read(output, ["currentStock", "stock", "onHand", "inventoryOnHand"]) ??
+          read(facts, [
+            "availableInventory",
+            "currentStock",
+            "stock",
+            "onHand",
+          ]),
+      ],
+      [
+        "Recent sales",
+        read(output, [
+          "recentSales",
+          "salesTrend",
+          "sales30Days",
+          "salesVelocity",
+        ]) ?? read(facts, ["recent30DaySales", "recentSales", "salesTrend"]),
+      ],
+      [
+        "Reorder trigger",
+        read(output, [
+          "reorderTrigger",
+          "trigger",
+          "reorderPoint",
+          "reorderReason",
+        ]) ?? read(facts, ["reorderPoint", "reorderTrigger", "trigger"]),
+      ],
+      [
+        "Open POs",
+        read(output, [
+          "openPurchaseOrders",
+          "openPOs",
+          "openPos",
+          "openOrders",
+        ]) ??
+          read(facts, [
+            "openPurchaseOrders",
+            "openPOs",
+            "openPos",
+            "openOrders",
+          ]),
+      ],
+      [
+        "Suggested quantity",
+        read(output, [
+          "recommendedQuantity",
+          "suggestedQuantity",
+          "quantity",
+          "reorderQuantity",
+          "qty",
+        ]) ?? read(payload, ["quantity", "recommendedQuantity", "lines"]),
+      ],
+      [
+        "Vendor",
+        read(output, ["vendor", "vendorName", "supplier"]) ??
+          read(payload, ["vendor", "vendorName", "supplier"]),
+      ],
+      [
+        "Flags",
+        firstValue(output, recommendation, [
+          "flags",
+          "variableSku",
+          "unusualSpike",
+          "edgeCaseFlags",
+        ]),
+      ],
+      [
+        "Run context",
+        firstValue(recommendation, context, [
+          "runContext",
+          "runId",
+          "recordContext",
+          "recordFields",
+        ]),
+      ],
+      ["Dataset", datasetSummary(facts)],
+      ["Agent", read(facts, ["agentModel"])],
+      ["Read-only tool calls", read(facts, ["agentToolCallCount"])],
+      ["Warning · Blocking", warnings.blocking],
+      ["Warning · Informational", warnings.informational],
+      [
+        "Sources",
+        firstValue(context, recommendation, [
+          "sources",
+          "sourceReferences",
+          "source",
+        ]),
+      ],
+      [
+        "Freshness",
+        firstValue(context, recommendation, [
+          "freshness",
+          "freshnessState",
+          "asOf",
+          "updatedAt",
+          "createdAt",
+        ]),
+      ],
+      [
+        "Next actions",
+        firstValue(recommendation, item, [
+          "availableActions",
+          "nextActions",
+          "actions",
+        ]),
+      ],
+    ],
+    width
+  )
+}
+
+function datasetSummary(facts: Record<string, unknown>): string | undefined {
+  const products = read(facts, ["syntheticProductCount"])
+  const sales = read(facts, ["syntheticSalesRecordCount"])
+  const events = read(facts, ["syntheticBusinessEventCount"])
+  if (products === undefined && sales === undefined && events === undefined)
+    return undefined
+  return `${valueText(products, "?")} products · ${valueText(sales, "?")} daily sales · ${valueText(events, "?")} events`
+}
+
+export function renderEvidenceSummary(
+  input: unknown,
+  options: HumanRenderOptions | number = {}
+): string {
+  const { width, value } = productInput(input, options)
+  const root = recordOrEmpty(value)
+  const evidence = recordOrEmpty(isRecord(root.evidence) ? root.evidence : root)
+  const context = recordOrEmpty(root.contextPacket)
+  const recommendation = recordOrEmpty(root.recommendation)
+  const warnings = collectWarnings(root)
+  return renderProductSections(
+    resolvedTitle(options, "Evidence & freshness"),
+    [
+      [
+        "Trigger",
+        firstValue(evidence, context, ["trigger", "reason", "reorderTrigger"]),
+      ],
+      [
+        "Sources",
+        firstValue(evidence, context, [
+          "sources",
+          "sourceRefs",
+          "sourceInputs",
+          "evidence",
+          "sourceReferences",
+        ]),
+      ],
+      [
+        "Freshness",
+        firstValue(evidence, context, [
+          "freshness",
+          "freshnessState",
+          "asOf",
+          "updatedAt",
+          "createdAt",
+          "sourceTimestamps",
+        ]),
+      ],
+      ["Assumptions", read(evidence, ["assumptions"])],
+      [
+        "Missing data",
+        firstValue(evidence, context, ["missingData", "missing", "gaps"]),
+      ],
+      [
+        "Confidence",
+        firstValue(evidence, recommendation, [
+          "confidence",
+          "confidenceScore",
+          "confidenceIndicators",
+        ]),
+      ],
+      [
+        "Memory provenance",
+        firstValue(evidence, context, [
+          "memoryProvenance",
+          "memoryRefs",
+          "memoryReferences",
+        ]),
+      ],
+      ["Warning · Blocking", warnings.blocking],
+      ["Warning · Informational", warnings.informational],
+      [
+        "Rationale",
+        firstValue(evidence, recommendation, [
+          "rationale",
+          "rationaleSummary",
+          "summary",
+        ]),
+      ],
+    ],
+    width
+  )
+}
+
+export function renderDecisionResult(
+  input: unknown,
+  options: HumanRenderOptions | number = {}
+): string {
+  const { width, value } = productInput(input, options)
+  const root = recordOrEmpty(value)
+  const outerDecision = recordOrEmpty(
+    isRecord(root.decision) ? root.decision : root
+  )
+  const decision = recordOrEmpty(
+    isRecord(outerDecision.decision) ? outerDecision.decision : outerDecision
+  )
+  const action = valueText(
+    read(decision, ["action", "decision", "kind", "type", "status"]),
+    "Recorded"
+  )
+  if (root.preview === true) {
+    const item = recordOrEmpty(root.item)
+    return renderProductSections(
+      `${resolvedTitle(options, "Confirm decision")} · ${action.toUpperCase()}`,
+      [
+        ["Action", action],
+        ["Item", read(item, ["title", "name", "id"])],
+        [
+          "Reason",
+          read(decision, ["reason", "feedback", "comment"]) ??
+            read(root, ["reason", "feedback", "comment"]),
+        ],
+        ["Warnings", read(root, ["warnings"])],
+        [
+          "Warnings acknowledged",
+          read(decision, ["warningsAcknowledged", "warningAcknowledged"]) ??
+            read(root, ["warningsAcknowledged", "warningAcknowledged"]),
+        ],
+        [
+          "Next",
+          action === "approve"
+            ? "Record approval, then review mock execution"
+            : "Record this decision",
+        ],
+      ],
+      width
+    )
+  }
+  return renderProductSections(
+    `${resolvedTitle(options, "Decision recorded")} · ${action.toUpperCase()}`,
+    [
+      [
+        "By",
+        read(decision, ["actor", "actorEmail", "userEmail", "decidedBy"]) ??
+          read(outerDecision, [
+            "actor",
+            "actorEmail",
+            "userEmail",
+            "decidedBy",
+          ]),
+      ],
+      ["Action", action],
+      [
+        "Reason",
+        read(decision, ["reason", "feedback", "comment"]) ??
+          read(outerDecision, ["reason", "feedback", "comment"]) ??
+          read(root, ["reason", "feedback", "comment"]),
+      ],
+      ["Timestamp", read(decision, ["timestamp", "decidedAt", "createdAt"])],
+      ["State", stateTransition(decision)],
+      [
+        "Warnings acknowledged",
+        read(decision, ["warningsAcknowledged", "warningAcknowledged"]) ??
+          read(outerDecision, [
+            "warningsAcknowledged",
+            "warningAcknowledged",
+          ]) ??
+          read(root, ["warningsAcknowledged", "warningAcknowledged"]),
+      ],
+      [
+        "Revision status",
+        read(decision, [
+          "revisionStatus",
+          "revisedOutputStatus",
+          "reworkStatus",
+        ]),
+      ],
+      [
+        "Next action",
+        firstValue(root, decision, ["nextAction", "availableActions"]),
+      ],
+    ],
+    width
+  )
+}
+
+export function renderExecutionResult(
+  input: unknown,
+  options: HumanRenderOptions | number = {}
+): string {
+  const { width, value } = productInput(input, options)
+  const root = recordOrEmpty(value)
+  const execution = recordOrEmpty(
+    isRecord(root.execution) ? root.execution : root
+  )
+  const attempt = recordOrEmpty(
+    isRecord(execution.attempt)
+      ? execution.attempt
+      : isRecord(root.attempt)
+        ? root.attempt
+        : execution
+  )
+  const draft = recordOrEmpty(
+    isRecord(execution.draft) ? execution.draft : root.draft
+  )
+  const rawMode = firstValue(attempt, root, ["mode", "executionMode"])
+  const mock =
+    read(attempt, ["isMock"]) === true ||
+    valueText(rawMode).toLowerCase() === "mock" ||
+    hasMockIdentifier(attempt)
+  const mode = mock ? "MOCK" : valueText(rawMode, "UNKNOWN").toUpperCase()
+  const requestSummary =
+    read(attempt, ["requestSummary", "payloadSummary", "wouldCreate"]) ??
+    read(execution, ["requestSummary", "payloadSummary", "wouldCreate"]) ??
+    read(root, ["requestSummary", "payloadSummary", "wouldCreate"])
+  const actionOrPayload =
+    read(attempt, ["request", "payload", "actionType"]) ??
+    read(execution, ["request", "payload", "actionType"]) ??
+    read(root, ["request", "payload", "actionType"]) ??
+    read(draft, ["payload"])
+  const output = renderProductSections(
+    `${resolvedTitle(options, "Approval execution")} · ${mode}`,
+    [
+      ["Mode", mode],
+      ["Attempt status", read(attempt, ["status", "attemptStatus", "outcome"])],
+      ["Would create", requestSummary ?? actionOrPayload],
+      [
+        mock ? "Mock external ID" : "External ID",
+        read(attempt, [
+          "mockExternalId",
+          "externalId",
+          "externalRecordId",
+          "resultId",
+        ]),
+      ],
+      [
+        "Outcome",
+        firstValue(attempt, root, [
+          "result",
+          "resultPayload",
+          "outcome",
+          "message",
+        ]),
+      ],
+      ["Error", read(attempt, ["error", "errorMessage", "failureReason"])],
+      [
+        "Timestamp",
+        read(attempt, ["timestamp", "attemptedAt", "completedAt", "createdAt"]),
+      ],
+      [
+        "Retry",
+        firstValue(attempt, root, ["retryState", "retryable", "nextAction"]),
+      ],
+      [
+        "Audit reference",
+        firstValue(attempt, root, [
+          "auditReference",
+          "auditEventId",
+          "auditId",
+        ]),
+      ],
+    ],
+    width
+  )
+  return mock
+    ? `${output}\n\n${wrapTerminalText("MOCK ONLY — No live external record was created.", width)}`
+    : output
+}
+
+export function renderActivityHistory(
+  input: unknown,
+  options: HumanRenderOptions | number = {}
+): string {
+  const { width, value } = productInput(input, options)
+  const root = recordOrEmpty(value)
+  const arrays = [
+    "activity",
+    "history",
+    "auditEvents",
+    "events",
+    "attempts",
+    "decisions",
+  ].flatMap((key) => (Array.isArray(root[key]) ? (root[key] as unknown[]) : []))
+  const singletons = [
+    activityEntry("Draft", root.draft),
+    activityEntry("Decision", root.decision),
+    activityEntry("Execution", root.attempt),
+  ].filter((entry): entry is Record<string, unknown> => entry !== undefined)
+  const events = deduplicateActivity([...singletons, ...arrays]).sort(
+    (left, right) =>
+      activityTimestamp(left).localeCompare(activityTimestamp(right))
+  )
+  const title = resolvedTitle(options, "Activity & history")
+  if (events.length === 0)
+    return `${wrapTerminalText(title, width)}\nNo activity recorded.`
+  const sections = events.map((event, index) => {
+    const record = recordOrEmpty(event)
+    return renderProductSections(
+      `${index + 1}. ${valueText(read(record, ["eventType", "type", "action", "decision", "status"]), "Activity")}`,
+      [
+        [
+          "When",
+          read(record, ["timestamp", "createdAt", "occurredAt", "decidedAt"]),
+        ],
+        [
+          "Actor",
+          read(record, ["actor", "actorEmail", "userEmail", "createdBy"]),
+        ],
+        [
+          "Summary",
+          read(record, [
+            "summary",
+            "reason",
+            "message",
+            "feedback",
+            "errorMessage",
+          ]),
+        ],
+        ["State", stateTransition(record)],
+        ["Draft", read(record, ["draft", "draftId", "revision"])],
+        [
+          "Downstream outcome",
+          read(record, [
+            "outcome",
+            "result",
+            "resultPayload",
+            "attemptStatus",
+            "executionStatus",
+            "status",
+          ]),
+        ],
+        [
+          "Audit reference",
+          read(record, ["auditReference", "auditEventId", "auditId", "id"]),
+        ],
+      ],
+      width
+    )
+  })
+  return [wrapTerminalText(title, width), ...sections].join("\n\n")
+}
+
+function activityEntry(
+  eventType: string,
+  value: unknown
+): Record<string, unknown> | undefined {
+  return isRecord(value) ? { eventType, ...value } : undefined
+}
+
+function activityTimestamp(value: unknown): string {
+  return valueText(
+    read(value, [
+      "timestamp",
+      "createdAt",
+      "occurredAt",
+      "decidedAt",
+      "updatedAt",
+    ])
+  )
+}
+
+function deduplicateActivity(
+  entries: readonly unknown[]
+): Record<string, unknown>[] {
+  const seen = new Set<string>()
+  return entries.flatMap((entry, index) => {
+    const record = recordOrEmpty(entry)
+    if (Object.keys(record).length === 0) return []
+    const id = valueText(read(record, ["id", "auditReference", "auditEventId"]))
+    const key =
+      id ||
+      `${valueText(record.eventType)}:${activityTimestamp(record)}:${index}`
+    if (seen.has(key)) return []
+    seen.add(key)
+    return [record]
+  })
+}
+
+type ProductRow = readonly [label: string, value: unknown]
+
+function productInput(
+  input: unknown,
+  options: HumanRenderOptions | number
+): { width: number; value: unknown } {
+  const resolved = resolveOptions(options)
+  return {
+    width: normalizeTerminalWidth(resolved.width),
+    value: redactSecrets(input),
+  }
+}
+
+function resolvedTitle(
+  options: HumanRenderOptions | number,
+  fallback: string
+): string {
+  return typeof options === "number" ? fallback : (options.title ?? fallback)
+}
+
+function renderProductSections(
+  title: string,
+  rows: readonly ProductRow[],
+  width: number
+): string {
+  const lines = [wrapTerminalText(title, width)]
+  const longestLabel = Math.max(
+    ...rows.map(([label]) => sanitizeTerminalText(label).length)
+  )
+  const labelWidth = Math.min(
+    28,
+    Math.max(14, Math.floor(width * 0.25), longestLabel)
+  )
+  for (const [label, rawValue] of rows) {
+    const value = valueText(rawValue, "Not provided")
+    const safeLabel = sanitizeTerminalText(label)
+    if (width < 56) {
+      lines.push(safeLabel)
+      lines.push(
+        wrapTerminalText(value, Math.max(1, width - 2))
+          .split("\n")
+          .map((line) => `  ${line}`)
+          .join("\n")
+      )
+      continue
+    }
+    const valueWidth = Math.max(1, width - labelWidth - 1)
+    const wrapped = wrapTerminalText(value, valueWidth).split("\n")
+    lines.push(`${safeLabel.padEnd(labelWidth)} ${wrapped[0] ?? ""}`)
+    for (const line of wrapped.slice(1))
+      lines.push(`${"".padEnd(labelWidth)} ${line}`)
+  }
+  return lines.join("\n")
+}
+
+function recordOrEmpty(value: unknown): Record<string, unknown> {
+  return isRecord(value) ? value : {}
+}
+
+function read(record: unknown, keys: readonly string[]): unknown {
+  if (!isRecord(record)) return undefined
+  for (const key of keys) {
+    if (record[key] !== undefined && record[key] !== null) return record[key]
+  }
+  return undefined
+}
+
+function firstValue(
+  primary: unknown,
+  secondary: unknown,
+  keys: readonly string[]
+): unknown {
+  return read(primary, keys) ?? read(secondary, keys)
+}
+
+function arrayAt(record: unknown, keys: readonly string[]): unknown[] {
+  const value = read(record, keys)
+  return Array.isArray(value) ? value : []
+}
+
+function countAt(
+  record: unknown,
+  keys: readonly string[],
+  fallback: number
+): number {
+  const value = read(record, keys)
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, Math.floor(value))
+    : fallback
+}
+
+function valueText(value: unknown, fallback = ""): string {
+  if (value === undefined || value === null || value === "") return fallback
+  if (typeof value === "string") return sanitizeTerminalText(value) || fallback
+  if (
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint"
+  )
+    return sanitizeTerminalText(String(value))
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "None"
+    return value.map((entry) => valueText(entry, "Unknown")).join(" · ")
+  }
+  if (isRecord(value)) {
+    const preferred = read(value, [
+      "label",
+      "name",
+      "title",
+      "summary",
+      "message",
+      "value",
+      "id",
+    ])
+    if (preferred !== undefined) return valueText(preferred, fallback)
+    const entries = Object.entries(value).slice(0, 6)
+    if (entries.length === 0) return "None"
+    return entries
+      .map(
+        ([key, entry]) =>
+          `${sanitizeTerminalText(key)}: ${valueText(entry, "Unknown")}`
+      )
+      .join(" · ")
+  }
+  return sanitizeTerminalText(String(value)) || fallback
+}
+
+function countMatching(
+  items: readonly unknown[],
+  predicate: (item: unknown) => boolean
+): number {
+  return items.reduce<number>(
+    (count, item) => count + (predicate(item) ? 1 : 0),
+    0
+  )
+}
+
+function isUrgent(item: unknown): boolean {
+  const priority = read(item, ["priority", "urgency"])
+  if (typeof priority === "number") return priority >= 80
+  return /urgent|critical|high/i.test(valueText(priority))
+}
+
+function isBlocked(item: unknown): boolean {
+  const state = valueText(read(item, ["status", "state", "warningState"]))
+  const recommendationState = isRecord(item)
+    ? valueText(read(item.recommendation, ["warningState", "status"]))
+    : ""
+  return (
+    /block|failed|error/i.test(`${state} ${recommendationState}`) ||
+    collectWarnings(item).blocking !== "None"
+  )
+}
+
+function isResolved(item: unknown): boolean {
+  const state = valueText(read(item, ["status", "state", "resolutionState"]))
+  return /^(resolved|completed|closed|dismissed|archived)$/i.test(state)
+}
+
+function summarizeCategories(items: readonly unknown[]): string {
+  if (items.length === 0) return "None"
+  const counts = new Map<string, number>()
+  for (const item of items) {
+    const category = valueText(
+      read(item, ["type", "itemType", "workType", "category"]),
+      "Review"
+    )
+    counts.set(category, (counts.get(category) ?? 0) + 1)
+  }
+  return [...counts.entries()]
+    .map(([name, count]) => `${name} ${count}`)
+    .join(" · ")
+}
+
+function inboxRows(item: unknown): ProductRow[] {
+  return [
+    ["Type", inboxValue(item, ["type", "itemType", "workType"])],
+    ["Status", inboxValue(item, ["status", "state"])],
+    ["Priority", inboxValue(item, ["priority", "urgency"])],
+    ["Source", inboxValue(item, ["source", "sourceSystem", "origin"])],
+    ["Owner", inboxValue(item, ["owner", "ownerRole", "role", "assignedTo"])],
+    [
+      "Updated",
+      inboxValue(item, [
+        "waitingAge",
+        "age",
+        "updatedAgo",
+        "waiting",
+        "updatedAt",
+      ]),
+    ],
+    ["Warning", warningLabel(item)],
+  ]
+}
+
+function inboxValue(item: unknown, keys: readonly string[]): unknown {
+  const direct = read(item, keys)
+  if (direct !== undefined) return direct
+  const record = recordOrEmpty(item)
+  return read(record.resolutionState, keys)
+}
+
+function warningLabel(item: unknown): string {
+  const warnings = collectWarnings(item)
+  if (warnings.blocking !== "None") return `Blocked: ${warnings.blocking}`
+  if (warnings.informational !== "None") return warnings.informational
+  const warningCount = read(item, ["warningCount"])
+  if (typeof warningCount === "number" && warningCount > 0)
+    return `${warningCount} warning${warningCount === 1 ? "" : "s"}`
+  return "None"
+}
+
+function collectWarnings(value: unknown): {
+  blocking: string
+  informational: string
+  all: string
+} {
+  const blocking: string[] = []
+  const informational: string[] = []
+  const visit = (
+    entry: unknown,
+    keyHint = "",
+    depth = 0,
+    blockingContext = false
+  ): void => {
+    if (depth > 5 || entry === null || entry === undefined) return
+    if (Array.isArray(entry)) {
+      entry.forEach((item) => visit(item, keyHint, depth + 1, blockingContext))
+      return
+    }
+    if (isRecord(entry)) {
+      const recordBlocking =
+        blockingContext ||
+        read(entry, ["blocking"]) === true ||
+        /block|critical|error/i.test(
+          valueText(
+            read(entry, ["severity", "level", "warningState", "status"])
+          )
+        )
+      const looksLikeWarning =
+        /warning|block/i.test(keyHint) ||
+        read(entry, ["severity", "level", "blocking", "warningState"]) !==
+          undefined
+      if (looksLikeWarning) {
+        const text = valueText(
+          read(entry, ["message", "summary", "warning", "reason", "title"]),
+          ""
+        )
+        if (text) {
+          const severity = valueText(
+            read(entry, ["severity", "level", "warningState"])
+          )
+          const isEntryBlocking =
+            recordBlocking ||
+            /block|critical|error/i.test(severity) ||
+            /block/i.test(keyHint)
+          ;(isEntryBlocking ? blocking : informational).push(text)
+          return
+        }
+      }
+      for (const [key, child] of Object.entries(entry)) {
+        if (/^(?:warningState|warningCount)$/i.test(key)) continue
+        if (/warning|block/i.test(key))
+          visit(child, key, depth + 1, recordBlocking)
+        else if (
+          ["contextPacket", "evidence", "recommendation", "item"].includes(key)
+        )
+          visit(child, key, depth + 1, recordBlocking)
+      }
+      return
+    }
+    if (/warning|block/i.test(keyHint)) {
+      const text = valueText(entry)
+      if (text)
+        (blockingContext || /block/i.test(keyHint)
+          ? blocking
+          : informational
+        ).push(text)
+    }
+  }
+  visit(value)
+  const uniqueBlocking = [...new Set(blocking)]
+  const blockingSet = new Set(uniqueBlocking)
+  const uniqueInformational = [...new Set(informational)].filter(
+    (warning) => !blockingSet.has(warning)
+  )
+  const uniqueWarnings = [...uniqueBlocking, ...uniqueInformational]
+  return {
+    blocking: uniqueBlocking.length > 0 ? uniqueBlocking.join(" · ") : "None",
+    informational:
+      uniqueInformational.length > 0 ? uniqueInformational.join(" · ") : "None",
+    all: uniqueWarnings.length > 0 ? uniqueWarnings.join(" · ") : "None",
+  }
+}
+
+function stateTransition(value: unknown): unknown {
+  const before = read(value, [
+    "stateBefore",
+    "previousState",
+    "fromState",
+    "before",
+  ])
+  const after = read(value, ["stateAfter", "newState", "toState", "after"])
+  if (before !== undefined || after !== undefined)
+    return `${valueText(before, "Unknown")} -> ${valueText(after, "Unknown")}`
+  return read(value, ["stateTransition", "state", "status"])
+}
+
+function hasMockIdentifier(value: unknown): boolean {
+  const identifier = valueText(
+    read(value, ["mockExternalId", "externalId", "externalRecordId"])
+  )
+  return /^mock(?:_|-)/i.test(identifier)
 }
 
 function renderWorkItemDetail(value: unknown, width: number): string {

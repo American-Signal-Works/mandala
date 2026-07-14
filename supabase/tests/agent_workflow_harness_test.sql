@@ -1,5 +1,14 @@
 BEGIN;
-SELECT plan(37);
+SELECT plan(38);
+
+SELECT ok(
+  (
+    SELECT 'synthetic_agent_run' = ANY(allowed_scenario_ids)
+    FROM public.workflow_fixture_adapters
+    WHERE adapter_key = 'procurement_reorder_fixture_v1'
+  ),
+  'guarded procurement adapter allows the synthetic test-agent scenario'
+);
 
 INSERT INTO auth.users (
   id,

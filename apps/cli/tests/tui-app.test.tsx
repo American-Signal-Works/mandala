@@ -1,9 +1,15 @@
+import { EventEmitter } from "node:events"
 import React from "react"
 import { render } from "ink-testing-library"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import {
   MandalaTui,
+  RESIZE_SETTLE_MS,
+  createSettledResizeOutput,
+  inkRenderConfiguration,
   matchingCommands,
+  operationLabelForLine,
+  projectComposerValue,
   resolveTuiWidth,
   type CreateTuiSession,
   type TuiSessionController,
@@ -20,7 +26,49 @@ const selectedItem = {
 afterEach(() => vi.restoreAllMocks())
 
 describe("Ink TUI", () => {
+  it("uses coherent full-frame redraws so resize does not enter scrollback", () => {
+    expect(inkRenderConfiguration).toMatchObject({
+      alternateScreen: false,
+      incrementalRendering: false,
+    })
+    expect(RESIZE_SETTLE_MS).toBeGreaterThanOrEqual(200)
+  })
+
+  it("redraws once after a burst of terminal resize events", async () => {
+    vi.useFakeTimers()
+    const rawOutput = new EventEmitter() as NodeJS.WriteStream
+    Object.assign(rawOutput, {
+      columns: 80,
+      rows: 24,
+      write: vi.fn(),
+    })
+    const settled = createSettledResizeOutput(rawOutput)
+    const inkResize = vi.fn()
+    const resized = vi.fn()
+    settled.output.on("resize", inkResize)
+    settled.output.on("resize", resized)
+
+    rawOutput.emit("resize")
+    Object.assign(rawOutput, { columns: 100, rows: 30 })
+    rawOutput.emit("resize")
+    Object.assign(rawOutput, { columns: 120, rows: 36 })
+    rawOutput.emit("resize")
+
+    expect(resized).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(RESIZE_SETTLE_MS - 1)
+    expect(resized).not.toHaveBeenCalled()
+    await vi.advanceTimersByTimeAsync(1)
+    expect(inkResize).not.toHaveBeenCalled()
+    expect(resized).toHaveBeenCalledTimes(1)
+    expect(settled.output.columns).toBe(120)
+    expect(settled.output.rows).toBe(36)
+
+    settled.dispose()
+    vi.useRealTimers()
+  })
+
   it("bounds live terminal widths and rejects implausible resize values", () => {
+    expect(resolveTuiWidth(39, 80)).toBe(39)
     expect(resolveTuiWidth(40, 80)).toBe(40)
     expect(resolveTuiWidth(119, 80)).toBe(119)
     expect(resolveTuiWidth(200, 80)).toBe(120)
@@ -43,7 +91,9 @@ describe("Ink TUI", () => {
     await waitFor(
       () => terminal.lastFrame()?.includes("/purchase-requests") === true
     )
-    expect(terminal.lastFrame()).toContain("Up/Down select")
+    expect(terminal.lastFrame()).toContain("Up/Down move")
+    expect(terminal.lastFrame()).toContain("Decide")
+    expect(terminal.lastFrame()).toContain("Inspect selected")
 
     terminal.stdin.write("pur")
     await waitFor(() => terminal.lastFrame()?.includes("> /pur") === true)
@@ -54,6 +104,33 @@ describe("Ink TUI", () => {
       () => terminal.lastFrame()?.includes("Up/Down select") === false
     )
     expect(terminal.lastFrame()).toContain("> /pur")
+    terminal.unmount()
+  })
+
+  it("recovers close command typos and explains distant searches", async () => {
+    const harness = createHarness()
+    const terminal = render(
+      <MandalaTui
+        color={false}
+        createSession={harness.createSession}
+        width={100}
+      />
+    )
+    await waitFor(() => terminal.lastFrame()?.includes("Ask Mandala") === true)
+
+    terminal.stdin.write("/inbxo")
+    await waitFor(() => terminal.lastFrame()?.includes("/inbox") === true)
+    expect(terminal.lastFrame()).not.toContain("No command matches")
+
+    terminal.stdin.write("\u0015/zzzzzz")
+    await waitFor(
+      () => terminal.lastFrame()?.includes("No command matches") === true
+    )
+    expect(terminal.lastFrame()).toContain("Backspace to revise")
+    terminal.stdin.write("\u001b")
+    await waitFor(
+      () => terminal.lastFrame()?.includes("No command matches") === false
+    )
     terminal.unmount()
   })
 
@@ -68,18 +145,20 @@ describe("Ink TUI", () => {
     )
     await waitFor(() => terminal.lastFrame()?.includes("Ask Mandala") === true)
 
-    terminal.stdin.write("/op")
-    await waitFor(() => terminal.lastFrame()?.includes("/open") === true)
+    terminal.stdin.write("/run")
+    await waitFor(() => terminal.lastFrame()?.includes("/run-fixture") === true)
     terminal.stdin.write("\t")
-    await waitFor(() => terminal.lastFrame()?.includes("> /open") === true)
+    await waitFor(() => terminal.lastFrame()?.includes("> /run-fixture") === true)
 
     terminal.stdin.write("1")
-    await waitFor(() => terminal.lastFrame()?.includes("> /open 1") === true)
+    await waitFor(
+      () => terminal.lastFrame()?.includes("> /run-fixture 1") === true
+    )
     terminal.stdin.write("\r")
-    await waitFor(() => harness.lines.includes("/open 1"))
+    await waitFor(() => harness.lines.includes("/run-fixture 1"))
 
-    expect(harness.lines).toEqual(["/open 1"])
-    expect(harness.lines).not.toContain("/open1")
+    expect(harness.lines).toEqual(["/run-fixture 1"])
+    expect(harness.lines).not.toContain("/run-fixture1")
     terminal.unmount()
   })
 
@@ -103,8 +182,124 @@ describe("Ink TUI", () => {
     terminal.unmount()
   })
 
+  it("navigates a nested picker with arrows, Enter, and Escape", async () => {
+    const harness = createHarness({ choiceOn: "/workspace" })
+    const terminal = render(
+      <MandalaTui
+        color={false}
+        createSession={harness.createSession}
+        width={100}
+      />
+    )
+    await waitFor(() => terminal.lastFrame()?.includes("Ask Mandala") === true)
+
+    terminal.stdin.write("/workspace")
+    await waitFor(() => terminal.lastFrame()?.includes("> /workspace") === true)
+    terminal.stdin.write("\r")
+    await waitFor(() => terminal.lastFrame()?.includes("Choose workspace") === true)
+    expect(terminal.lastFrame()).toContain("> 1. Mandala Local Demo")
+    expect(terminal.lastFrame()).toContain("Right/Enter select")
+
+    terminal.stdin.write("\u001b[B")
+    await waitFor(
+      () => terminal.lastFrame()?.includes("> 2. Acme Operations") === true
+    )
+    terminal.stdin.write("\r")
+    await waitFor(() => harness.selections.includes("acme"))
+
+    expect(terminal.lastFrame()).toContain("Selected: Acme Operations")
+    terminal.unmount()
+  })
+
+  it("supports first/last and directional menu controls", async () => {
+    const harness = createHarness({ choiceOn: "/workspace" })
+    const terminal = render(
+      <MandalaTui
+        color={false}
+        createSession={harness.createSession}
+        width={100}
+      />
+    )
+    await waitFor(() => terminal.lastFrame()?.includes("Ask Mandala") === true)
+
+    terminal.stdin.write("/workspace")
+    await waitFor(() => terminal.lastFrame()?.includes("> /workspace") === true)
+    terminal.stdin.write("\r")
+    await waitFor(() => terminal.lastFrame()?.includes("Choose workspace") === true)
+    terminal.stdin.write("\u001b[F")
+    await waitFor(() => terminal.lastFrame()?.includes("> 2. Acme Operations") === true)
+    terminal.stdin.write("\u001b[C")
+    await waitFor(() => harness.selections.includes("acme"))
+    terminal.unmount()
+  })
+
+  it("supports numeric menu shortcuts", async () => {
+    const harness = createHarness({ choiceOn: "/workspace" })
+    const terminal = render(
+      <MandalaTui
+        color={false}
+        createSession={harness.createSession}
+        width={100}
+      />
+    )
+    await waitFor(() => terminal.lastFrame()?.includes("Ask Mandala") === true)
+
+    terminal.stdin.write("/workspace")
+    await waitFor(() => terminal.lastFrame()?.includes("> /workspace") === true)
+    terminal.stdin.write("\r")
+    await waitFor(() => terminal.lastFrame()?.includes("Choose workspace") === true)
+    terminal.stdin.write("1")
+    await waitFor(() => harness.selections.includes("mandala"))
+    terminal.unmount()
+  })
+
+  it("uses Ctrl-C to cancel the nearest menu before exiting", async () => {
+    const harness = createHarness({ choiceOn: "/workspace" })
+    const terminal = render(
+      <MandalaTui
+        color={false}
+        createSession={harness.createSession}
+        width={100}
+      />
+    )
+    await waitFor(() => terminal.lastFrame()?.includes("Ask Mandala") === true)
+
+    terminal.stdin.write("/workspace")
+    await waitFor(() => terminal.lastFrame()?.includes("> /workspace") === true)
+    terminal.stdin.write("\r")
+    await waitFor(() => terminal.lastFrame()?.includes("Choose workspace") === true)
+    terminal.stdin.write("\u0003")
+    await waitFor(() => terminal.lastFrame()?.includes("cancelled") === true)
+    expect(harness.exitRequested()).toBe(false)
+
+    terminal.stdin.write("\u0003")
+    await waitFor(() => harness.exitRequested())
+  })
+
+  it("runs guided login directly from the palette without requiring an email argument", async () => {
+    const harness = createHarness()
+    const terminal = render(
+      <MandalaTui
+        color={false}
+        createSession={harness.createSession}
+        width={100}
+      />
+    )
+    await waitFor(() => terminal.lastFrame()?.includes("Ask Mandala") === true)
+    terminal.stdin.write("/login")
+    await waitFor(() => terminal.lastFrame()?.includes("> /login") === true)
+    terminal.stdin.write("\r")
+    await waitFor(() => harness.lines.includes("/login"))
+
+    expect(harness.lines).toEqual(["/login"])
+    terminal.unmount()
+  })
+
   it("keeps loading transient and routes confirmation answers through the composer", async () => {
-    const harness = createHarness({ confirmOnApprove: true })
+    const harness = createHarness({
+      confirmOnApprove: true,
+      snapshot: { selectedItem: { ...selectedItem, status: "active" } },
+    })
     const terminal = render(
       <MandalaTui
         color={false}
@@ -130,6 +325,180 @@ describe("Ink TUI", () => {
 
     expect(terminal.lastFrame()).not.toContain("Working...")
     expect(terminal.lastFrame()).toContain("Approve this draft? [y/N] y")
+    terminal.unmount()
+  })
+
+  it("cancels the nearest guided prompt with Escape without exiting", async () => {
+    const harness = createHarness({
+      confirmOnApprove: true,
+      snapshot: { selectedItem: { ...selectedItem, status: "active" } },
+    })
+    const terminal = render(
+      <MandalaTui
+        color={false}
+        createSession={harness.createSession}
+        width={100}
+      />
+    )
+    await waitFor(() => terminal.lastFrame()?.includes("Ask Mandala") === true)
+    terminal.stdin.write("/approve")
+    await waitFor(() => terminal.lastFrame()?.includes("> /approve") === true)
+    terminal.stdin.write("\r")
+    await waitFor(
+      () => terminal.lastFrame()?.includes("Approve this draft? [y/N]") === true
+    )
+    terminal.stdin.write("\u001b")
+    await waitFor(
+      () => terminal.lastFrame()?.includes("No changes were made") === true
+    )
+    expect(harness.exitRequested()).toBe(false)
+    await waitFor(() => terminal.lastFrame()?.includes("Ask Mandala") === true)
+    terminal.unmount()
+  })
+
+  it("explains that approval remains recorded when execution is cancelled", async () => {
+    const harness = createHarness({
+      confirmOnApprove: true,
+      executeAfterApprove: true,
+      snapshot: { selectedItem: { ...selectedItem, status: "active" } },
+    })
+    const terminal = render(
+      <MandalaTui
+        color={false}
+        createSession={harness.createSession}
+        width={100}
+      />
+    )
+    await waitFor(() => terminal.lastFrame()?.includes("Ask Mandala") === true)
+    terminal.stdin.write("/approve")
+    await waitFor(() => terminal.lastFrame()?.includes("> /approve") === true)
+    terminal.stdin.write("\r")
+    await waitFor(
+      () => terminal.lastFrame()?.includes("Approve this draft? [y/N]") === true
+    )
+    terminal.stdin.write("y")
+    await waitFor(
+      () => terminal.lastFrame()?.includes("Approve this draft? [y/N] y") === true
+    )
+    terminal.stdin.write("\r")
+    await waitFor(
+      () =>
+        terminal
+          .lastFrame()
+          ?.includes("Execute this approved action in Sandbox? [y/N]") === true
+    )
+    terminal.stdin.write("\u001b")
+    await waitFor(
+      () =>
+        terminal
+          .lastFrame()
+          ?.includes("Execution cancelled. The approval remains recorded.") ===
+        true
+    )
+    expect(harness.exitRequested()).toBe(false)
+    terminal.unmount()
+  })
+
+  it("never displays or retains a pointer-sensitive edit value", async () => {
+    const secret = "must-not-enter-transcript"
+    expect(projectComposerValue(`/edit --set /rawToken=${secret}`)).toBe(
+      "/edit --set /rawToken=[REDACTED]"
+    )
+    const harness = createHarness()
+    const terminal = render(
+      <MandalaTui
+        color={false}
+        createSession={harness.createSession}
+        width={100}
+      />
+    )
+    await waitFor(() => terminal.lastFrame()?.includes("Ask Mandala") === true)
+    terminal.stdin.write(`/edit --set /rawToken=${secret}`)
+    await waitFor(() => terminal.lastFrame()?.includes("*") === true)
+    expect(terminal.lastFrame()).not.toContain(secret)
+    terminal.stdin.write("\r")
+    await waitFor(() => harness.lines.length === 1)
+    expect(terminal.lastFrame()).not.toContain(secret)
+    expect(terminal.lastFrame()).toContain("/rawToken=[REDACTED]")
+    terminal.stdin.write("\u001b[A")
+    await waitFor(() => terminal.lastFrame()?.includes("[REDACTED]") === true)
+    expect(terminal.lastFrame()).not.toContain(secret)
+    terminal.unmount()
+  })
+
+  it("uses operation-specific stable progress labels without color", async () => {
+    expect(operationLabelForLine("/evidence")).toBe("Loading evidence")
+    const harness = createHarness({ pauseOn: "/evidence" })
+    const terminal = render(
+      <MandalaTui
+        color={false}
+        createSession={harness.createSession}
+        width={100}
+      />
+    )
+    await waitFor(() => terminal.lastFrame()?.includes("Ask Mandala") === true)
+    terminal.stdin.write("/evidence")
+    await waitFor(() => terminal.lastFrame()?.includes("> /evidence") === true)
+    terminal.stdin.write("\r")
+    await waitFor(
+      () =>
+        terminal.lastFrame()?.includes("Working: Loading evidence...") === true
+    )
+    harness.release()
+    await waitFor(() => terminal.lastFrame()?.includes("Ask Mandala") === true)
+    terminal.unmount()
+  })
+
+  it("renders safe workspace and selected-item context with a next action", async () => {
+    const harness = createHarness({
+      snapshot: {
+        environment: "local mock",
+        workspace: { name: "Example workspace" },
+        selectedItem: {
+          ...selectedItem,
+          itemType: "Purchase request",
+          priority: "High",
+          source: "Inventory signal",
+          warningCount: 2,
+          nextAction: "Review evidence, then decide",
+        },
+      },
+    })
+    const terminal = render(
+      <MandalaTui
+        color={false}
+        createSession={harness.createSession}
+        width={100}
+      />
+    )
+    await waitFor(
+      () => terminal.lastFrame()?.includes("Example workspace") === true
+    )
+    expect(terminal.lastFrame()).toContain("2 warnings")
+    expect(terminal.lastFrame()).toContain("Review evidence, then decide")
+    terminal.unmount()
+  })
+
+  it("sanitizes OSC and forged-line controls in persistent context", async () => {
+    const injection = "safe\u001b]8;;https://evil.example\u0007link\u001b]8;;\u0007\nforged"
+    const harness = createHarness({
+      snapshot: {
+        environment: injection,
+        workspace: { name: injection },
+        selectedItem: { ...selectedItem, title: injection, source: injection },
+      },
+    })
+    const terminal = render(
+      <MandalaTui
+        color={false}
+        createSession={harness.createSession}
+        width={100}
+      />
+    )
+    await waitFor(() => terminal.lastFrame()?.includes("safelink forged") === true)
+    expect(terminal.lastFrame()).not.toContain("\u001b]")
+    expect(terminal.lastFrame()).not.toContain("\u0007")
+    expect(terminal.lastFrame()).not.toContain("\nforged")
     terminal.unmount()
   })
 
@@ -170,9 +539,9 @@ describe("Ink TUI", () => {
         selectedItem: { ...selectedItem, status: "active" },
       }).map(({ command }) => command)
     ).not.toContain("/execute")
-    const denyMatches = matchingCommands("/den", { selectedItem }).map(
-      ({ command }) => command
-    )
+    const denyMatches = matchingCommands("/den", {
+      selectedItem: { ...selectedItem, status: "active" },
+    }).map(({ command }) => command)
     const quitMatches = matchingCommands("/qui", { selectedItem }).map(
       ({ command }) => command
     )
@@ -186,26 +555,82 @@ describe("Ink TUI", () => {
     expect(
       matchingCommands("/exit", { selectedItem }).map(({ command }) => command)
     ).not.toContain("/exit")
+    expect(
+      matchingCommands("/", { userEmail: "seed@example.com" }).map(
+        ({ command }) => command
+      )
+    ).not.toContain("/login")
+    expect(
+      matchingCommands("/", {}).map(({ command }) => command)
+    ).not.toContain("/logout")
+    const signedInCommands = matchingCommands("/", {
+      userEmail: "seed@example.com",
+    }).map(({ command }) => command)
+    expect(signedInCommands).toContain("/workspace")
+    expect(signedInCommands).not.toContain("/companies")
+    expect(signedInCommands).not.toContain("/company")
+    expect(signedInCommands).not.toContain("/open")
+    expect(
+      matchingCommands("/inbxo", {}).map(({ command }) => command)
+    ).toContain("/inbox")
+    expect(matchingCommands("/zzzzzz", {})).toEqual([])
   })
 })
 
-function createHarness(options: { confirmOnApprove?: boolean } = {}) {
+function createHarness(
+  options: {
+    choiceOn?: string
+    confirmOnApprove?: boolean
+    executeAfterApprove?: boolean
+    pauseOn?: string
+    snapshot?: Parameters<TuiSessionIo["onSnapshot"]>[0]
+  } = {}
+) {
   const lines: string[] = []
+  const selections: string[] = []
   let io: TuiSessionIo
   let exitRequested = false
+  let releasePause: (() => void) | undefined
   const createSession: CreateTuiSession = (sessionIo) => {
     io = sessionIo
     const session: TuiSessionController = {
       get exitRequested() {
         return exitRequested
       },
+      cancelCurrentOperation: () => false,
       clearState: vi.fn(),
       handleLine: async (line) => {
         lines.push(line)
+        if (line === options.choiceOn) {
+          const selected = await io.choose?.("Choose workspace", [
+            {
+              value: "mandala",
+              label: "Mandala Local Demo",
+              description: "owner · current",
+            },
+            {
+              value: "acme",
+              label: "Acme Operations",
+              description: "approver",
+            },
+          ])
+          if (selected) selections.push(selected)
+        }
+        if (line === options.pauseOn) {
+          await new Promise<void>((resolve) => {
+            releasePause = resolve
+          })
+        }
         if (line === "/open 1") io.onSnapshot({ selectedItem })
         if (line === "/approve" && options.confirmOnApprove) {
           const answer = await io.ask("Approve this draft? [y/N] ")
-          io.append(answer === "y" ? "Approved." : "Cancelled.")
+          if (answer === "y") {
+            io.append("Approved.")
+            if (options.executeAfterApprove)
+              await io.ask("Execute this approved action in Sandbox? [y/N] ")
+          } else {
+            io.append("Cancelled.")
+          }
         }
       },
       requestExit: () => {
@@ -213,12 +638,18 @@ function createHarness(options: { confirmOnApprove?: boolean } = {}) {
       },
       start: async () => {
         io.append("Mandala test header")
-        io.onSnapshot({ selectedItem })
+        io.onSnapshot(options.snapshot ?? { selectedItem })
       },
     }
     return session
   }
-  return { createSession, lines }
+  return {
+    createSession,
+    exitRequested: () => exitRequested,
+    lines,
+    selections,
+    release: () => releasePause?.(),
+  }
 }
 
 async function waitFor(predicate: () => boolean): Promise<void> {

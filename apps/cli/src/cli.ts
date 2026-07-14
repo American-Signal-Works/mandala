@@ -91,8 +91,7 @@ export async function runCli(
           ? result.data.usage
           : `${result.data.usage}\n`
       )
-    }
-    else {
+    } else {
       const rendered = renderHumanResult(result.data, {
         width: (stdout as Writable & { columns?: number }).columns,
       })
@@ -103,7 +102,10 @@ export async function runCli(
   if (!json) {
     const rendered = renderHumanResult(
       { error: { code: result.error.code, message: result.error.message } },
-      { width: (stderr as Writable & { columns?: number }).columns, title: "Error" }
+      {
+        width: (stderr as Writable & { columns?: number }).columns,
+        title: "Error",
+      }
     )
     stderr.write(rendered.endsWith("\n") ? rendered : `${rendered}\n`)
     return result.error.exitCode
@@ -398,6 +400,7 @@ async function handleWork(
 ): Promise<unknown> {
   if (action === "list") return listWork(args, input)
   if (action === "inspect" || action === "show") return inspectWork(args, input)
+  if (action === "ask") return askWork(args, input)
   if (action === "execute") return executeWork(args, input)
   if (
     action === "approve" ||
@@ -410,7 +413,7 @@ async function handleWork(
   }
   throw new CliError(
     "unknown_command",
-    "Use: mandala work list|inspect|show|approve|edit|reject|rework|decide|execute."
+    "Use: mandala work list|inspect|show|ask|approve|edit|reject|rework|decide|execute."
   )
 }
 
@@ -445,6 +448,29 @@ async function inspectWork(
     input
   )
   return executeResolvedIntent(intent, input)
+}
+
+async function askWork(
+  args: string[],
+  input: Parameters<typeof executeCommand>[0]
+): Promise<unknown> {
+  const parsed = parseOptions(args, { question: { type: "string" } })
+  const itemId =
+    parsed.positionals.length === 1 ? (parsed.positionals[0] ?? "") : ""
+  const question = stringOption(parsed.values.question)
+  if (!uuidSchema.safeParse(itemId).success || !question) {
+    throw new CliError(
+      "invalid_arguments",
+      "Use: mandala work ask <item-id> --question <question>."
+    )
+  }
+  const config = await requireCompany(input.store, input.audit)
+  input.audit.workflowItemId = itemId
+  input.audit.risk = "read"
+  return input.getApi().askWorkItem(itemId, {
+    companyId: config.selectedCompany.id,
+    question,
+  })
 }
 
 async function decideWork(
@@ -1318,6 +1344,7 @@ Workflows
   mandala work list [--status <status>]
   mandala work inspect <item-id>
   mandala work show <item-id>
+  mandala work ask <item-id> --question <question>
   mandala work approve <item-id> [--ack-warnings]
   mandala work edit <item-id> --set <pointer=value> --reason <reason> [--ack-warnings]
   mandala work reject <item-id> --reason <reason>

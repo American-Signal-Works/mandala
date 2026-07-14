@@ -17,9 +17,10 @@ import { compileWorkflowSkillMarkdown, type WorkflowSpec } from "../schema"
 import {
   getProcurementFixtureScenario,
   type ProcurementFixtureScenario,
-  type ProcurementFixtureScenarioId,
+  type StaticProcurementFixtureScenarioId,
   type ProcurementSkuSnapshot,
 } from "./procurement"
+import type { SyntheticProcurementAgentResult } from "./synthetic-agent"
 import {
   procurementReorderSkillMarkdown,
   procurementWorkflowSkillAdapters,
@@ -48,11 +49,41 @@ export function runProcurementFixtureScenario(input: {
   store: WorkflowMemoryStore
   companyId: string
   actorUserId: string
-  scenarioId: ProcurementFixtureScenarioId
+  scenarioId: StaticProcurementFixtureScenarioId
+  now?: Date
+}): WorkflowFixtureRunResult {
+  const scenario = getProcurementFixtureScenario(input.scenarioId)
+  return runProcurementScenario({ ...input, scenario })
+}
+
+export function runSyntheticProcurementAgentScenario(input: {
+  store: WorkflowMemoryStore
+  companyId: string
+  actorUserId: string
+  agent: SyntheticProcurementAgentResult
+  now?: Date
+}): WorkflowFixtureRunResult {
+  const { selectedProduct, dataset } = input.agent
+  const scenario: ProcurementFixtureScenario = {
+    id: "synthetic_agent_run",
+    title: "Synthetic procurement test-agent run",
+    sourceSnapshotId: `synthetic-commerce-${dataset.digest.slice(0, 16)}`,
+    runReason: `Test agent analyzed ${dataset.productCount} synthetic ${dataset.businessName} products and selected one safe candidate for human review.`,
+    sku: selectedProduct,
+  }
+  return runProcurementScenario({ ...input, scenario })
+}
+
+function runProcurementScenario(input: {
+  store: WorkflowMemoryStore
+  companyId: string
+  actorUserId: string
+  scenario: ProcurementFixtureScenario
+  agent?: SyntheticProcurementAgentResult
   now?: Date
 }): WorkflowFixtureRunResult {
   const createdAt = (input.now ?? new Date()).toISOString()
-  const scenario = getProcurementFixtureScenario(input.scenarioId)
+  const { scenario } = input
   const compileResult = compileWorkflowSkillMarkdown(
     procurementReorderSkillMarkdown,
     procurementWorkflowSkillAdapters
@@ -74,7 +105,8 @@ export function runProcurementFixtureScenario(input: {
     input.actorUserId,
     definition,
     scenario,
-    createdAt
+    createdAt,
+    input.agent
   )
   const validation = validateScenario(scenario)
   const event = createEvent(
@@ -84,7 +116,8 @@ export function runProcurementFixtureScenario(input: {
     run,
     scenario,
     validation,
-    createdAt
+    createdAt,
+    input.agent
   )
   const auditEvents = [
     createFixtureAuditEvent(input.store, {
@@ -161,7 +194,8 @@ export function runProcurementFixtureScenario(input: {
     run,
     event,
     scenario,
-    createdAt
+    createdAt,
+    input.agent
   )
   const contextPacket = createContextPacket(
     input.store,
@@ -170,7 +204,8 @@ export function runProcurementFixtureScenario(input: {
     item,
     scenario,
     validation,
-    createdAt
+    createdAt,
+    input.agent
   )
   const recommendation = createRecommendation(
     input.store,
@@ -180,7 +215,8 @@ export function runProcurementFixtureScenario(input: {
     contextPacket,
     scenario,
     validation,
-    createdAt
+    createdAt,
+    input.agent
   )
   const evidence = createEvidence(
     input.store,
@@ -190,7 +226,8 @@ export function runProcurementFixtureScenario(input: {
     recommendation,
     scenario,
     validation,
-    createdAt
+    createdAt,
+    input.agent
   )
   const draft = createDraft(
     input.store,
@@ -266,20 +303,39 @@ function createRun(
   actorUserId: string,
   definition: WorkflowDefinitionRecord,
   scenario: ProcurementFixtureScenario,
-  createdAt: string
+  createdAt: string,
+  agent?: SyntheticProcurementAgentResult
 ): WorkflowRunRecord {
   const ordinal = String(store.runs.length + 1)
   const run: WorkflowRunRecord = {
-    id: idFor("run", companyId, scenario.id, ordinal),
+    id: idFor(
+      "run",
+      companyId,
+      scenario.id,
+      scenario.sourceSnapshotId,
+      ordinal
+    ),
     companyId,
     workflowDefinitionId: definition.id,
     workflowType: definition.workflowType,
     status: "started",
-    input: { scenarioId: scenario.id },
+    input: {
+      scenarioId: scenario.id,
+      ...(agent
+        ? {
+            dataset: agent.dataset,
+            agent: {
+              model: agent.model,
+              toolCallCount: agent.toolCalls.length,
+              selectedSku: agent.selection.sku,
+            },
+          }
+        : {}),
+    },
     langGraphThreadId: null,
     langGraphCheckpointId: null,
-    langSmithTraceId: null,
-    langSmithRunId: null,
+    langSmithTraceId: agent?.trace?.traceId ?? null,
+    langSmithRunId: agent?.trace?.runId ?? null,
     startedBy: actorUserId,
     startedAt: createdAt,
     completedAt: null,
@@ -334,7 +390,8 @@ function createEvent(
   run: WorkflowRunRecord,
   scenario: ProcurementFixtureScenario,
   validation: ValidationResult,
-  createdAt: string
+  createdAt: string,
+  agent?: SyntheticProcurementAgentResult
 ): WorkflowEventRecord {
   const eventKey = `${definition.workflowType}:${scenario.sourceSnapshotId}`
   const event: WorkflowEventRecord = {
@@ -349,7 +406,20 @@ function createEvent(
       scenarioId: scenario.id,
       sourceSnapshotId: scenario.sourceSnapshotId,
     },
-    payload: { runReason: scenario.runReason, sku: scenario.sku },
+    payload: {
+      runReason: scenario.runReason,
+      sku: scenario.sku,
+      ...(agent
+        ? {
+            dataset: agent.dataset,
+            agent: {
+              model: agent.model,
+              toolCalls: agent.toolCalls,
+              selection: agent.selection,
+            },
+          }
+        : {}),
+    },
     freshnessState: scenario.sku.dataFreshnessHours > 72 ? "stale" : "fresh",
     validationStatus: validation.status,
     validationResult: validation,
@@ -366,7 +436,8 @@ function createItem(
   run: WorkflowRunRecord,
   event: WorkflowEventRecord,
   scenario: ProcurementFixtureScenario,
-  createdAt: string
+  createdAt: string,
+  agent?: SyntheticProcurementAgentResult
 ): WorkflowItemRecord {
   const itemKey = `${definition.workflowType}:${scenario.sku.sku}:reorder_review`
   const item: WorkflowItemRecord = {
@@ -377,13 +448,16 @@ function createItem(
     workflowDefinitionId: definition.id,
     itemKey,
     itemType: "procurement_reorder_review",
-    title: `Review reorder recommendation for ${scenario.sku.sku}`,
+    title: agent
+      ? `Review test-agent reorder · ${scenario.sku.title} (${scenario.sku.sku})`
+      : `Review reorder recommendation for ${scenario.sku.sku}`,
     status: "active",
     priority: scenario.sku.recentSpikeMultiplier >= 1.5 ? 80 : 50,
     relatedRecords: {
       sku: scenario.sku.sku,
       vendor: scenario.sku.vendor,
       sourceSnapshotId: scenario.sourceSnapshotId,
+      ...(agent ? { source: "synthetic_test_agent" } : {}),
     },
     resolutionState: {},
     createdAt,
@@ -400,7 +474,8 @@ function createContextPacket(
   item: WorkflowItemRecord,
   scenario: ProcurementFixtureScenario,
   validation: ValidationResult,
-  createdAt: string
+  createdAt: string,
+  agent?: SyntheticProcurementAgentResult
 ): WorkflowContextPacketRecord {
   const { sku } = scenario
   const packet: WorkflowContextPacketRecord = {
@@ -419,8 +494,25 @@ function createContextPacket(
         snapshotId: scenario.sourceSnapshotId,
         sku: sku.sku,
       },
+      ...(agent
+        ? [
+            {
+              source: "synthetic_agent_dataset",
+              snapshotId: scenario.sourceSnapshotId,
+              productCount: agent.dataset.productCount,
+              salesRecordCount: agent.dataset.salesRecordCount,
+              businessEventCount: agent.dataset.businessEventCount,
+            },
+          ]
+        : []),
     ],
     facts: {
+      sku: sku.sku,
+      productTitle: sku.title,
+      vendor: sku.vendor,
+      inventoryOnHand: sku.inventoryOnHand,
+      inboundUnits: sku.inboundUnits,
+      openPurchaseOrders: sku.duplicateOpenOrderUnits,
       availableInventory: sku.inventoryOnHand + sku.inboundUnits,
       reorderPoint: sku.reorderPoint,
       recent30DaySales: sku.recent30DaySales,
@@ -429,6 +521,18 @@ function createContextPacket(
       leadTimeDays: sku.leadTimeDays,
       vendorMinimumOrderQuantity: sku.vendorMinimumOrderQuantity,
       vendorPackSize: sku.vendorPackSize,
+      ...(agent
+        ? {
+            agentModel: agent.model,
+            agentToolCallCount: agent.toolCalls.length,
+            datasetDigest: agent.dataset.digest,
+            businessName: agent.dataset.businessName,
+            category: agent.selectedProduct.category,
+            syntheticProductCount: agent.dataset.productCount,
+            syntheticSalesRecordCount: agent.dataset.salesRecordCount,
+            syntheticBusinessEventCount: agent.dataset.businessEventCount,
+          }
+        : {}),
     },
     memoryRefs: [],
     freshnessState: sku.dataFreshnessHours > 72 ? "stale" : "fresh",
@@ -447,9 +551,21 @@ function createRecommendation(
   contextPacket: WorkflowContextPacketRecord,
   scenario: ProcurementFixtureScenario,
   validation: ValidationResult,
-  createdAt: string
+  createdAt: string,
+  agent?: SyntheticProcurementAgentResult
 ): WorkflowRecommendationRecord {
-  const output = calculateRecommendation(scenario.sku)
+  const calculated = calculateRecommendation(scenario.sku)
+  const output = {
+    ...calculated,
+    ...(agent
+      ? {
+          businessName: agent.dataset.businessName,
+          productTitle: scenario.sku.title,
+          category: agent.selectedProduct.category,
+          flags: agent.selection.riskFlags,
+        }
+      : {}),
+  }
   const recommendation: WorkflowRecommendationRecord = {
     id: idFor("recommendation", companyId, item.id),
     companyId,
@@ -457,10 +573,18 @@ function createRecommendation(
     workflowItemId: item.id,
     contextPacketId: contextPacket.id,
     status: "ready_for_review",
-    rationaleSummary: `${scenario.sku.sku} is below reorder point; recommend ${output.recommendedQuantity} units for mock action review.`,
+    rationaleSummary: agent
+      ? `${agent.dataset.businessName} test agent selected ${scenario.sku.sku} after analyzing ${agent.dataset.productCount} synthetic products. Deterministic policy recommends ${output.recommendedQuantity} units for mock review. ${agent.selection.rationale}`
+      : `${scenario.sku.sku} is below reorder point; recommend ${output.recommendedQuantity} units for mock action review.`,
     warningState: validation.status,
     warnings: validation.warnings,
-    confidence: validation.warnings.length > 0 ? 0.72 : 0.86,
+    confidence: agent
+      ? validation.warnings.length > 0
+        ? 0.7
+        : 0.82
+      : validation.warnings.length > 0
+        ? 0.72
+        : 0.86,
     freshnessState: "fresh",
     input: contextPacket.facts,
     output,
@@ -480,7 +604,8 @@ function createEvidence(
   recommendation: WorkflowRecommendationRecord,
   scenario: ProcurementFixtureScenario,
   validation: ValidationResult,
-  createdAt: string
+  createdAt: string,
+  agent?: SyntheticProcurementAgentResult
 ): WorkflowEvidenceRecord {
   const { sku } = scenario
   const evidence: WorkflowEvidenceRecord = {
@@ -501,11 +626,26 @@ function createEvidence(
         sku: sku.sku,
       },
       { source: "fixture_validation", validationStatus: validation.status },
+      ...(agent
+        ? [
+            {
+              source: "langsmith_test_agent_trace",
+              traceId: agent.trace?.traceId ?? null,
+              runId: agent.trace?.runId ?? null,
+            },
+          ]
+        : []),
     ],
     assumptions: [
       "Fixture data is synthetic.",
       "Recommendation is mock-only and cannot write to a live vendor or ERP system.",
       "Projected sales use the higher of recent and trailing velocity, adjusted by seasonal and spike signals.",
+      ...(agent
+        ? [
+            "The model could only query synthetic data through bounded read-only tools.",
+            "The model selected a candidate; deterministic policy code calculated quantity and retained approval authority.",
+          ]
+        : []),
     ],
     warnings: validation.warnings,
     evidence: [
@@ -519,6 +659,24 @@ function createEvidence(
         value: sku.duplicateOpenOrderUnits,
       },
       { label: "data_freshness_hours", value: sku.dataFreshnessHours },
+      ...(agent
+        ? [
+            {
+              label: "synthetic_product_count",
+              value: agent.dataset.productCount,
+            },
+            {
+              label: "synthetic_sales_records",
+              value: agent.dataset.salesRecordCount,
+            },
+            {
+              label: "synthetic_business_events",
+              value: agent.dataset.businessEventCount,
+            },
+            { label: "agent_tool_calls", value: agent.toolCalls.length },
+            { label: "agent_risk_flags", value: agent.selection.riskFlags },
+          ]
+        : []),
     ],
     createdAt,
   }
