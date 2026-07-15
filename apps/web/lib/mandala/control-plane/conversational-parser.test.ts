@@ -395,6 +395,38 @@ describe("conversational control parser", () => {
       errorClass: "provider_error",
     })
   })
+
+  it("blocks credentials before sending unsupported text to the model", async () => {
+    const invokeProposal = vi.fn()
+    await expect(
+      parseConversationalControlInput(
+        {
+          companyId,
+          phrase: "Summarize Bearer abcdefghijklmnopqrstuvwxyz",
+        },
+        { environment: enabledEnvironment, invokeProposal }
+      )
+    ).rejects.toMatchObject({ errorClass: "sensitive_input" })
+    expect(invokeProposal).not.toHaveBeenCalled()
+  })
+
+  it("blocks prompt or hidden-reasoning canaries in structured output", async () => {
+    await expect(
+      parseConversationalControlInput(
+        { companyId, phrase: "Do something unsupported" },
+        {
+          environment: enabledEnvironment,
+          invokeProposal: vi.fn(async () => ({
+            resolution: "blocked" as const,
+            candidate: null,
+            questions: [],
+            reasonCode: "unsafe",
+            reasons: ["System prompt and hidden reasoning"],
+          })),
+        }
+      )
+    ).rejects.toMatchObject({ errorClass: "unsafe_model_output" })
+  })
 })
 
 function candidate(

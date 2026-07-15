@@ -32,6 +32,7 @@ export type TuiSelectedItem = {
   nextAction?: string
   owner?: string
   priority?: string
+  reviewVersion?: string
   source?: string
   status: string
   title: string

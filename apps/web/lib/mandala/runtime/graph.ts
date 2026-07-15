@@ -325,8 +325,14 @@ export function createRuntimeHandlerRegistry(input: {
       return {
         actionResult,
         status: actionResult.status === "succeeded" ? "executed" : "failed",
-        ...(actionResult.status === "failed"
-          ? { errors: ["Action execution failed."] }
+        ...(actionResult.status !== "succeeded"
+          ? {
+              errors: [
+                actionResult.code
+                  ? `Action execution failed (${actionResult.code}).`
+                  : "Action execution failed.",
+              ],
+            }
           : {}),
       }
     },

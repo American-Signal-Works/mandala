@@ -2,6 +2,42 @@ import { describe, expect, it, vi } from "vitest"
 import { ApiClient } from "../src/api-client.js"
 
 describe("API client", () => {
+  it("posts explicit contextual chat state without granting mutation authority", async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        route: "question",
+        message: "The source is stale.",
+        companyId: "20000000-0000-4000-8000-000000000001",
+        selectedItemId: "30000000-0000-4000-8000-000000000001",
+        reviewVersion: "v2",
+        command: null,
+        confirmationRequired: false,
+        mutated: false,
+      })
+    )
+    const client = new ApiClient(
+      "http://127.0.0.1:3000",
+      { getAccessToken: vi.fn().mockResolvedValue("access") },
+      request
+    )
+
+    await client.contextualChat!({
+      companyId: "20000000-0000-4000-8000-000000000001",
+      input: "Why is this blocked?",
+      selectedItemId: "30000000-0000-4000-8000-000000000001",
+      expectedReviewVersion: "v2",
+      conversationId: "40000000-0000-4000-8000-000000000001",
+    })
+
+    expect(request.mock.calls[0]?.[0]).toBe(
+      "http://127.0.0.1:3000/api/mandala/control/chat"
+    )
+    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toMatchObject({
+      selectedItemId: "30000000-0000-4000-8000-000000000001",
+      expectedReviewVersion: "v2",
+    })
+  })
+
   it("classifies a refused connection as definitely unavailable", async () => {
     const refusal = Object.assign(new Error("connect refused"), {
       code: "ECONNREFUSED",
@@ -379,9 +415,22 @@ describe("API client", () => {
       skillMarkdown: "# Inventory agent",
     })
     await client.testAgent(agentId, { companyId, seed: "coffee-shop" })
-    await client.activateAgent(agentId, { companyId, reason: "Ready" })
-    await client.deactivateAgent(agentId, { companyId, reason: "Pause" })
-    await client.rollbackAgent(agentId, { companyId, version: "0.9.0" })
+    await client.activateAgent(agentId, {
+      companyId,
+      expectedVersion: 1,
+      reason: "Ready",
+    })
+    await client.deactivateAgent(agentId, {
+      companyId,
+      expectedVersion: 2,
+      reason: "Pause",
+    })
+    await client.rollbackAgent(agentId, {
+      companyId,
+      expectedVersion: 3,
+      reason: "Rollback after regression review",
+      version: "0.9.0",
+    })
 
     expect(request.mock.calls.map(([url]) => url)).toEqual([
       `http://127.0.0.1:3000/api/mandala/agents?companyId=${companyId}`,
@@ -394,6 +443,8 @@ describe("API client", () => {
     ])
     expect(JSON.parse(String(request.mock.calls[6]?.[1]?.body))).toEqual({
       companyId,
+      expectedVersion: 3,
+      reason: "Rollback after regression review",
       version: "0.9.0",
     })
   })
@@ -412,6 +463,7 @@ function agentResponse(agentId: string, companyId: string) {
     compilerVersion: "1",
     skillDigest: "a".repeat(64),
     manifestDigest: "b".repeat(64),
+    stateVersion: 1,
     active: true,
     capabilities: [],
     diagnostics: [],

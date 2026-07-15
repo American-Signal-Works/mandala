@@ -340,6 +340,19 @@ export const safeRecordSnapshotSchema = z
   })
   .strict()
 
+export const recommendationConfidenceMarkerSchema = z
+  .object({
+    version: z.string().regex(/^\d+\.\d+\.\d+$/),
+    score: z.number().min(0).max(1).nullable(),
+    sourceCoverage: z.enum(["complete", "partial", "missing"]),
+    freshness: z.enum(["fresh", "stale", "unknown"]),
+    agreement: z.enum(["consistent", "mixed", "conflicting", "unknown"]),
+    policyChecks: z.enum(["passed", "attention", "blocked"]),
+    missingInputs: z.array(identifierSchema).max(20),
+    explanation: z.string().min(1).max(2_000),
+  })
+  .strict()
+
 export const safeRecommendationSchema = z
   .object({
     id: z.string().uuid(),
@@ -348,6 +361,7 @@ export const safeRecommendationSchema = z
     warningState: z.enum(["pass", "warn", "blocked"]),
     warnings: z.array(z.string().max(2_000)).max(100),
     confidence: z.number().min(0).max(1).nullable(),
+    confidenceMarker: recommendationConfidenceMarkerSchema,
     freshnessState: z.enum(["fresh", "stale", "unknown"]),
     output: jsonObjectSchema,
     createdAt: isoTimestampSchema,
@@ -479,6 +493,7 @@ const recommendationSchema = z
     warningState: z.enum(["pass", "warn", "blocked"]),
     warnings: z.array(z.string()),
     confidence: z.number().min(0).max(1).nullable(),
+    confidenceMarker: recommendationConfidenceMarkerSchema,
     freshnessState: z.enum(["fresh", "stale", "unknown"]),
     output: jsonObjectSchema,
     createdAt: isoTimestampSchema,
@@ -998,7 +1013,12 @@ export const executionDataSchema = z
     attempt: z
       .object({
         id: z.string().uuid(),
-        status: z.enum(["succeeded", "failed"]),
+        status: z.enum([
+          "succeeded",
+          "failed",
+          "unknown",
+          "reconciliation_required",
+        ]),
       })
       .passthrough(),
     draft: z
@@ -1021,9 +1041,7 @@ export type CompanySummary = z.infer<typeof companySummarySchema>
 export type WorkItemSummary = z.infer<typeof workItemSummarySchema>
 export type WorkItemDetail = z.infer<typeof workItemDetailSchema>
 export type WorkItemAction = z.infer<typeof workItemActionSchema>
-export type WorkItemQueueRequest = z.infer<
-  typeof workItemQueueRequestSchema
->
+export type WorkItemQueueRequest = z.infer<typeof workItemQueueRequestSchema>
 export type SafeWorkItemSummary = z.infer<typeof safeWorkItemSummarySchema>
 export type WorkItemQueueData = z.infer<typeof workItemQueueDataSchema>
 export type ReviewState = z.infer<typeof reviewStateSchema>
@@ -1031,9 +1049,7 @@ export type WorkItemActivity = z.infer<typeof workItemActivitySchema>
 export type WorkItemActivityRequest = z.infer<
   typeof workItemActivityRequestSchema
 >
-export type WorkItemActivityData = z.infer<
-  typeof workItemActivityDataSchema
->
+export type WorkItemActivityData = z.infer<typeof workItemActivityDataSchema>
 export type WorkItemReviewData = z.infer<typeof workItemReviewDataSchema>
 export type WorkItemQuestionRequest = z.infer<
   typeof workItemQuestionRequestSchema

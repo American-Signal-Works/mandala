@@ -14,6 +14,7 @@ import {
 } from "@workspace/control-plane"
 import { Client } from "langsmith"
 import { getCurrentRunTree, traceable } from "langsmith/traceable"
+import { modelTextSafetyViolation } from "./model-text-safety"
 
 const gatewayBaseUrl = "https://ai-gateway.vercel.sh/v1"
 const parserSchemaVersion = "control-intent-v2"
@@ -26,7 +27,7 @@ Supported candidate kinds:
 - run_fixture
 - list_work_items
 - inspect_work_item
-- record_decision with approve, edit, reject, or request_rework
+- record_decision with approve, edit, reject, resolve, or request_rework
 - execute_mock_action
 
 Rules:
@@ -83,7 +84,9 @@ export class ConversationalParserUnavailableError extends Error {
       | "feature_disabled"
       | "invalid_model_output"
       | "provider_error"
-      | "trace_error",
+      | "sensitive_input"
+      | "trace_error"
+      | "unsafe_model_output",
     readonly model: string | null,
     readonly trace: { traceId: string; runId: string } | null = null
   ) {
@@ -115,6 +118,10 @@ export async function parseConversationalControlInput(
     }
   }
 
+  if (modelTextSafetyViolation(input.phrase)) {
+    throw new ConversationalParserUnavailableError("sensitive_input", null)
+  }
+
   const configuration = readConfiguration(
     dependencies.environment ?? process.env
   )
@@ -136,6 +143,13 @@ export async function parseConversationalControlInput(
     if (!parsed.success) {
       throw new ConversationalParserUnavailableError(
         "invalid_model_output",
+        configuration.model,
+        trace
+      )
+    }
+    if (modelTextSafetyViolation(JSON.stringify(parsed.data))) {
+      throw new ConversationalParserUnavailableError(
+        "unsafe_model_output",
         configuration.model,
         trace
       )

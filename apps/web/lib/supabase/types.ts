@@ -34,6 +34,1037 @@ export type Database = {
   }
   public: {
     Tables: {
+      agent_action_definitions: {
+        Row: {
+          action_key: string
+          allowed_modes: string[]
+          approval_rule: Json
+          audit_classification: string
+          capability_version_id: string
+          created_at: string
+          id: string
+          idempotency_scope: string
+          input_schema: Json
+          output_schema: Json
+          retry_class: string
+          status: string
+          timeout_ms: number
+          version: string
+        }
+        Insert: {
+          action_key: string
+          allowed_modes: string[]
+          approval_rule?: Json
+          audit_classification: string
+          capability_version_id: string
+          created_at?: string
+          id?: string
+          idempotency_scope: string
+          input_schema: Json
+          output_schema: Json
+          retry_class: string
+          status?: string
+          timeout_ms: number
+          version: string
+        }
+        Update: {
+          action_key?: string
+          allowed_modes?: string[]
+          approval_rule?: Json
+          audit_classification?: string
+          capability_version_id?: string
+          created_at?: string
+          id?: string
+          idempotency_scope?: string
+          input_schema?: Json
+          output_schema?: Json
+          retry_class?: string
+          status?: string
+          timeout_ms?: number
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_action_definitions_capability_version_id_fkey"
+            columns: ["capability_version_id"]
+            isOneToOne: false
+            referencedRelation: "capability_definition_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_escalations: {
+        Row: {
+          active_key: string
+          closed_at: string | null
+          company_id: string
+          created_at: string
+          follow_up_id: string
+          id: string
+          occurrence: number
+          opened_at: string
+          reason: string
+          resolution: Json
+          severity: string
+          status: string
+          updated_at: string
+          workflow_item_id: string | null
+        }
+        Insert: {
+          active_key: string
+          closed_at?: string | null
+          company_id: string
+          created_at?: string
+          follow_up_id: string
+          id?: string
+          occurrence?: number
+          opened_at?: string
+          reason: string
+          resolution?: Json
+          severity: string
+          status?: string
+          updated_at?: string
+          workflow_item_id?: string | null
+        }
+        Update: {
+          active_key?: string
+          closed_at?: string | null
+          company_id?: string
+          created_at?: string
+          follow_up_id?: string
+          id?: string
+          occurrence?: number
+          opened_at?: string
+          reason?: string
+          resolution?: Json
+          severity?: string
+          status?: string
+          updated_at?: string
+          workflow_item_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_escalations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_escalations_follow_up_id_company_id_fkey"
+            columns: ["follow_up_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "agent_follow_ups"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "agent_escalations_workflow_item_id_company_id_fkey"
+            columns: ["workflow_item_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_items"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      agent_evaluation_cases: {
+        Row: {
+          case_key: string
+          company_id: string
+          created_at: string
+          created_by: string
+          evidence_digest: string | null
+          fixture: Json
+          id: string
+          input_digest: string
+          missing_data_state: string
+          version: string
+        }
+        Insert: {
+          case_key: string
+          company_id: string
+          created_at?: string
+          created_by: string
+          evidence_digest?: string | null
+          fixture: Json
+          id?: string
+          input_digest: string
+          missing_data_state: string
+          version: string
+        }
+        Update: {
+          case_key?: string
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          evidence_digest?: string | null
+          fixture?: Json
+          id?: string
+          input_digest?: string
+          missing_data_state?: string
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_evaluation_cases_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_evaluation_outcome_labels: {
+        Row: {
+          company_id: string
+          created_at: string
+          evaluation_run_id: string | null
+          id: string
+          labelled_by: string | null
+          outcome: string
+          recommendation_run_id: string | null
+          recommendation_version: string | null
+          workflow_run_id: string | null
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          evaluation_run_id?: string | null
+          id?: string
+          labelled_by?: string | null
+          outcome: string
+          recommendation_run_id?: string | null
+          recommendation_version?: string | null
+          workflow_run_id?: string | null
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          evaluation_run_id?: string | null
+          id?: string
+          labelled_by?: string | null
+          outcome?: string
+          recommendation_run_id?: string | null
+          recommendation_version?: string | null
+          workflow_run_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_evaluation_outcome_labe_evaluation_run_id_company_id_fkey"
+            columns: ["evaluation_run_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "agent_evaluation_runs"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "agent_evaluation_outcome_labe_recommendation_run_id_compan_fkey"
+            columns: ["recommendation_run_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_recommendation_runs"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "agent_evaluation_outcome_labels_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_evaluation_outcome_labels_workflow_run_id_company_id_fkey"
+            columns: ["workflow_run_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_runs"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      agent_evaluation_runs: {
+        Row: {
+          company_id: string
+          confidence_definition_version: string
+          created_at: string
+          dataset_digest: string
+          evaluation_case_id: string
+          evaluator_version: string
+          id: string
+          manifest_digest: string
+          metrics: Json
+          missing_data: Json
+          model_version: string | null
+          recommendation_run_id: string | null
+          recommendation_version: string | null
+          safe_trace_ids: Json
+          threshold_decision: string
+          workflow_id: string
+          workflow_run_id: string | null
+        }
+        Insert: {
+          company_id: string
+          confidence_definition_version: string
+          created_at?: string
+          dataset_digest: string
+          evaluation_case_id: string
+          evaluator_version: string
+          id?: string
+          manifest_digest: string
+          metrics?: Json
+          missing_data?: Json
+          model_version?: string | null
+          recommendation_run_id?: string | null
+          recommendation_version?: string | null
+          safe_trace_ids?: Json
+          threshold_decision: string
+          workflow_id: string
+          workflow_run_id?: string | null
+        }
+        Update: {
+          company_id?: string
+          confidence_definition_version?: string
+          created_at?: string
+          dataset_digest?: string
+          evaluation_case_id?: string
+          evaluator_version?: string
+          id?: string
+          manifest_digest?: string
+          metrics?: Json
+          missing_data?: Json
+          model_version?: string | null
+          recommendation_run_id?: string | null
+          recommendation_version?: string | null
+          safe_trace_ids?: Json
+          threshold_decision?: string
+          workflow_id?: string
+          workflow_run_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_evaluation_runs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_evaluation_runs_evaluation_case_id_company_id_fkey"
+            columns: ["evaluation_case_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "agent_evaluation_cases"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "agent_evaluation_runs_recommendation_run_id_company_id_fkey"
+            columns: ["recommendation_run_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_recommendation_runs"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "agent_evaluation_runs_workflow_id_company_id_fkey"
+            columns: ["workflow_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "agent_workflows"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "agent_evaluation_runs_workflow_run_id_company_id_fkey"
+            columns: ["workflow_run_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_runs"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      agent_execution_receipts: {
+        Row: {
+          action_attempt_id: string
+          company_id: string
+          effect_state: string
+          failure_class: string | null
+          id: string
+          provider_idempotency_key: string | null
+          provider_reference: string | null
+          receipt_sequence: number
+          reconciliation_evidence: Json
+          recorded_at: string
+          request_hash: string
+          response_hash: string | null
+          safe_output: Json
+          status: string
+        }
+        Insert: {
+          action_attempt_id: string
+          company_id: string
+          effect_state: string
+          failure_class?: string | null
+          id?: string
+          provider_idempotency_key?: string | null
+          provider_reference?: string | null
+          receipt_sequence?: number
+          reconciliation_evidence?: Json
+          recorded_at?: string
+          request_hash: string
+          response_hash?: string | null
+          safe_output?: Json
+          status: string
+        }
+        Update: {
+          action_attempt_id?: string
+          company_id?: string
+          effect_state?: string
+          failure_class?: string | null
+          id?: string
+          provider_idempotency_key?: string | null
+          provider_reference?: string | null
+          receipt_sequence?: number
+          reconciliation_evidence?: Json
+          recorded_at?: string
+          request_hash?: string
+          response_hash?: string | null
+          safe_output?: Json
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_execution_receipts_action_attempt_id_company_id_fkey"
+            columns: ["action_attempt_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_action_attempts"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "agent_execution_receipts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      agent_feedback: {
+        Row: {
+          actor_id: string
+          client_surface: string
+          company_id: string
+          correction: string | null
+          created_at: string
+          decision: string
+          downstream_outcome: Json
+          id: string
+          label: string | null
+          reason: string | null
+          recommendation_run_id: string
+          recommendation_version: string
+          structured_fields: Json
+          workflow_item_id: string
+        }
+        Insert: {
+          actor_id: string
+          client_surface?: string
+          company_id: string
+          correction?: string | null
+          created_at?: string
+          decision: string
+          downstream_outcome?: Json
+          id?: string
+          label?: string | null
+          reason?: string | null
+          recommendation_run_id: string
+          recommendation_version: string
+          structured_fields?: Json
+          workflow_item_id: string
+        }
+        Update: {
+          actor_id?: string
+          client_surface?: string
+          company_id?: string
+          correction?: string | null
+          created_at?: string
+          decision?: string
+          downstream_outcome?: Json
+          id?: string
+          label?: string | null
+          reason?: string | null
+          recommendation_run_id?: string
+          recommendation_version?: string
+          structured_fields?: Json
+          workflow_item_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_feedback_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_feedback_recommendation_run_id_company_id_fkey"
+            columns: ["recommendation_run_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_recommendation_runs"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "agent_feedback_workflow_item_id_company_id_fkey"
+            columns: ["workflow_item_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_items"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      agent_follow_ups: {
+        Row: {
+          action_attempt_id: string | null
+          attempts: number
+          available_at: string
+          company_id: string
+          condition: Json
+          condition_type: string
+          created_at: string
+          due_at: string
+          id: string
+          last_evaluated_at: string | null
+          lease_id: string | null
+          lease_owner: string | null
+          leased_until: string | null
+          max_attempts: number
+          occurrence: number
+          recurrence_policy: string
+          resolution: Json
+          resolved_at: string | null
+          rule_version: string
+          severity: string
+          status: string
+          suppression: Json
+          updated_at: string
+          workflow_id: string
+          workflow_item_id: string | null
+          workflow_run_id: string | null
+        }
+        Insert: {
+          action_attempt_id?: string | null
+          attempts?: number
+          available_at?: string
+          company_id: string
+          condition?: Json
+          condition_type: string
+          created_at?: string
+          due_at: string
+          id?: string
+          last_evaluated_at?: string | null
+          lease_id?: string | null
+          lease_owner?: string | null
+          leased_until?: string | null
+          max_attempts?: number
+          occurrence?: number
+          recurrence_policy?: string
+          resolution?: Json
+          resolved_at?: string | null
+          rule_version: string
+          severity: string
+          status?: string
+          suppression?: Json
+          updated_at?: string
+          workflow_id: string
+          workflow_item_id?: string | null
+          workflow_run_id?: string | null
+        }
+        Update: {
+          action_attempt_id?: string | null
+          attempts?: number
+          available_at?: string
+          company_id?: string
+          condition?: Json
+          condition_type?: string
+          created_at?: string
+          due_at?: string
+          id?: string
+          last_evaluated_at?: string | null
+          lease_id?: string | null
+          lease_owner?: string | null
+          leased_until?: string | null
+          max_attempts?: number
+          occurrence?: number
+          recurrence_policy?: string
+          resolution?: Json
+          resolved_at?: string | null
+          rule_version?: string
+          severity?: string
+          status?: string
+          suppression?: Json
+          updated_at?: string
+          workflow_id?: string
+          workflow_item_id?: string | null
+          workflow_run_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_follow_ups_action_attempt_id_company_id_fkey"
+            columns: ["action_attempt_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_action_attempts"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "agent_follow_ups_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_follow_ups_workflow_id_company_id_fkey"
+            columns: ["workflow_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "agent_workflows"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "agent_follow_ups_workflow_item_id_company_id_fkey"
+            columns: ["workflow_item_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_items"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "agent_follow_ups_workflow_run_id_company_id_fkey"
+            columns: ["workflow_run_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_runs"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      agent_lifecycle_events: {
+        Row: {
+          actor_id: string | null
+          company_id: string
+          created_at: string
+          from_state: string
+          id: string
+          reason: string
+          runtime_state_id: string
+          state_version: number
+          to_state: string
+          transition: string
+          workflow_id: string
+        }
+        Insert: {
+          actor_id?: string | null
+          company_id: string
+          created_at?: string
+          from_state: string
+          id?: string
+          reason: string
+          runtime_state_id: string
+          state_version: number
+          to_state: string
+          transition: string
+          workflow_id: string
+        }
+        Update: {
+          actor_id?: string | null
+          company_id?: string
+          created_at?: string
+          from_state?: string
+          id?: string
+          reason?: string
+          runtime_state_id?: string
+          state_version?: number
+          to_state?: string
+          transition?: string
+          workflow_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_lifecycle_events_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_lifecycle_events_runtime_state_id_company_id_fkey"
+            columns: ["runtime_state_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "agent_runtime_states"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "agent_lifecycle_events_workflow_id_company_id_fkey"
+            columns: ["workflow_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "agent_workflows"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      agent_memory_candidates: {
+        Row: {
+          approved_at: string | null
+          company_id: string
+          confidence: number
+          content: Json
+          created_at: string
+          expires_at: string | null
+          feedback_id: string | null
+          forgotten_at: string | null
+          id: string
+          memory_type: string
+          provenance: Json
+          provider_key: string | null
+          provider_reference: string | null
+          retention_until: string | null
+          review_reason: string | null
+          reviewed_at: string | null
+          reviewer_id: string | null
+          revoked_at: string | null
+          scope: Json
+          status: string
+          superseded_by: string | null
+          updated_at: string
+          workflow_id: string | null
+        }
+        Insert: {
+          approved_at?: string | null
+          company_id: string
+          confidence: number
+          content: Json
+          created_at?: string
+          expires_at?: string | null
+          feedback_id?: string | null
+          forgotten_at?: string | null
+          id?: string
+          memory_type: string
+          provenance: Json
+          provider_key?: string | null
+          provider_reference?: string | null
+          retention_until?: string | null
+          review_reason?: string | null
+          reviewed_at?: string | null
+          reviewer_id?: string | null
+          revoked_at?: string | null
+          scope?: Json
+          status?: string
+          superseded_by?: string | null
+          updated_at?: string
+          workflow_id?: string | null
+        }
+        Update: {
+          approved_at?: string | null
+          company_id?: string
+          confidence?: number
+          content?: Json
+          created_at?: string
+          expires_at?: string | null
+          feedback_id?: string | null
+          forgotten_at?: string | null
+          id?: string
+          memory_type?: string
+          provenance?: Json
+          provider_key?: string | null
+          provider_reference?: string | null
+          retention_until?: string | null
+          review_reason?: string | null
+          reviewed_at?: string | null
+          reviewer_id?: string | null
+          revoked_at?: string | null
+          scope?: Json
+          status?: string
+          superseded_by?: string | null
+          updated_at?: string
+          workflow_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_memory_candidates_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_memory_candidates_feedback_id_company_id_fkey"
+            columns: ["feedback_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "agent_feedback"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "agent_memory_candidates_superseded_by_company_id_fkey"
+            columns: ["superseded_by", "company_id"]
+            isOneToOne: false
+            referencedRelation: "agent_memory_candidates"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "agent_memory_candidates_workflow_id_company_id_fkey"
+            columns: ["workflow_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "agent_workflows"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      agent_monitoring_events: {
+        Row: {
+          actor_id: string | null
+          actor_type: string
+          company_id: string
+          created_at: string
+          details: Json
+          escalation_id: string | null
+          event_sequence: number
+          event_type: string
+          follow_up_id: string
+          id: string
+          occurrence: number
+          reason: string | null
+          worker_id: string | null
+        }
+        Insert: {
+          actor_id?: string | null
+          actor_type: string
+          company_id: string
+          created_at?: string
+          details?: Json
+          escalation_id?: string | null
+          event_sequence?: never
+          event_type: string
+          follow_up_id: string
+          id?: string
+          occurrence: number
+          reason?: string | null
+          worker_id?: string | null
+        }
+        Update: {
+          actor_id?: string | null
+          actor_type?: string
+          company_id?: string
+          created_at?: string
+          details?: Json
+          escalation_id?: string | null
+          event_sequence?: never
+          event_type?: string
+          follow_up_id?: string
+          id?: string
+          occurrence?: number
+          reason?: string | null
+          worker_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_monitoring_events_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_monitoring_events_escalation_id_company_id_fkey"
+            columns: ["escalation_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "agent_escalations"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "agent_monitoring_events_follow_up_id_company_id_fkey"
+            columns: ["follow_up_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "agent_follow_ups"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      agent_promotion_checkpoints: {
+        Row: {
+          company_id: string
+          created_at: string
+          decision: string
+          evaluation_run_id: string
+          id: string
+          reason: string
+          thresholds: Json
+          workflow_id: string
+          workflow_version: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          decision: string
+          evaluation_run_id: string
+          id?: string
+          reason: string
+          thresholds: Json
+          workflow_id: string
+          workflow_version: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          decision?: string
+          evaluation_run_id?: string
+          id?: string
+          reason?: string
+          thresholds?: Json
+          workflow_id?: string
+          workflow_version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_promotion_checkpoints_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_promotion_checkpoints_evaluation_run_id_company_id_fkey"
+            columns: ["evaluation_run_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "agent_evaluation_runs"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "agent_promotion_checkpoints_workflow_id_company_id_fkey"
+            columns: ["workflow_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "agent_workflows"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      agent_runtime_states: {
+        Row: {
+          binding_snapshot_id: string | null
+          company_id: string
+          created_at: string
+          id: string
+          last_sample_run_id: string | null
+          lifecycle_state: string
+          readiness_checked_at: string | null
+          readiness_hash: string | null
+          readiness_issues: Json
+          readiness_status: string
+          state_version: number
+          updated_at: string
+          updated_by: string | null
+          workflow_id: string
+        }
+        Insert: {
+          binding_snapshot_id?: string | null
+          company_id: string
+          created_at?: string
+          id?: string
+          last_sample_run_id?: string | null
+          lifecycle_state?: string
+          readiness_checked_at?: string | null
+          readiness_hash?: string | null
+          readiness_issues?: Json
+          readiness_status?: string
+          state_version?: number
+          updated_at?: string
+          updated_by?: string | null
+          workflow_id: string
+        }
+        Update: {
+          binding_snapshot_id?: string | null
+          company_id?: string
+          created_at?: string
+          id?: string
+          last_sample_run_id?: string | null
+          lifecycle_state?: string
+          readiness_checked_at?: string | null
+          readiness_hash?: string | null
+          readiness_issues?: Json
+          readiness_status?: string
+          state_version?: number
+          updated_at?: string
+          updated_by?: string | null
+          workflow_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_runtime_states_binding_snapshot_id_company_id_workfl_fkey"
+            columns: ["binding_snapshot_id", "company_id", "workflow_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_binding_snapshots"
+            referencedColumns: ["id", "company_id", "workflow_id"]
+          },
+          {
+            foreignKeyName: "agent_runtime_states_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_runtime_states_last_sample_run_id_company_id_fkey"
+            columns: ["last_sample_run_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_runs"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "agent_runtime_states_workflow_id_company_id_fkey"
+            columns: ["workflow_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "agent_workflows"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      agent_tool_definitions: {
+        Row: {
+          access_class: string
+          allowed_modes: string[]
+          capability_version_id: string
+          created_at: string
+          id: string
+          input_schema: Json
+          output_schema: Json
+          safe_error_schema: Json
+          status: string
+          tool_key: string
+          version: string
+        }
+        Insert: {
+          access_class: string
+          allowed_modes: string[]
+          capability_version_id: string
+          created_at?: string
+          id?: string
+          input_schema: Json
+          output_schema: Json
+          safe_error_schema?: Json
+          status?: string
+          tool_key: string
+          version: string
+        }
+        Update: {
+          access_class?: string
+          allowed_modes?: string[]
+          capability_version_id?: string
+          created_at?: string
+          id?: string
+          input_schema?: Json
+          output_schema?: Json
+          safe_error_schema?: Json
+          status?: string
+          tool_key?: string
+          version?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_tool_definitions_capability_version_id_fkey"
+            columns: ["capability_version_id"]
+            isOneToOne: false
+            referencedRelation: "capability_definition_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       agent_workflows: {
         Row: {
           company_id: string
@@ -1342,63 +2373,100 @@ export type Database = {
       }
       workflow_action_attempts: {
         Row: {
+          action_definition_id: string | null
           action_draft_id: string
           action_type: string
+          attempt_number: number
           company_id: string
           completed_at: string | null
           created_at: string
           decision_id: string
+          effect_state: string
           error_message: string | null
           execution_token_id: string
           id: string
           idempotency_key: string
           mock_external_id: string | null
           mode: string
+          provider_idempotency_key: string | null
+          provider_reference: string | null
+          reconciliation_required: boolean
+          request_hash: string | null
           request_payload: Json
+          response_hash: string | null
           result_payload: Json
+          retry_class: string
           status: string
+          tool_definition_id: string | null
           workflow_item_id: string
           workflow_run_id: string
         }
         Insert: {
+          action_definition_id?: string | null
           action_draft_id: string
           action_type: string
+          attempt_number?: number
           company_id: string
           completed_at?: string | null
           created_at?: string
           decision_id: string
+          effect_state?: string
           error_message?: string | null
           execution_token_id: string
           id?: string
           idempotency_key: string
           mock_external_id?: string | null
           mode: string
+          provider_idempotency_key?: string | null
+          provider_reference?: string | null
+          reconciliation_required?: boolean
+          request_hash?: string | null
           request_payload?: Json
+          response_hash?: string | null
           result_payload?: Json
+          retry_class?: string
           status: string
+          tool_definition_id?: string | null
           workflow_item_id: string
           workflow_run_id: string
         }
         Update: {
+          action_definition_id?: string | null
           action_draft_id?: string
           action_type?: string
+          attempt_number?: number
           company_id?: string
           completed_at?: string | null
           created_at?: string
           decision_id?: string
+          effect_state?: string
           error_message?: string | null
           execution_token_id?: string
           id?: string
           idempotency_key?: string
           mock_external_id?: string | null
           mode?: string
+          provider_idempotency_key?: string | null
+          provider_reference?: string | null
+          reconciliation_required?: boolean
+          request_hash?: string | null
           request_payload?: Json
+          response_hash?: string | null
           result_payload?: Json
+          retry_class?: string
           status?: string
+          tool_definition_id?: string | null
           workflow_item_id?: string
           workflow_run_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "workflow_action_attempts_action_definition_id_fkey"
+            columns: ["action_definition_id"]
+            isOneToOne: false
+            referencedRelation: "agent_action_definitions"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "workflow_action_attempts_action_draft_id_fkey"
             columns: ["action_draft_id"]
@@ -1461,6 +2529,13 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "workflow_execution_tokens"
             referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "workflow_action_attempts_tool_definition_id_fkey"
+            columns: ["tool_definition_id"]
+            isOneToOne: false
+            referencedRelation: "agent_tool_definitions"
+            referencedColumns: ["id"]
           },
           {
             foreignKeyName: "workflow_action_attempts_workflow_item_id_fkey"
@@ -2967,6 +4042,18 @@ export type Database = {
         }
         Returns: Json
       }
+      begin_registered_agent_execution_v1: {
+        Args: {
+          p_action_draft_id: string
+          p_company_id: string
+          p_decision_id: string
+          p_idempotency_key: string
+          p_mode: string
+          p_raw_token: string
+          p_request_hash: string
+        }
+        Returns: Json
+      }
       claim_due_email_deliveries: {
         Args: { p_lease_seconds?: number; p_limit?: number }
         Returns: {
@@ -2982,6 +4069,16 @@ export type Database = {
         }[]
       }
       company_role_rank: { Args: { role: string }; Returns: number }
+      complete_registered_agent_execution_v1: {
+        Args: {
+          p_company_id: string
+          p_execution_id: string
+          p_idempotency_key: string
+          p_request_hash: string
+          p_result: Json
+        }
+        Returns: Json
+      }
       configure_company_connector_installation: {
         Args: {
           p_company_id: string
@@ -2993,6 +4090,10 @@ export type Database = {
       configure_workflow_control_parser_trust: {
         Args: { p_server_secret: string }
         Returns: undefined
+      }
+      create_agent_memory_candidate_v1: {
+        Args: { p_actor_id: string; p_company_id: string; p_payload: Json }
+        Returns: Json
       }
       create_workflow_binding_snapshot: {
         Args: { p_bindings: Json; p_company_id: string; p_workflow_id: string }
@@ -3086,6 +4187,29 @@ export type Database = {
         }
         Returns: Json
       }
+      export_agent_memory_v1: { Args: { p_company_id: string }; Returns: Json }
+      forget_agent_memory_candidate_v1: {
+        Args: {
+          p_actor_id: string
+          p_candidate_id: string
+          p_company_id: string
+          p_expected_updated_at: string
+          p_reason: string
+        }
+        Returns: Json
+      }
+      get_agent_runtime_state_v1: {
+        Args: { p_company_id: string; p_workflow_id: string }
+        Returns: Json
+      }
+      get_registered_agent_execution_context_v1: {
+        Args: {
+          p_action_draft_id: string
+          p_company_id: string
+          p_decision_id: string
+        }
+        Returns: Json
+      }
       get_workflow_review_v1: {
         Args: {
           p_activity_before_created_at?: string
@@ -3174,6 +4298,35 @@ export type Database = {
       purge_terminal_email_delivery_pii: {
         Args: { p_before?: string }
         Returns: number
+      }
+      record_agent_feedback_v1: {
+        Args: { p_actor_id: string; p_company_id: string; p_payload: Json }
+        Returns: Json
+      }
+      record_agent_readiness_v1: {
+        Args: {
+          p_company_id: string
+          p_expected_version: number
+          p_issues?: Json
+          p_readiness_hash: string
+          p_reason?: string
+          p_sample_run_id?: string
+          p_workflow_id: string
+        }
+        Returns: Json
+      }
+      record_agent_test_evaluation_v1: {
+        Args: {
+          p_client_issues?: Json
+          p_company_id: string
+          p_evaluator_version?: string
+          p_expected_version: number
+          p_reason?: string
+          p_sample_item_id: string
+          p_sample_run_id: string
+          p_workflow_id: string
+        }
+        Returns: Json
       }
       record_email_delivery_result: {
         Args: {
@@ -3325,13 +4478,50 @@ export type Database = {
         Args: { p_company_id: string; p_lease_id: string }
         Returns: undefined
       }
-      rollback_agent_workflow: {
+      retrieve_agent_memory_v1: {
         Args: {
-          p_binding_snapshot_id: string
+          p_as_of: string
           p_company_id: string
-          p_expected_current_workflow_id: string
-          p_workflow_id: string
+          p_limit: number
+          p_scope: Json
         }
+        Returns: Json
+      }
+      review_agent_memory_candidate_v1: {
+        Args: {
+          p_actor_id: string
+          p_candidate_id: string
+          p_company_id: string
+          p_decision: string
+          p_expected_updated_at: string
+          p_expires_at: string
+          p_reason: string
+        }
+        Returns: Json
+      }
+      rollback_agent_workflow:
+        | {
+            Args: {
+              p_binding_snapshot_id: string
+              p_company_id: string
+              p_expected_current_workflow_id: string
+              p_workflow_id: string
+            }
+            Returns: Json
+          }
+        | {
+            Args: {
+              p_binding_snapshot_id: string
+              p_company_id: string
+              p_expected_current_workflow_id: string
+              p_expected_state_version: number
+              p_reason: string
+              p_workflow_id: string
+            }
+            Returns: Json
+          }
+      schedule_agent_follow_up_v1: {
+        Args: { p_actor_id: string; p_company_id: string; p_payload: Json }
         Returns: Json
       }
       set_company_approval_policy_controlled: {
@@ -3374,6 +4564,16 @@ export type Database = {
           p_installation_id: string
           p_observed_schema_hash?: string
           p_status: string
+        }
+        Returns: Json
+      }
+      transition_agent_lifecycle_v1: {
+        Args: {
+          p_company_id: string
+          p_expected_version: number
+          p_reason: string
+          p_transition: string
+          p_workflow_id: string
         }
         Returns: Json
       }

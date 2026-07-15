@@ -3,7 +3,10 @@ import {
   agentTestRunRequestSchema,
   agentTestRunResponseSchema,
 } from "@workspace/control-plane"
-import { runSyntheticAgentTest } from "@/lib/mandala/agents"
+import {
+  recordAgentTestReadiness,
+  runSyntheticAgentTest,
+} from "@/lib/mandala/agents"
 import {
   classifyWorkflowRpcError,
   getCompanyMembership,
@@ -60,6 +63,12 @@ export async function POST(
       request: parsed.data,
       actorUserId: auth.user.id,
       clientSurface: auth.authMode === "bearer" ? "cli" : "web",
+    })
+    await recordAgentTestReadiness({
+      supabase: auth.supabase,
+      companyId: parsed.data.companyId,
+      agentId,
+      result,
     })
     return NextResponse.json(agentTestRunResponseSchema.parse(result), {
       headers: { "cache-control": "private, no-store" },

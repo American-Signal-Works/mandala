@@ -1,8 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import { executeAgentActionFromServer } from "@/actions/admin/execute-agent-action"
 import { authenticateRequest } from "@/lib/supabase/request"
 import {
   WorkflowRpcError,
-  executeMockWorkflowActionRpc,
   getCompanyMembership,
   persistFixtureRun,
 } from "@/lib/mandala/workflows"
@@ -15,6 +15,9 @@ import { POST as recordDecision } from "./decisions/route"
 import { POST as executeAction } from "./executions/route"
 
 vi.mock("@/lib/supabase/request", () => ({ authenticateRequest: vi.fn() }))
+vi.mock("@/actions/admin/execute-agent-action", () => ({
+  executeAgentActionFromServer: vi.fn(),
+}))
 vi.mock("@/lib/mandala/workflows", async (importOriginal) => {
   const original =
     await importOriginal<typeof import("@/lib/mandala/workflows")>()
@@ -22,7 +25,6 @@ vi.mock("@/lib/mandala/workflows", async (importOriginal) => {
     ...original,
     getCompanyMembership: vi.fn(),
     persistFixtureRun: vi.fn(),
-    executeMockWorkflowActionRpc: vi.fn(),
   }
 })
 vi.mock("@/lib/mandala/control-plane/queries", async (importOriginal) => {
@@ -346,20 +348,20 @@ describe("Mandala workflow API routes", () => {
   })
 
   it("maps execution conflicts and returns idempotent success responses", async () => {
-    vi.mocked(executeMockWorkflowActionRpc).mockRejectedValueOnce(
+    vi.mocked(executeAgentActionFromServer).mockRejectedValueOnce(
       new WorkflowRpcError("token_consumed", "55000")
     )
     const conflict = await executeAction(validExecutionRequest())
     expect(conflict.status).toBe(409)
     await expect(conflict.json()).resolves.toEqual({ error: "token_consumed" })
-    expect(executeMockWorkflowActionRpc).toHaveBeenCalledWith(
+    expect(executeAgentActionFromServer).toHaveBeenCalledWith(
       expect.objectContaining({
         clientSurface: "web",
         inputHash: "c".repeat(64),
       })
     )
 
-    vi.mocked(executeMockWorkflowActionRpc).mockResolvedValueOnce({
+    vi.mocked(executeAgentActionFromServer).mockResolvedValueOnce({
       attempt: {
         id: "3a000000-0000-0000-0000-000000000001",
         status: "succeeded",
@@ -372,6 +374,22 @@ describe("Mandala workflow API routes", () => {
     expect(duplicate.status).toBe(200)
     expect(duplicate.headers.get("cache-control")).toBe("private, no-store")
     expect(await duplicate.json()).toMatchObject({ duplicate: true })
+
+    vi.mocked(executeAgentActionFromServer).mockResolvedValueOnce({
+      attempt: {
+        id: "3a000000-0000-0000-0000-000000000002",
+        status: "reconciliation_required",
+      },
+      draft: { id: draftId, status: "approved" },
+      item: { id: "33000000-0000-0000-0000-000000000001", status: "active" },
+      duplicate: false,
+    })
+    const reconciliation = await executeAction(validExecutionRequest())
+    expect(reconciliation.status).toBe(200)
+    expect(await reconciliation.json()).toMatchObject({
+      attempt: { status: "reconciliation_required" },
+    })
+    expect(executeAgentActionFromServer).toHaveBeenCalledTimes(3)
   })
 })
 

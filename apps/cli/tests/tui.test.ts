@@ -40,6 +40,9 @@ describe("slash command registry", () => {
       "/agent-test",
       "/agent-activate",
       "/agent-deactivate",
+      "/agent-pause",
+      "/agent-resume",
+      "/agent-disable",
       "/agent-versions",
       "/agent-rollback",
       "/inbox",
@@ -334,6 +337,7 @@ describe("interactive TUI", () => {
     await controller.handleLine("/agents")
     expect(activateAgent).toHaveBeenCalledWith(inactive.id, {
       companyId,
+      expectedVersion: inactive.stateVersion,
       reason: "Confirmed in the Mandala terminal.",
     })
     expect(stdout.value).toContain("is active and can start new work")
@@ -1259,6 +1263,57 @@ describe("interactive TUI", () => {
     expect(stdout.value).not.toContain("Completed request")
   })
 
+  it("executes the contextual endpoint's typed selected-item command without reparsing", async () => {
+    const execute = fakeExecute()
+    const contextualChat = vi.fn(async () => ({
+      route: "command" as const,
+      message: "Review and confirm this action.",
+      companyId,
+      selectedItemId: itemId,
+      reviewVersion: "2026-07-09T12:00:00.000Z",
+      command: {
+        kind: "record_decision",
+        companyId,
+        itemId,
+        decision: "approve",
+        warningsAcknowledged: false,
+        risk: "state_change",
+      },
+      confirmationRequired: true,
+      mutated: false,
+    }))
+    const stdout = new CaptureStream()
+    const stderr = new CaptureStream()
+
+    await runTui({
+      api: agentControlApi(testAgentSummary(), { contextualChat }),
+      confirm: vi.fn().mockResolvedValue(true),
+      environment: {},
+      execute,
+      stderr,
+      stdin: Readable.from([
+        "/inbox\n/open 1\nCan you approve it?\n/exit\n",
+      ]),
+      stdout,
+    })
+
+    expect(contextualChat).toHaveBeenCalledWith(
+      expect.objectContaining({
+        companyId,
+        input: "Can you approve it?",
+        selectedItemId: itemId,
+      })
+    )
+    expect(execute).toHaveBeenCalledWith(
+      ["work", "approve", itemId],
+      expect.any(Object)
+    )
+    expect(execute).not.toHaveBeenCalledWith(
+      ["chat", "Can you approve it?"],
+      expect.any(Object)
+    )
+  })
+
   it("answers an empty attention request without a large empty table", async () => {
     const execute = fakeExecute({
       authenticated: false,
@@ -1508,6 +1563,7 @@ function testAgentSummary(overrides: Partial<AgentSummary> = {}): AgentSummary {
     compilerVersion: "1",
     skillDigest: "a".repeat(64),
     manifestDigest: "b".repeat(64),
+    stateVersion: 1,
     active: false,
     capabilities: [],
     diagnostics: [],
@@ -1540,6 +1596,9 @@ function agentControlApi(
     })),
     activateAgent: unsupported,
     deactivateAgent: unsupported,
+    pauseAgent: unsupported,
+    resumeAgent: unsupported,
+    disableAgent: unsupported,
     rollbackAgent: unsupported,
     listCompanies: unsupported,
     listWorkItems: unsupported,

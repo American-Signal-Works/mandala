@@ -8,8 +8,11 @@ import {
 
 export const agentLifecycleStatusSchema = z.enum([
   "draft",
+  "ready",
   "active",
   "inactive",
+  "paused",
+  "disabled",
   "archived",
   "invalid",
 ])
@@ -55,6 +58,7 @@ export const agentSummarySchema = z
     compilerVersion: z.string().min(1).max(40),
     skillDigest: z.string().regex(/^[0-9a-f]{64}$/),
     manifestDigest: z.string().regex(/^[0-9a-f]{64}$/),
+    stateVersion: z.number().int().positive(),
     active: z.boolean(),
     capabilities: z.array(agentCapabilitySummarySchema),
     diagnostics: z.array(agentDiagnosticSchema),
@@ -114,7 +118,8 @@ export const agentInstallResponseSchema = z
 export const agentActionRequestSchema = z
   .object({
     companyId: z.string().uuid(),
-    reason: z.string().min(1).max(2_000).optional(),
+    expectedVersion: z.number().int().positive(),
+    reason: z.string().trim().min(1).max(2_000),
     version: z.string().min(1).max(40).optional(),
   })
   .strict()
@@ -146,7 +151,17 @@ export const agentLifecycleEventSchema = z
     id: z.string().uuid(),
     companyId: z.string().uuid(),
     agentId: z.string().uuid(),
-    action: z.enum(["installed", "validated", "tested", "activated", "deactivated", "rolled_back"]),
+    action: z.enum([
+      "installed",
+      "validated",
+      "tested",
+      "activated",
+      "paused",
+      "resumed",
+      "disabled",
+      "deactivated",
+      "rolled_back",
+    ]),
     actorId: z.string().uuid(),
     actorRole: companyRoleSchema,
     details: jsonObjectSchema,

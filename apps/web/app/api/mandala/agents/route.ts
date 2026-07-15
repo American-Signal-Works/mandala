@@ -7,7 +7,6 @@ import {
 import { resolveCompanyCompilerCapabilities } from "@/lib/mandala/skills/capabilities"
 import { compileAgentSkill } from "@/lib/mandala/skills/compiler"
 import {
-  activateAgentWorkflow,
   installAgentWorkflowVersion,
   listAgentSummaries,
 } from "@/lib/mandala/skills/lifecycle"
@@ -54,6 +53,15 @@ export async function POST(request: Request) {
       { error: "invalid_request", issues: parsed.error.flatten().fieldErrors },
       400
     )
+  if (parsed.data.activate)
+    return agentJson(
+      {
+        error: "agent_test_required",
+        message:
+          "Install the agent inactive, run a Sandbox test, then activate it.",
+      },
+      409
+    )
 
   try {
     const membership = await getCompanyMembership({
@@ -81,19 +89,13 @@ export async function POST(request: Request) {
         422
       )
 
-    let agent = await installAgentWorkflowVersion({
+    const agent = await installAgentWorkflowVersion({
       supabase: auth.supabase,
       companyId: parsed.data.companyId,
       source: parsed.data.skillMarkdown,
       manifest: compiled.manifest,
       diagnostics: compiled.diagnostics,
     })
-    if (parsed.data.activate)
-      agent = await activateAgentWorkflow({
-        supabase: auth.supabase,
-        companyId: parsed.data.companyId,
-        agentId: agent.id,
-      })
     return agentJson(agentInstallResponseSchema.parse({ agent, created: true }))
   } catch (error) {
     if (isDuplicateVersion(error))

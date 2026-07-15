@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import type { AgentSummary } from "@workspace/control-plane"
 import { resolveCompanyCompilerCapabilities } from "@/lib/mandala/skills/capabilities"
+import { refreshReadinessAndResumeAgent } from "@/lib/mandala/agents/resume"
 import { compileAgentSkill } from "@/lib/mandala/skills/compiler"
 import {
   activateAgentWorkflow,
@@ -8,11 +9,15 @@ import {
   installAgentWorkflowVersion,
   listAgentSummaries,
   rollbackAgentWorkflow,
+  transitionAgentWorkflowLifecycle,
 } from "@/lib/mandala/skills/lifecycle"
 import { getCompanyMembership } from "@/lib/mandala/workflows"
 import { authenticateRequest } from "@/lib/supabase/request"
 import { POST as activateAgent } from "./[agentId]/activate/route"
 import { POST as deactivateAgent } from "./[agentId]/deactivate/route"
+import { POST as disableAgent } from "./[agentId]/disable/route"
+import { POST as pauseAgent } from "./[agentId]/pause/route"
+import { POST as resumeAgent } from "./[agentId]/resume/route"
 import { POST as rollbackAgent } from "./[agentId]/rollback/route"
 import { GET as listAgents, POST as installAgent } from "./route"
 import { POST as validateAgent } from "./validate/route"
@@ -43,8 +48,12 @@ vi.mock("@/lib/mandala/skills/lifecycle", async (importOriginal) => {
     installAgentWorkflowVersion: vi.fn(),
     listAgentSummaries: vi.fn(),
     rollbackAgentWorkflow: vi.fn(),
+    transitionAgentWorkflowLifecycle: vi.fn(),
   }
 })
+vi.mock("@/lib/mandala/agents/resume", () => ({
+  refreshReadinessAndResumeAgent: vi.fn(),
+}))
 
 const companyId = "20000000-0000-4000-8000-000000000001"
 const agentId = "a0000000-0000-4000-8000-000000000001"
@@ -66,6 +75,21 @@ describe("Mandala agent lifecycle routes", () => {
     vi.mocked(deactivateAgentWorkflow).mockResolvedValue(agentSummary())
     vi.mocked(rollbackAgentWorkflow).mockResolvedValue(
       agentSummary({ version: "0.9.0" })
+    )
+    vi.mocked(transitionAgentWorkflowLifecycle).mockImplementation(
+      async ({ transition }) =>
+        agentSummary({
+          active: transition === "activate" || transition === "resume",
+          status:
+            transition === "activate" || transition === "resume"
+              ? "active"
+              : transition === "pause"
+                ? "paused"
+                : "disabled",
+        })
+    )
+    vi.mocked(refreshReadinessAndResumeAgent).mockResolvedValue(
+      agentSummary({ active: true, status: "active", stateVersion: 2 })
     )
   })
 
@@ -193,16 +217,26 @@ describe("Mandala agent lifecycle routes", () => {
   it("checks admin membership for activate, deactivate, and rollback", async () => {
     const context = { params: Promise.resolve({ agentId }) }
     const activated = await activateAgent(
-      jsonRequest(`/agents/${agentId}/activate`, { companyId }),
+      jsonRequest(`/agents/${agentId}/activate`, {
+        companyId,
+        expectedVersion: 1,
+        reason: "Activate after Sandbox review",
+      }),
       context
     )
     const deactivated = await deactivateAgent(
-      jsonRequest(`/agents/${agentId}/deactivate`, { companyId }),
+      jsonRequest(`/agents/${agentId}/deactivate`, {
+        companyId,
+        expectedVersion: 1,
+        reason: "Pause for operations review",
+      }),
       context
     )
     const rolledBack = await rollbackAgent(
       jsonRequest(`/agents/${agentId}/rollback`, {
         companyId,
+        expectedVersion: 1,
+        reason: "Rollback after regression review",
         version: "0.9.0",
       }),
       context
@@ -210,29 +244,112 @@ describe("Mandala agent lifecycle routes", () => {
     expect([activated.status, deactivated.status, rolledBack.status]).toEqual([
       200, 200, 200,
     ])
-    expect(activateAgentWorkflow).toHaveBeenCalledWith({
+    expect(transitionAgentWorkflowLifecycle).toHaveBeenCalledWith({
       supabase: auth.supabase,
       companyId,
       agentId,
+      transition: "activate",
+      expectedVersion: 1,
+      reason: "Activate after Sandbox review",
     })
     expect(rollbackAgentWorkflow).toHaveBeenCalledWith({
       supabase: auth.supabase,
       companyId,
       agentId,
       version: "0.9.0",
+      expectedVersion: 1,
+      reason: "Rollback after regression review",
     })
 
     vi.mocked(getCompanyMembership).mockResolvedValue({ role: "viewer" })
     const forbidden = await activateAgent(
-      jsonRequest(`/agents/${agentId}/activate`, { companyId }),
+      jsonRequest(`/agents/${agentId}/activate`, {
+        companyId,
+        expectedVersion: 1,
+        reason: "Activate after Sandbox review",
+      }),
       context
     )
     expect(forbidden.status).toBe(403)
   })
 
+  it("routes pause and disable through the version-checked lifecycle", async () => {
+    const context = { params: Promise.resolve({ agentId }) }
+    for (const [action, handler] of [
+      ["pause", pauseAgent],
+      ["disable", disableAgent],
+    ] as const) {
+      const response = await handler(
+        jsonRequest(`/agents/${agentId}/${action}`, {
+          companyId,
+          expectedVersion: 1,
+          reason: `${action} for operations review`,
+        }),
+        context
+      )
+      expect(response.status).toBe(200)
+      expect(transitionAgentWorkflowLifecycle).toHaveBeenCalledWith({
+        supabase: auth.supabase,
+        companyId,
+        agentId,
+        transition: action,
+        expectedVersion: 1,
+        reason: `${action} for operations review`,
+      })
+    }
+  })
+
+  it("refreshes Sandbox readiness before resuming", async () => {
+    const response = await resumeAgent(
+      jsonRequest(`/agents/${agentId}/resume`, {
+        companyId,
+        expectedVersion: 4,
+        reason: "Resume after current Sandbox review",
+      }),
+      { params: Promise.resolve({ agentId }) }
+    )
+
+    expect(response.status).toBe(200)
+    expect(refreshReadinessAndResumeAgent).toHaveBeenCalledWith({
+      supabase: auth.supabase,
+      companyId,
+      agentId,
+      expectedVersion: 4,
+      reason: "Resume after current Sandbox review",
+      actorUserId: userId,
+      clientSurface: "cli",
+    })
+    expect(transitionAgentWorkflowLifecycle).not.toHaveBeenCalledWith(
+      expect.objectContaining({ transition: "resume" })
+    )
+  })
+
+  it("returns a stable conflict when lifecycle readiness is stale", async () => {
+    vi.mocked(refreshReadinessAndResumeAgent).mockRejectedValueOnce(
+      new Error("agent_readiness_stale")
+    )
+    const response = await resumeAgent(
+      jsonRequest(`/agents/${agentId}/resume`, {
+        companyId,
+        expectedVersion: 9,
+        reason: "Resume after review",
+      }),
+      { params: Promise.resolve({ agentId }) }
+    )
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({
+      error: "agent_state_conflict",
+    })
+  })
+
   it("requires an explicit rollback version", async () => {
     const response = await rollbackAgent(
-      jsonRequest(`/agents/${agentId}/rollback`, { companyId }),
+      jsonRequest(`/agents/${agentId}/rollback`, {
+        companyId,
+        expectedVersion: 1,
+        reason: "Rollback after regression review",
+      }),
       { params: Promise.resolve({ agentId }) }
     )
     expect(response.status).toBe(400)
@@ -264,6 +381,7 @@ function agentSummary(overrides: Partial<AgentSummary> = {}): AgentSummary {
     compilerVersion: "1.0.0",
     skillDigest: "a".repeat(64),
     manifestDigest: "b".repeat(64),
+    stateVersion: 1,
     active: false,
     capabilities: [],
     diagnostics: [],
