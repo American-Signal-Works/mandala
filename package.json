@@ -13,8 +13,8 @@
     "test:e2e": "pnpm --filter web exec playwright test",
     "cli:build": "pnpm --filter @workspace/control-plane build && pnpm --filter @workspace/cli build",
     "cli:link": "pnpm run cli:build && tsx scripts/link-mandala-cli.ts",
-    "seed": "SUPABASE_SERVICE_ROLE_KEY=$(supabase status -o json | jq -r .SERVICE_ROLE_KEY) tsx seed/seed.ts",
-    "seed:reset": "SUPABASE_SERVICE_ROLE_KEY=$(supabase status -o json | jq -r .SERVICE_ROLE_KEY) tsx seed/seed.ts --reset"
+    "seed": "tsx seed/seed.ts",
+    "seed:reset": "tsx seed/seed.ts --reset"
   },
   "devDependencies": {
     "@supabase/supabase-js": "^2.105.1",

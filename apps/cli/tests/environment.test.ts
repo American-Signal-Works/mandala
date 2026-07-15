@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest"
+import { join } from "node:path"
 import { getApiUrl, getSupabaseEnvironment } from "../src/environment.js"
+import { resolveConfigDirectory } from "../src/persistence.js"
 
 describe("CLI endpoint security", () => {
   it("uses loopback-only defaults for local development", () => {
@@ -29,5 +31,33 @@ describe("CLI endpoint security", () => {
         MANDALA_SUPABASE_ANON_KEY: "anon-key",
       })
     ).toThrowError(/must use HTTPS/)
+  })
+})
+
+describe("platform config paths", () => {
+  it("uses the Windows roaming application-data directory", () => {
+    const applicationData = "C:\\Users\\Example\\AppData\\Roaming"
+    expect(
+      resolveConfigDirectory(
+        { APPDATA: applicationData },
+        { homeDirectory: "C:\\Users\\Example", platform: "win32" }
+      )
+    ).toBe(join(applicationData, "Mandala"))
+  })
+
+  it("falls back to the conventional Windows profile directory", () => {
+    const homeDirectory = "C:\\Users\\Example"
+    expect(
+      resolveConfigDirectory({}, { homeDirectory, platform: "win32" })
+    ).toBe(join(homeDirectory, "AppData", "Roaming", "Mandala"))
+  })
+
+  it("keeps an explicit config directory on every platform", () => {
+    expect(
+      resolveConfigDirectory(
+        { MANDALA_CONFIG_DIR: "D:\\MandalaData" },
+        { homeDirectory: "C:\\Users\\Example", platform: "win32" }
+      )
+    ).toBe("D:\\MandalaData")
   })
 })

@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto"
+import { execFile } from "node:child_process"
 import {
   open,
   readFile,
@@ -47,15 +48,51 @@ export const storedSessionSchema = z
 export type StoredConfig = z.infer<typeof storedConfigSchema>
 export type StoredSession = z.infer<typeof storedSessionSchema>
 
+const protectedSessionSchema = z
+  .object({
+    schemaVersion: z.literal(1),
+    protection: z.literal("windows-dpapi"),
+    payload: z.string().min(1),
+  })
+  .strict()
+
+type SessionProtector = {
+  protect(value: string): Promise<string>
+  unprotect(value: string): Promise<string>
+}
+
+type SecureStoreOptions = {
+  platform?: NodeJS.Platform
+  sessionProtector?: SessionProtector
+}
+
+type RuntimePathContext = {
+  homeDirectory: string
+  platform: NodeJS.Platform
+}
+
 export function resolveConfigDirectory(
-  environment: RuntimeEnvironment
+  environment: RuntimeEnvironment,
+  runtime: RuntimePathContext = {
+    homeDirectory: homedir(),
+    platform: platform(),
+  }
 ): string {
-  assertSupportedPlatform()
   if (environment.MANDALA_CONFIG_DIR) return environment.MANDALA_CONFIG_DIR
-  if (platform() === "darwin")
-    return join(homedir(), "Library", "Application Support", "Mandala")
+  if (runtime.platform === "win32")
+    return join(
+      environment.APPDATA ?? join(runtime.homeDirectory, "AppData", "Roaming"),
+      "Mandala"
+    )
+  if (runtime.platform === "darwin")
+    return join(
+      runtime.homeDirectory,
+      "Library",
+      "Application Support",
+      "Mandala"
+    )
   return join(
-    environment.XDG_CONFIG_HOME ?? join(homedir(), ".config"),
+    environment.XDG_CONFIG_HOME ?? join(runtime.homeDirectory, ".config"),
     "mandala"
   )
 }
@@ -63,9 +100,15 @@ export function resolveConfigDirectory(
 export class SecureStore {
   readonly configPath: string
   readonly sessionPath: string
+  private readonly runtimePlatform: NodeJS.Platform
+  private readonly sessionProtector: SessionProtector
 
-  constructor(readonly directory: string) {
-    assertSupportedPlatform()
+  constructor(
+    readonly directory: string,
+    options: SecureStoreOptions = {}
+  ) {
+    this.runtimePlatform = options.platform ?? platform()
+    this.sessionProtector = options.sessionProtector ?? windowsSessionProtector
     this.configPath = join(directory, "config.json")
     this.sessionPath = join(directory, "session.json")
   }
@@ -86,15 +129,45 @@ export class SecureStore {
   }
 
   async readSession(): Promise<StoredSession | null> {
-    return readPrivateJson(this.sessionPath, storedSessionSchema)
+    if (this.runtimePlatform !== "win32")
+      return readPrivateJson(this.sessionPath, storedSessionSchema)
+
+    const stored = await readPrivateJson(
+      this.sessionPath,
+      protectedSessionSchema
+    )
+    if (!stored) return null
+    try {
+      const source = await this.sessionProtector.unprotect(stored.payload)
+      return storedSessionSchema.parse(JSON.parse(source) as unknown)
+    } catch {
+      throw new CliError(
+        "invalid_local_state",
+        "The saved Mandala session is unreadable or belongs to another Windows user."
+      )
+    }
   }
 
   async writeSession(session: StoredSession): Promise<void> {
-    await writePrivateJson(
-      this.directory,
-      this.sessionPath,
-      storedSessionSchema.parse(session)
-    )
+    const validated = storedSessionSchema.parse(session)
+    if (this.runtimePlatform === "win32") {
+      let payload: string
+      try {
+        payload = await this.sessionProtector.protect(JSON.stringify(validated))
+      } catch {
+        throw new CliError(
+          "local_state_write_failed",
+          "The Mandala session could not be protected for this Windows user."
+        )
+      }
+      await writePrivateJson(this.directory, this.sessionPath, {
+        schemaVersion: 1,
+        protection: "windows-dpapi",
+        payload,
+      })
+      return
+    }
+    await writePrivateJson(this.directory, this.sessionPath, validated)
   }
 
   async deleteSession(): Promise<void> {
@@ -107,12 +180,54 @@ export class SecureStore {
   }
 }
 
-function assertSupportedPlatform(): void {
-  if (platform() === "win32")
-    throw new CliError(
-      "unsupported_platform",
-      "Windows credential storage is not supported by this CLI build."
+const windowsSessionProtector: SessionProtector = {
+  protect: (value) => runWindowsDataProtection("Protect", value),
+  unprotect: (value) => runWindowsDataProtection("Unprotect", value),
+}
+
+async function runWindowsDataProtection(
+  operation: "Protect" | "Unprotect",
+  value: string
+): Promise<string> {
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    "Add-Type -AssemblyName System.Security",
+    "$source = [Convert]::FromBase64String([Console]::In.ReadToEnd())",
+    `$result = [System.Security.Cryptography.ProtectedData]::${operation}($source, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)`,
+    "[Console]::Out.Write([Convert]::ToBase64String($result))",
+  ].join("; ")
+  const encodedInput =
+    operation === "Protect"
+      ? Buffer.from(value, "utf8").toString("base64")
+      : value
+  const encodedOutput = await executePowerShell(script, encodedInput)
+  return operation === "Protect"
+    ? encodedOutput.trim()
+    : Buffer.from(encodedOutput.trim(), "base64").toString("utf8")
+}
+
+async function executePowerShell(
+  script: string,
+  input: string
+): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const child = execFile(
+      "powershell.exe",
+      ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+      {
+        encoding: "utf8",
+        maxBuffer: 1024 * 1024,
+        timeout: 10_000,
+        windowsHide: true,
+      },
+      (error, stdout) => {
+        if (error) reject(error)
+        else resolve(stdout)
+      }
     )
+    child.stdin?.on("error", () => undefined)
+    child.stdin?.end(input, "utf8")
+  })
 }
 
 function defaultConfig(): StoredConfig {

@@ -9,11 +9,14 @@ import { describe, expect, it } from "vitest"
 const executeFile = promisify(execFile)
 
 describe("spawned mandala executable", () => {
-  it("keeps the built command executable", async () => {
-    await expect(
-      access("dist/index.js", constants.X_OK)
-    ).resolves.toBeUndefined()
-  })
+  it.skipIf(process.platform === "win32")(
+    "keeps the built command executable on POSIX systems",
+    async () => {
+      await expect(
+        access("dist/index.js", constants.X_OK)
+      ).resolves.toBeUndefined()
+    }
+  )
 
   it("launches in a pseudo-terminal and exits through a slash command", async () => {
     const output = await runExpect(`
