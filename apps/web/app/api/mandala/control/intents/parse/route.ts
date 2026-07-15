@@ -13,9 +13,12 @@ import {
   parseConversationalControlInput,
 } from "@/lib/mandala/control-plane/conversational-parser"
 import {
+  authorizeCompanyPermission,
+  companyPermissionFailure,
+} from "@/lib/mandala/authorization"
+import {
   acquireWorkflowControlParserLeaseRpc,
   classifyWorkflowRpcError,
-  getCompanyMembership,
   recordWorkflowControlRequestRpc,
   recordWorkflowControlRequestWithBindingRpc,
   releaseWorkflowControlParserLeaseRpc,
@@ -23,6 +26,7 @@ import {
 } from "@/lib/mandala/workflows"
 import { authenticateRequest } from "@/lib/supabase/request"
 import type { Json } from "@/lib/supabase/types"
+import { createServerModelUsageRecorder } from "@/actions/admin/provider-usage"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -47,13 +51,23 @@ export async function POST(request: Request) {
     )
   }
 
-  const membership = await getCompanyMembership({
-    supabase: auth.supabase,
-    companyId: parsed.data.companyId,
-    userId: auth.user.id,
-  })
-  if (!membership)
-    return NextResponse.json({ error: "forbidden" }, { status: 403 })
+  const permissionFailure = companyPermissionFailure(
+    await authorizeCompanyPermission({
+      supabase: auth.supabase,
+      companyId: parsed.data.companyId,
+      userId: auth.user.id,
+      permission: "workflow.read",
+    })
+  )
+  if (permissionFailure) {
+    return NextResponse.json(
+      { error: permissionFailure.code },
+      {
+        status: permissionFailure.status,
+        headers: { "cache-control": "private, no-store" },
+      }
+    )
+  }
 
   const inputHash = createHmac("sha256", inputHashKey)
     .update(parsed.data.companyId)
@@ -95,10 +109,19 @@ export async function POST(request: Request) {
 
   try {
     try {
-      const result = await parseConversationalControlInput({
-        companyId: parsed.data.companyId,
-        phrase: parsed.data.input,
-      })
+      const result = await parseConversationalControlInput(
+        {
+          companyId: parsed.data.companyId,
+          phrase: parsed.data.input,
+        },
+        {
+          recordUsage: createServerModelUsageRecorder({
+            companyId: parsed.data.companyId,
+            actorUserId: auth.user.id,
+            sourceOperation: "mandala.control.intent.parse",
+          }),
+        }
+      )
       const controlRequest = await recordOutcome({
         auth,
         companyId: parsed.data.companyId,

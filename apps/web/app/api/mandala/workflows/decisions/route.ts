@@ -1,8 +1,13 @@
 import {
   decisionRequestSchema,
   decisionResponseSchema,
+  permissionForWorkflowDecision,
 } from "@workspace/control-plane"
 import { authenticateRequest } from "@/lib/supabase/request"
+import {
+  authorizeCompanyPermission,
+  companyPermissionFailure,
+} from "@/lib/mandala/authorization"
 import type { Json } from "@/lib/supabase/types"
 import { recordWorkflowDecisionV2 } from "@/lib/mandala/control-plane/queries"
 import { controlPlaneErrorResponse, privateJson } from "../control-plane-http"
@@ -10,13 +15,28 @@ import { controlPlaneErrorResponse, privateJson } from "../control-plane-http"
 export async function POST(request: Request) {
   const auth = await authenticateRequest(request)
   if (!auth) return privateJson({ error: "unauthorized" }, 401)
-  const { supabase } = auth
+  const { supabase, user } = auth
 
   const parsed = decisionRequestSchema.safeParse(await parseJson(request))
   if (!parsed.success) {
     return privateJson(
       { error: "invalid_request", issues: parsed.error.flatten().fieldErrors },
       400
+    )
+  }
+
+  const permissionFailure = companyPermissionFailure(
+    await authorizeCompanyPermission({
+      supabase,
+      companyId: parsed.data.companyId,
+      userId: user.id,
+      permission: permissionForWorkflowDecision(parsed.data.decision),
+    })
+  )
+  if (permissionFailure) {
+    return privateJson(
+      { error: permissionFailure.code },
+      permissionFailure.status
     )
   }
 

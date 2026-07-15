@@ -10,6 +10,7 @@ import type {
   WorkflowFixtureRunResult,
 } from "../workflows"
 import { createWorkflowFixturePersistencePayload } from "../workflows/persistence"
+import { UsageServiceError } from "../usage"
 import { runSyntheticAgentTest } from "./test-run"
 
 const companyId = "20000000-0000-4000-8000-000000000001"
@@ -120,6 +121,17 @@ describe("synthetic compiled agent test runner", () => {
       execution: "model",
       model: "injected-general-model",
     })
+  })
+
+  it("fails closed instead of hiding an unmetered model call behind deterministic fallback", async () => {
+    await expect(
+      runFor(salesSpikeManifest, () => undefined, {
+        modelEnabled: true,
+        runModelAgent: vi.fn(async () => {
+          throw new UsageServiceError("usage_record_failed")
+        }),
+      })
+    ).rejects.toMatchObject({ code: "usage_record_failed" })
   })
 })
 

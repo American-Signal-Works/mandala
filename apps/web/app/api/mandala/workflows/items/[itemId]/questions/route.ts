@@ -15,6 +15,7 @@ import {
 } from "@/lib/mandala/control-plane/queries"
 import { getCompanyMembership } from "@/lib/mandala/workflows"
 import { authenticateRequest } from "@/lib/supabase/request"
+import { createServerModelUsageRecorder } from "@/actions/admin/provider-usage"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -60,16 +61,26 @@ export async function POST(
         itemId: itemIdParsed.data,
       })
     )
-    const answer = await answerWorkItemQuestion({
-      detail,
-      question: parsed.data.question,
-      modelContext: await loadWorkItemQuestionModelContext({
-        supabase: auth.supabase,
-        companyId: parsed.data.companyId,
-        itemId: itemIdParsed.data,
+    const answer = await answerWorkItemQuestion(
+      {
         detail,
-      }),
-    })
+        question: parsed.data.question,
+        modelContext: await loadWorkItemQuestionModelContext({
+          supabase: auth.supabase,
+          companyId: parsed.data.companyId,
+          itemId: itemIdParsed.data,
+          detail,
+        }),
+      },
+      {
+        recordUsage: createServerModelUsageRecorder({
+          companyId: parsed.data.companyId,
+          actorUserId: auth.user.id,
+          workflowRunId: detail.item.workflowRunId,
+          sourceOperation: "mandala.work_item.question",
+        }),
+      }
+    )
     return NextResponse.json(workItemQuestionResponseSchema.parse(answer), {
       headers: { "cache-control": "private, no-store" },
     })

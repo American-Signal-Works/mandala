@@ -25,6 +25,7 @@ describe("browser Supabase client", () => {
       {
         auth: {
           detectSessionInUrl: false,
+          flowType: "pkce",
         },
       }
     )

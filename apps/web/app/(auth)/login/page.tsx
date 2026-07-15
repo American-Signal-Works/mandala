@@ -1,4 +1,8 @@
 import { LoginAuthFlow } from "@/components/auth/LoginAuthFlow"
+import {
+  getAuthCallbackFailureMessage,
+  isAuthCallbackFailure,
+} from "@/lib/auth/callback"
 
 type LoginPageProps = {
   searchParams?: Promise<Record<string, string | string[] | undefined>>
@@ -12,11 +16,14 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   return (
     <LoginAuthFlow
       initialFormMessage={
-        error === "callback_failed"
-          ? "We couldn't complete sign in. Try again."
+        error === "callback_failed" || isAuthCallbackFailure(error)
+          ? getAuthCallbackFailureMessage(error)
           : null
       }
       initialStep={auth === "success" ? "verifying" : "email"}
+      initialSessionReplacementRequired={
+        error === "session_replacement_required"
+      }
       mode="sign-in"
     />
   )

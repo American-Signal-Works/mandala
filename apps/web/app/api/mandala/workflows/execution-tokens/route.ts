@@ -7,6 +7,10 @@ import {
   classifyWorkflowRpcError,
   reissueWorkflowExecutionTokenRpc,
 } from "@/lib/mandala/workflows"
+import {
+  authorizeCompanyPermission,
+  companyPermissionFailure,
+} from "@/lib/mandala/authorization"
 import { authenticateRequest } from "@/lib/supabase/request"
 
 export async function POST(request: Request) {
@@ -19,6 +23,24 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "invalid_request", issues: parsed.error.flatten().fieldErrors },
       { status: 400 }
+    )
+  }
+
+  const permissionFailure = companyPermissionFailure(
+    await authorizeCompanyPermission({
+      supabase: auth.supabase,
+      companyId: parsed.data.companyId,
+      userId: auth.user.id,
+      permission: "workflow.execution_token.issue",
+    })
+  )
+  if (permissionFailure) {
+    return NextResponse.json(
+      { error: permissionFailure.code },
+      {
+        status: permissionFailure.status,
+        headers: { "cache-control": "private, no-store" },
+      }
     )
   }
 

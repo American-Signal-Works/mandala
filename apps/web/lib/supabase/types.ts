@@ -34,6 +34,45 @@ export type Database = {
   }
   public: {
     Tables: {
+      account_deletion_requests: {
+        Row: {
+          attempt_count: number
+          auth_deleted_at: string | null
+          completed_at: string | null
+          last_error_code: string | null
+          preflighted_at: string
+          requested_at: string
+          sessions_revoked_at: string | null
+          status: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          attempt_count?: number
+          auth_deleted_at?: string | null
+          completed_at?: string | null
+          last_error_code?: string | null
+          preflighted_at?: string
+          requested_at?: string
+          sessions_revoked_at?: string | null
+          status: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          attempt_count?: number
+          auth_deleted_at?: string | null
+          completed_at?: string | null
+          last_error_code?: string | null
+          preflighted_at?: string
+          requested_at?: string
+          sessions_revoked_at?: string | null
+          status?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       agent_action_definitions: {
         Row: {
           action_key: string
@@ -1428,24 +1467,33 @@ export type Database = {
       companies: {
         Row: {
           created_at: string
-          created_by: string
+          created_by: string | null
+          created_by_snapshot: string
           id: string
+          logo_path: string | null
           name: string
           updated_at: string
+          version: number
         }
         Insert: {
           created_at?: string
-          created_by: string
+          created_by?: string | null
+          created_by_snapshot: string
           id?: string
+          logo_path?: string | null
           name: string
           updated_at?: string
+          version?: number
         }
         Update: {
           created_at?: string
-          created_by?: string
+          created_by?: string | null
+          created_by_snapshot?: string
           id?: string
+          logo_path?: string | null
           name?: string
           updated_at?: string
+          version?: number
         }
         Relationships: []
       }
@@ -1711,6 +1759,221 @@ export type Database = {
           },
         ]
       }
+      company_invitation_events: {
+        Row: {
+          actor_user_id: string | null
+          company_id: string
+          created_at: string
+          event_type: string
+          id: string
+          invitation_id: string
+          invitation_version: number
+        }
+        Insert: {
+          actor_user_id?: string | null
+          company_id: string
+          created_at?: string
+          event_type: string
+          id?: string
+          invitation_id: string
+          invitation_version: number
+        }
+        Update: {
+          actor_user_id?: string | null
+          company_id?: string
+          created_at?: string
+          event_type?: string
+          id?: string
+          invitation_id?: string
+          invitation_version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_invitation_events_invitation_id_company_id_fkey"
+            columns: ["invitation_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "company_invitations"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      company_invitation_tokens: {
+        Row: {
+          company_id: string
+          consumed_at: string | null
+          expires_at: string
+          id: string
+          invitation_id: string
+          issued_at: string
+          state: string
+          token_digest: string
+          version: number
+        }
+        Insert: {
+          company_id: string
+          consumed_at?: string | null
+          expires_at: string
+          id?: string
+          invitation_id: string
+          issued_at?: string
+          state?: string
+          token_digest: string
+          version: number
+        }
+        Update: {
+          company_id?: string
+          consumed_at?: string | null
+          expires_at?: string
+          id?: string
+          invitation_id?: string
+          issued_at?: string
+          state?: string
+          token_digest?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_invitation_tokens_invitation_id_company_id_fkey"
+            columns: ["invitation_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "company_invitations"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      company_invitations: {
+        Row: {
+          accepted_at: string | null
+          accepted_user_id: string | null
+          company_id: string
+          created_at: string
+          delivery_id: string | null
+          expires_at: string
+          id: string
+          inviter_user_id: string
+          issued_at: string
+          recipient_email: string
+          recipient_hash: string
+          revoked_at: string | null
+          state: string
+          updated_at: string
+          version: number
+        }
+        Insert: {
+          accepted_at?: string | null
+          accepted_user_id?: string | null
+          company_id: string
+          created_at?: string
+          delivery_id?: string | null
+          expires_at: string
+          id: string
+          inviter_user_id: string
+          issued_at?: string
+          recipient_email: string
+          recipient_hash: string
+          revoked_at?: string | null
+          state?: string
+          updated_at?: string
+          version?: number
+        }
+        Update: {
+          accepted_at?: string | null
+          accepted_user_id?: string | null
+          company_id?: string
+          created_at?: string
+          delivery_id?: string | null
+          expires_at?: string
+          id?: string
+          inviter_user_id?: string
+          issued_at?: string
+          recipient_email?: string
+          recipient_hash?: string
+          revoked_at?: string | null
+          state?: string
+          updated_at?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_invitations_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_invitations_delivery_id_fkey"
+            columns: ["delivery_id"]
+            isOneToOne: false
+            referencedRelation: "email_deliveries"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_invitations_delivery_id_fkey"
+            columns: ["delivery_id"]
+            isOneToOne: false
+            referencedRelation: "email_delivery_owner_status"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_membership_events: {
+        Row: {
+          action: string
+          actor_user_id: string
+          company_id: string
+          created_at: string
+          id: string
+          membership_id: string
+          next_role: string
+          next_status: string
+          previous_role: string | null
+          previous_status: string | null
+          target_user_id: string
+        }
+        Insert: {
+          action: string
+          actor_user_id: string
+          company_id: string
+          created_at?: string
+          id?: string
+          membership_id: string
+          next_role: string
+          next_status: string
+          previous_role?: string | null
+          previous_status?: string | null
+          target_user_id: string
+        }
+        Update: {
+          action?: string
+          actor_user_id?: string
+          company_id?: string
+          created_at?: string
+          id?: string
+          membership_id?: string
+          next_role?: string
+          next_status?: string
+          previous_role?: string | null
+          previous_status?: string | null
+          target_user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_membership_events_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_membership_events_membership_id_company_id_fkey"
+            columns: ["membership_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "company_memberships"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
       company_memberships: {
         Row: {
           company_id: string
@@ -1746,6 +2009,163 @@ export type Database = {
             isOneToOne: false
             referencedRelation: "companies"
             referencedColumns: ["id"]
+          },
+        ]
+      }
+      company_policy_decisions: {
+        Row: {
+          action_draft_id: string | null
+          approval_policy_id: string | null
+          approval_policy_snapshot: Json
+          company_id: string
+          created_at: string
+          effect: string
+          evaluation_context: Json
+          evaluation_key: string
+          execution_mode: string
+          id: string
+          permission: string
+          policy_version: string
+          principal_id: string
+          principal_snapshot: Json
+          reason: string
+          workflow_run_id: string | null
+        }
+        Insert: {
+          action_draft_id?: string | null
+          approval_policy_id?: string | null
+          approval_policy_snapshot?: Json
+          company_id: string
+          created_at?: string
+          effect: string
+          evaluation_context: Json
+          evaluation_key: string
+          execution_mode: string
+          id?: string
+          permission: string
+          policy_version: string
+          principal_id: string
+          principal_snapshot: Json
+          reason: string
+          workflow_run_id?: string | null
+        }
+        Update: {
+          action_draft_id?: string | null
+          approval_policy_id?: string | null
+          approval_policy_snapshot?: Json
+          company_id?: string
+          created_at?: string
+          effect?: string
+          evaluation_context?: Json
+          evaluation_key?: string
+          execution_mode?: string
+          id?: string
+          permission?: string
+          policy_version?: string
+          principal_id?: string
+          principal_snapshot?: Json
+          reason?: string
+          workflow_run_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_policy_decisions_action_draft_id_company_id_fkey"
+            columns: ["action_draft_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_action_drafts"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "company_policy_decisions_approval_policy_id_company_id_fkey"
+            columns: ["approval_policy_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "company_approval_policies"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "company_policy_decisions_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_policy_decisions_principal_id_company_id_fkey"
+            columns: ["principal_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "company_principals"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "company_policy_decisions_workflow_run_id_company_id_fkey"
+            columns: ["workflow_run_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_runs"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      company_principals: {
+        Row: {
+          capabilities: string[]
+          company_id: string
+          created_at: string
+          delegated_by_user_id: string | null
+          display_name: string | null
+          id: string
+          membership_id: string | null
+          principal_key: string | null
+          principal_type: string
+          state: string
+          updated_at: string
+        }
+        Insert: {
+          capabilities?: string[]
+          company_id: string
+          created_at?: string
+          delegated_by_user_id?: string | null
+          display_name?: string | null
+          id?: string
+          membership_id?: string | null
+          principal_key?: string | null
+          principal_type: string
+          state?: string
+          updated_at?: string
+        }
+        Update: {
+          capabilities?: string[]
+          company_id?: string
+          created_at?: string
+          delegated_by_user_id?: string | null
+          display_name?: string | null
+          id?: string
+          membership_id?: string | null
+          principal_key?: string | null
+          principal_type?: string
+          state?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "company_principals_company_id_delegated_by_user_id_fkey"
+            columns: ["company_id", "delegated_by_user_id"]
+            isOneToOne: false
+            referencedRelation: "company_memberships"
+            referencedColumns: ["company_id", "user_id"]
+          },
+          {
+            foreignKeyName: "company_principals_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "company_principals_membership_id_company_id_fkey"
+            columns: ["membership_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "company_memberships"
+            referencedColumns: ["id", "company_id"]
           },
         ]
       }
@@ -2346,30 +2766,174 @@ export type Database = {
           avatar_path: string | null
           created_at: string
           display_name: string | null
+          first_name: string | null
+          last_name: string | null
           theme_accent: string
           theme_mode: string
           timezone: string
+          updated_at: string
           user_id: string
+          version: number
         }
         Insert: {
           avatar_path?: string | null
           created_at?: string
           display_name?: string | null
+          first_name?: string | null
+          last_name?: string | null
           theme_accent?: string
           theme_mode?: string
           timezone?: string
+          updated_at?: string
           user_id: string
+          version?: number
         }
         Update: {
           avatar_path?: string | null
           created_at?: string
           display_name?: string | null
+          first_name?: string | null
+          last_name?: string | null
           theme_accent?: string
           theme_mode?: string
           timezone?: string
+          updated_at?: string
           user_id?: string
+          version?: number
         }
         Relationships: []
+      }
+      provider_model_rates: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          currency: string
+          effective_from: string
+          effective_to: string | null
+          id: string
+          metric_name: string
+          model: string
+          price_per_unit: number
+          provider: string
+          quantity_per_unit: number
+          rate_version: string
+          source_reference: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          currency: string
+          effective_from: string
+          effective_to?: string | null
+          id?: string
+          metric_name: string
+          model: string
+          price_per_unit: number
+          provider: string
+          quantity_per_unit: number
+          rate_version: string
+          source_reference: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          currency?: string
+          effective_from?: string
+          effective_to?: string | null
+          id?: string
+          metric_name?: string
+          model?: string
+          price_per_unit?: number
+          provider?: string
+          quantity_per_unit?: number
+          rate_version?: string
+          source_reference?: string
+        }
+        Relationships: []
+      }
+      provider_usage_events: {
+        Row: {
+          cached_input_tokens: number
+          company_id: string
+          completeness: string
+          created_at: string
+          id: string
+          idempotency_key: string
+          input_tokens: number
+          measured_at: string
+          model: string
+          output_tokens: number
+          payload_digest: string
+          provider: string
+          reasoning_output_tokens: number
+          recorded_by: string
+          request_count: number
+          run_id: string | null
+          source_operation: string
+          total_tokens: number
+          trace_id: string | null
+          workflow_run_id: string | null
+        }
+        Insert: {
+          cached_input_tokens?: number
+          company_id: string
+          completeness: string
+          created_at?: string
+          id?: string
+          idempotency_key: string
+          input_tokens?: number
+          measured_at: string
+          model: string
+          output_tokens?: number
+          payload_digest: string
+          provider: string
+          reasoning_output_tokens?: number
+          recorded_by: string
+          request_count?: number
+          run_id?: string | null
+          source_operation: string
+          total_tokens?: number
+          trace_id?: string | null
+          workflow_run_id?: string | null
+        }
+        Update: {
+          cached_input_tokens?: number
+          company_id?: string
+          completeness?: string
+          created_at?: string
+          id?: string
+          idempotency_key?: string
+          input_tokens?: number
+          measured_at?: string
+          model?: string
+          output_tokens?: number
+          payload_digest?: string
+          provider?: string
+          reasoning_output_tokens?: number
+          recorded_by?: string
+          request_count?: number
+          run_id?: string | null
+          source_operation?: string
+          total_tokens?: number
+          trace_id?: string | null
+          workflow_run_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "provider_usage_events_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "provider_usage_events_workflow_run_id_company_id_fkey"
+            columns: ["workflow_run_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_runs"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
       }
       workflow_action_attempts: {
         Row: {
@@ -4029,6 +4593,10 @@ export type Database = {
       }
     }
     Functions: {
+      accept_company_invitation: {
+        Args: { p_token_digest: string }
+        Returns: Json
+      }
       acquire_workflow_control_parser_lease: {
         Args: { p_company_id: string }
         Returns: Json
@@ -4053,6 +4621,10 @@ export type Database = {
           p_request_hash: string
         }
         Returns: Json
+      }
+      bootstrap_company_owner: {
+        Args: { p_company_id: string; p_owner_user_id: string }
+        Returns: boolean
       }
       claim_due_email_deliveries: {
         Args: { p_lease_seconds?: number; p_limit?: number }
@@ -4095,6 +4667,7 @@ export type Database = {
         Args: { p_actor_id: string; p_company_id: string; p_payload: Json }
         Returns: Json
       }
+      create_company_with_owner: { Args: { p_name: string }; Returns: Json }
       create_workflow_binding_snapshot: {
         Args: { p_bindings: Json; p_company_id: string; p_workflow_id: string }
         Returns: Json
@@ -4202,6 +4775,20 @@ export type Database = {
         Args: { p_company_id: string; p_workflow_id: string }
         Returns: Json
       }
+      get_company_identity: { Args: { p_company_id: string }; Returns: Json }
+      get_company_invitation_resend_version: {
+        Args: { p_invitation_id: string }
+        Returns: number
+      }
+      get_company_usage_summary_v1: {
+        Args: {
+          p_company_id: string
+          p_period_end: string
+          p_period_start: string
+        }
+        Returns: Json
+      }
+      get_my_profile_identity: { Args: never; Returns: Json }
       get_registered_agent_execution_context_v1: {
         Args: {
           p_action_draft_id: string
@@ -4224,6 +4811,10 @@ export type Database = {
         Args: { minimum_role: string; target_company_id: string }
         Returns: boolean
       }
+      inspect_company_invitation: {
+        Args: { p_token_digest: string }
+        Returns: Json
+      }
       install_agent_workflow_version: {
         Args: {
           p_company_id: string
@@ -4233,6 +4824,17 @@ export type Database = {
         }
         Returns: Json
       }
+      issue_company_invitation: {
+        Args: {
+          p_company_id: string
+          p_expires_at: string
+          p_invitation_id: string
+          p_recipient_email: string
+          p_token_digest: string
+        }
+        Returns: Json
+      }
+      list_company_directory: { Args: { p_company_id: string }; Returns: Json }
       list_workflow_activity_v1: {
         Args: {
           p_before_created_at?: string
@@ -4295,9 +4897,18 @@ export type Database = {
         }
         Returns: Json
       }
+      preflight_account_deletion: { Args: never; Returns: Json }
+      purge_company_invitation_pii: {
+        Args: { p_before?: string }
+        Returns: number
+      }
       purge_terminal_email_delivery_pii: {
         Args: { p_before?: string }
         Returns: number
+      }
+      record_account_deletion_progress: {
+        Args: { p_error_code?: string; p_status: string; p_user_id: string }
+        Returns: boolean
       }
       record_agent_feedback_v1: {
         Args: { p_actor_id: string; p_company_id: string; p_payload: Json }
@@ -4372,6 +4983,23 @@ export type Database = {
           p_provider_email_id: string
           p_provider_event_id: string
           p_safe_reason?: string
+        }
+        Returns: Json
+      }
+      record_provider_usage_v1: {
+        Args: {
+          p_company_id: string
+          p_completeness: string
+          p_idempotency_key: string
+          p_measured_at: string
+          p_metrics: Json
+          p_model: string
+          p_provider: string
+          p_recorded_by: string
+          p_run_id?: string
+          p_source_operation: string
+          p_trace_id?: string
+          p_workflow_run_id?: string
         }
         Returns: Json
       }
@@ -4478,6 +5106,15 @@ export type Database = {
         Args: { p_company_id: string; p_lease_id: string }
         Returns: undefined
       }
+      resend_company_invitation: {
+        Args: {
+          p_expected_version: number
+          p_expires_at: string
+          p_invitation_id: string
+          p_token_digest: string
+        }
+        Returns: Json
+      }
       retrieve_agent_memory_v1: {
         Args: {
           p_as_of: string
@@ -4497,6 +5134,14 @@ export type Database = {
           p_expires_at: string
           p_reason: string
         }
+        Returns: Json
+      }
+      revoke_account_memberships_for_deletion: {
+        Args: { p_user_id: string }
+        Returns: number
+      }
+      revoke_company_invitation: {
+        Args: { p_invitation_id: string }
         Returns: Json
       }
       rollback_agent_workflow:
@@ -4577,6 +5222,15 @@ export type Database = {
         }
         Returns: Json
       }
+      transition_company_membership: {
+        Args: {
+          p_action: string
+          p_company_id: string
+          p_requested_role?: string
+          p_target_user_id: string
+        }
+        Returns: Json
+      }
       transition_workflow_control_request: {
         Args: {
           p_company_id: string
@@ -4584,6 +5238,34 @@ export type Database = {
           p_resolution_status: string
           p_workflow_item_id?: string
           p_workflow_run_id?: string
+        }
+        Returns: Json
+      }
+      update_company_identity: {
+        Args: {
+          p_company_id: string
+          p_expected_version: number
+          p_logo_path: string
+          p_name: string
+        }
+        Returns: Json
+      }
+      update_my_profile_identity: {
+        Args: {
+          p_avatar_path: string
+          p_display_name: string
+          p_expected_version: number
+          p_first_name: string
+          p_last_name: string
+          p_timezone: string
+        }
+        Returns: Json
+      }
+      update_my_profile_preferences: {
+        Args: {
+          p_expected_version: number
+          p_theme_accent: string
+          p_theme_mode: string
         }
         Returns: Json
       }

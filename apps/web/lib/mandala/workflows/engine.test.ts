@@ -280,7 +280,7 @@ describe("procurement fixture workflow", () => {
 })
 
 describe("workflow decisions and mock execution", () => {
-  it("requires an approval role and blocks system-agent self approval", () => {
+  it("requires named decision permissions and blocks system-agent decisions", () => {
     const store = new WorkflowMemoryStore()
     const result = runProcurementFixtureScenario({
       store,
@@ -311,7 +311,31 @@ describe("workflow decisions and mock execution", () => {
         actorId: "agent",
         actorRole: "approver",
       })
-    ).toThrow("System agents cannot self-approve")
+    ).toThrow("System agents cannot record workflow decisions")
+
+    expect(() =>
+      recordWorkflowDecision({
+        store,
+        companyId,
+        actionDraftId: result.draft!.id,
+        decision: "reject",
+        actorType: "user",
+        actorId: "viewer",
+        actorRole: "viewer",
+      })
+    ).toThrow("Actor is not allowed")
+
+    expect(() =>
+      recordWorkflowDecision({
+        store,
+        companyId,
+        actionDraftId: result.draft!.id,
+        decision: "request_rework",
+        actorType: "system_agent",
+        actorId: "agent",
+        actorRole: "approver",
+      })
+    ).toThrow("System agents cannot record workflow decisions")
   })
 
   it("requires warning acknowledgement before approving a warning-state recommendation", () => {
@@ -373,6 +397,18 @@ describe("workflow decisions and mock execution", () => {
     expect(decision.draft.status).toBe("approved")
     expect(decision.item.status).toBe("approved")
     expect(decision.executionToken).not.toBeNull()
+    expect(() =>
+      executeMockAction({
+        store,
+        companyId,
+        actionDraftId: decision.draft.id,
+        rawToken: decision.executionToken!.rawToken,
+        idempotencyKey: "viewer-cannot-execute",
+        actorUserId: "viewer",
+        actorRole: "viewer",
+        payload: editedPayload,
+      })
+    ).toThrow("Actor is not allowed to execute")
 
     expect(() =>
       executeMockAction({
@@ -382,6 +418,7 @@ describe("workflow decisions and mock execution", () => {
         rawToken: decision.executionToken!.rawToken,
         idempotencyKey: "approve-clean-reorder",
         actorUserId: userId,
+        actorRole: "approver",
         payload: originalPayload,
       })
     ).toThrow("Execution payload does not match")
@@ -393,6 +430,7 @@ describe("workflow decisions and mock execution", () => {
       rawToken: decision.executionToken!.rawToken,
       idempotencyKey: "approve-clean-reorder",
       actorUserId: userId,
+      actorRole: "approver",
       payload: editedPayload,
     })
 
@@ -407,6 +445,7 @@ describe("workflow decisions and mock execution", () => {
       rawToken: decision.executionToken!.rawToken,
       idempotencyKey: "approve-clean-reorder",
       actorUserId: userId,
+      actorRole: "approver",
       payload: editedPayload,
     })
 
@@ -422,6 +461,7 @@ describe("workflow decisions and mock execution", () => {
         rawToken: decision.executionToken!.rawToken,
         idempotencyKey: "approve-clean-reorder",
         actorUserId: userId,
+        actorRole: "approver",
         payload: { ...editedPayload, vendor: "Different vendor" },
       })
     ).toThrow("Idempotency key was already used")

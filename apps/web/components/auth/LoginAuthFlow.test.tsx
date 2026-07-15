@@ -621,4 +621,43 @@ describe("LoginAuthFlow", () => {
     expect(window.location.pathname).toBe("/login")
     expect(window.location.search).toBe("?error=session_missing")
   })
+
+  it("requires an explicit confirmation before replacing another session", async () => {
+    const previousFetch = globalThis.fetch
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ status: "provider_failed" }), {
+        status: 400,
+        headers: { "content-type": "application/json" },
+      })
+    )
+    globalThis.fetch = fetchMock
+
+    try {
+      render(
+        <LoginAuthFlow
+          initialFormMessage="Confirm before switching accounts."
+          initialSessionReplacementRequired
+        />
+      )
+
+      expect(
+        screen.getByRole("heading", { name: "Switch accounts?" })
+      ).toBeVisible()
+      fireEvent.click(screen.getByRole("button", { name: "Switch accounts" }))
+
+      await waitFor(() => {
+        expect(fetchMock).toHaveBeenCalledWith(
+          "/api/auth/session/replacement",
+          expect.objectContaining({ method: "POST" })
+        )
+      })
+      expect(
+        await screen.findByText(
+          "We couldn't switch accounts. Request a new sign-in link."
+        )
+      ).toBeVisible()
+    } finally {
+      globalThis.fetch = previousFetch
+    }
+  })
 })

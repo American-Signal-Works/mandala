@@ -39,6 +39,12 @@ export async function middleware(request: NextRequest) {
   const isAuthRoute = path.startsWith("/login") || path.startsWith("/sign-up")
   const isLoginSuccessRoute =
     path === "/login" && request.nextUrl.searchParams.get("auth") === "success"
+  const isSessionReplacementRoute =
+    isAuthRoute &&
+    request.nextUrl.searchParams.get("error") ===
+      "session_replacement_required"
+  const isInvitationAuthRoute =
+    isAuthRoute && request.nextUrl.searchParams.get("invitation") === "pending"
 
   if (isAppRoute && !user) {
     const url = new URL("/login", request.url)
@@ -46,7 +52,13 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(url)
   }
 
-  if (isAuthRoute && user && !isLoginSuccessRoute) {
+  if (
+    isAuthRoute &&
+    user &&
+    !isLoginSuccessRoute &&
+    !isSessionReplacementRoute &&
+    !isInvitationAuthRoute
+  ) {
     const url = new URL("/", request.url)
     url.pathname = "/"
     return NextResponse.redirect(url)

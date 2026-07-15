@@ -1,8 +1,15 @@
 import type { AuthCallbackMethod } from "@/lib/auth/callback"
 
 export const AUTH_SUCCESS_PATH = "/login?auth=success"
+export const INVITATION_COMPLETE_PATH = "/invitation/complete"
+export const AUTH_CONTINUATION_COOKIE = "mandala-auth-continuation"
+export const AUTH_CONTINUATION_COOKIE_PATH = "/callback"
+export const AUTH_CONTINUATION_MAX_AGE_SECONDS = 10 * 60
 
-const SAFE_POST_AUTH_PATHS = new Set([AUTH_SUCCESS_PATH])
+const SAFE_POST_AUTH_PATHS = new Set([
+  AUTH_SUCCESS_PATH,
+  INVITATION_COMPLETE_PATH,
+])
 
 export function getAuthCallbackUrl(
   nextPath = AUTH_SUCCESS_PATH,
@@ -22,8 +29,13 @@ export function getAuthCallbackUrl(
   return callbackUrl.toString()
 }
 
-export function getEmailRedirectTo() {
-  return getAuthCallbackUrl(AUTH_SUCCESS_PATH, "email")
+export function getEmailRedirectTo(nextPath = AUTH_SUCCESS_PATH) {
+  void nextPath
+  const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim()
+  const origin =
+    configuredSiteUrl ||
+    (typeof window === "undefined" ? "" : window.location.origin)
+  return new URL("/callback", origin.replace(/\/+$/, "")).toString()
 }
 
 export function getSafePostAuthPath(value: string | null | undefined) {

@@ -22,6 +22,7 @@ import {
 } from "@/lib/mandala/control-plane/queries"
 import { getCompanyMembership } from "@/lib/mandala/workflows"
 import { authenticateRequest } from "@/lib/supabase/request"
+import { createServerModelUsageRecorder } from "@/actions/admin/provider-usage"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -52,12 +53,12 @@ export async function POST(request: Request) {
       getReviewVersion: async (itemId) =>
         reviewVersionSchema.parse(
           (
-          await getWorkflowReview({
-            supabase: auth.supabase,
-            companyId: parsed.data.companyId,
-            itemId,
-            activityLimit: 1,
-          })
+            await getWorkflowReview({
+              supabase: auth.supabase,
+              companyId: parsed.data.companyId,
+              itemId,
+              activityLimit: 1,
+            })
           ).version
         ),
       answerQuestion: async (itemId, question) => {
@@ -68,24 +69,43 @@ export async function POST(request: Request) {
             itemId,
           })
         )
-        const answer = await answerWorkItemQuestion({
-          detail,
-          question,
-          modelContext: await loadWorkItemQuestionModelContext({
-            supabase: auth.supabase,
-            companyId: parsed.data.companyId,
-            itemId,
+        const answer = await answerWorkItemQuestion(
+          {
             detail,
-          }),
-        })
+            question,
+            modelContext: await loadWorkItemQuestionModelContext({
+              supabase: auth.supabase,
+              companyId: parsed.data.companyId,
+              itemId,
+              detail,
+            }),
+          },
+          {
+            recordUsage: createServerModelUsageRecorder({
+              companyId: parsed.data.companyId,
+              actorUserId: auth.user.id,
+              workflowRunId: detail.item.workflowRunId,
+              sourceOperation: "mandala.control.chat.question",
+            }),
+          }
+        )
         return answer.answer
       },
       parseCommand: async (phrase) =>
         (
-          await parseConversationalControlInput({
-            companyId: parsed.data.companyId,
-            phrase,
-          })
+          await parseConversationalControlInput(
+            {
+              companyId: parsed.data.companyId,
+              phrase,
+            },
+            {
+              recordUsage: createServerModelUsageRecorder({
+                companyId: parsed.data.companyId,
+                actorUserId: auth.user.id,
+                sourceOperation: "mandala.control.chat.command",
+              }),
+            }
+          )
         ).outcome,
     })
     return NextResponse.json(contextualChatResponseSchema.parse(result), {

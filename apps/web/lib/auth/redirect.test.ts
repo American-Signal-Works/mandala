@@ -16,7 +16,7 @@ describe("auth redirect helpers", () => {
     vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://preview.vercel.app/")
 
     expect(getEmailRedirectTo()).toBe(
-      "https://preview.vercel.app/callback?next=%2Flogin%3Fauth%3Dsuccess&method=email"
+      "https://preview.vercel.app/callback"
     )
   })
 
@@ -24,7 +24,7 @@ describe("auth redirect helpers", () => {
     vi.stubEnv("NEXT_PUBLIC_SITE_URL", "")
 
     expect(getEmailRedirectTo()).toBe(
-      "http://localhost:3000/callback?next=%2Flogin%3Fauth%3Dsuccess&method=email"
+      "http://localhost:3000/callback"
     )
   })
 

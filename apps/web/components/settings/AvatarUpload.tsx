@@ -1,53 +1,57 @@
-"use client";
-import { useRef, useState } from "react";
-import { Avatar, AvatarFallback, AvatarImage } from "@workspace/ui/components/avatar";
-import { Button } from "@workspace/ui/components/button";
-import { createClient } from "@/lib/supabase/browser";
-import { updateProfile } from "@/actions/settings";
-import { toast } from "sonner";
+"use client"
+import { useRef, useState } from "react"
+import {
+  Avatar,
+  AvatarFallback,
+  AvatarImage,
+} from "@workspace/ui/components/avatar"
+import { Button } from "@workspace/ui/components/button"
+import { toast } from "sonner"
 
 export function AvatarUpload({
   initialUrl,
   displayName,
+  expectedVersion,
+  onVersionChange,
 }: {
-  initialUrl: string | null;
-  displayName: string;
+  initialUrl: string | null
+  displayName: string
+  expectedVersion: number
+  onVersionChange: (version: number) => void
 }) {
-  const [url, setUrl] = useState<string | null>(initialUrl);
-  const [uploading, setUploading] = useState(false);
-  const inputRef = useRef<HTMLInputElement | null>(null);
+  const [url, setUrl] = useState<string | null>(initialUrl)
+  const [uploading, setUploading] = useState(false)
+  const inputRef = useRef<HTMLInputElement | null>(null)
 
   async function onPick(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploading(true);
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
     try {
-      const supabase = createClient();
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) {
-        toast.error("Sign in.");
-        return;
+      const formData = new FormData()
+      formData.set("file", file)
+      formData.set("expectedVersion", String(expectedVersion))
+      const response = await fetch("/api/settings/profile/avatar", {
+        method: "POST",
+        body: formData,
+      })
+      const result = (await response.json().catch(() => null)) as {
+        error?: string
+        signedUrl?: string
+        version?: number
+      } | null
+      if (!response.ok || !result?.signedUrl || !result.version) {
+        toast.error(avatarErrorMessage(result?.error))
+        return
       }
-      const safeName = file.name.replace(/[^a-zA-Z0-9.-]/g, "_");
-      const path = `${user.id}/${crypto.randomUUID()}-${safeName}`;
-      const { error: upErr } = await supabase.storage
-        .from("avatars")
-        .upload(path, file);
-      if (upErr) {
-        toast.error(upErr.message);
-        return;
-      }
-      const { data: signed } = await supabase.storage
-        .from("avatars")
-        .createSignedUrl(path, 60 * 60 * 24 * 365);
-      setUrl(signed?.signedUrl ?? null);
-      const result = await updateProfile({ avatar_path: path });
-      if (!result.ok) toast.error(result.error.message);
+      setUrl(result.signedUrl)
+      onVersionChange(result.version)
+      toast.success("Avatar updated.")
+    } catch {
+      toast.error("The avatar could not be updated. Try again.")
     } finally {
-      setUploading(false);
-      if (inputRef.current) inputRef.current.value = "";
+      setUploading(false)
+      if (inputRef.current) inputRef.current.value = ""
     }
   }
 
@@ -71,10 +75,25 @@ export function AvatarUpload({
       <input
         ref={inputRef}
         type="file"
-        accept="image/*"
+        accept="image/png,image/jpeg"
         className="hidden"
         onChange={onPick}
       />
     </div>
-  );
+  )
+}
+
+function avatarErrorMessage(code: string | undefined) {
+  if (code === "image_too_large") return "Choose an image smaller than 5 MB."
+  if (
+    code === "image_type_unsupported" ||
+    code === "image_signature_invalid" ||
+    code === "image_decode_failed"
+  ) {
+    return "Choose a valid PNG or JPEG image."
+  }
+  if (code === "profile_version_conflict") {
+    return "Your profile changed in another session. Refresh and try again."
+  }
+  return "The avatar could not be updated. Try again."
 }

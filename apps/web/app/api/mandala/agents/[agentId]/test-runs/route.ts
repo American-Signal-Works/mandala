@@ -12,6 +12,7 @@ import {
   getCompanyMembership,
 } from "@/lib/mandala/workflows"
 import { authenticateRequest } from "@/lib/supabase/request"
+import { createServerModelUsageRecorder } from "@/actions/admin/provider-usage"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -63,6 +64,13 @@ export async function POST(
       request: parsed.data,
       actorUserId: auth.user.id,
       clientSurface: auth.authMode === "bearer" ? "cli" : "web",
+      dependencies: {
+        recordUsage: createServerModelUsageRecorder({
+          companyId: parsed.data.companyId,
+          actorUserId: auth.user.id,
+          sourceOperation: "mandala.agent.synthetic_test",
+        }),
+      },
     })
     await recordAgentTestReadiness({
       supabase: auth.supabase,
