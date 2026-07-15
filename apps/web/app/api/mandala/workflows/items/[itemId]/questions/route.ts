@@ -8,6 +8,7 @@ import {
   WorkItemQuestionUnavailableError,
   answerWorkItemQuestion,
 } from "@/lib/mandala/control-plane/work-item-question"
+import { loadWorkItemQuestionModelContext } from "@/lib/mandala/control-plane/work-item-model-context"
 import {
   ControlPlaneQueryError,
   getWorkflowItemDetail,
@@ -62,6 +63,12 @@ export async function POST(
     const answer = await answerWorkItemQuestion({
       detail,
       question: parsed.data.question,
+      modelContext: await loadWorkItemQuestionModelContext({
+        supabase: auth.supabase,
+        companyId: parsed.data.companyId,
+        itemId: itemIdParsed.data,
+        detail,
+      }),
     })
     return NextResponse.json(workItemQuestionResponseSchema.parse(answer), {
       headers: { "cache-control": "private, no-store" },
@@ -74,10 +81,11 @@ export async function POST(
       return NextResponse.json({ error: "item_not_found" }, { status: 404 })
     }
     if (error instanceof WorkItemQuestionUnavailableError) {
+      const unsafe = modelSafetyResponse(error.errorClass)
       return NextResponse.json(
-        { error: "question_unavailable" },
+        { error: unsafe?.error ?? "question_unavailable" },
         {
-          status: 503,
+          status: unsafe?.status ?? 503,
           headers: { "cache-control": "private, no-store" },
         }
       )
@@ -90,6 +98,14 @@ export async function POST(
       }
     )
   }
+}
+
+function modelSafetyResponse(errorClass: string) {
+  if (errorClass === "sensitive_input")
+    return { error: "sensitive_model_input", status: 400 }
+  if (errorClass === "unsafe_model_output")
+    return { error: "unsafe_model_output", status: 502 }
+  return null
 }
 
 async function parseJson(request: Request): Promise<unknown> {

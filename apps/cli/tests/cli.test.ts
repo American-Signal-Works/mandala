@@ -799,6 +799,15 @@ function fakeApi(overrides: Partial<ControlApi> = {}) {
     deactivateAgent: vi.fn(async () => {
       throw new Error("Agent deactivation is not used by this test.")
     }),
+    pauseAgent: vi.fn(async () => {
+      throw new Error("Agent pause is not used by this test.")
+    }),
+    resumeAgent: vi.fn(async () => {
+      throw new Error("Agent resume is not used by this test.")
+    }),
+    disableAgent: vi.fn(async () => {
+      throw new Error("Agent disable is not used by this test.")
+    }),
     rollbackAgent: vi.fn(async () => {
       throw new Error("Agent rollback is not used by this test.")
     }),

@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
+import { workItemReviewDataSchema } from "@workspace/control-plane"
 import type { WorkflowSupabaseClient } from "@/lib/mandala/workflows"
 import {
   getWorkflowItemDetail,
@@ -73,6 +74,85 @@ describe("controlled workflow RPC adapters", () => {
     expect(rpc).toHaveBeenCalledWith(
       "get_workflow_review_v1",
       expect.objectContaining({ p_workflow_item_id: itemId })
+    )
+  })
+
+  it("adds a versioned manager-safe confidence explanation to a review", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: {
+        item: {
+          id: itemId,
+          workflowRunId: "31000000-0000-0000-0000-000000000001",
+          itemKey: "fixture-item",
+          itemType: "po_review",
+          title: "Review fixture PO",
+          status: "active",
+          priority: 50,
+          sourceType: "fixture",
+          ownerRole: "approver",
+          assigneeId: null,
+          dueAt: null,
+          draft: null,
+          nextActions: ["approve"],
+          createdAt: "2026-07-14T17:00:00.000Z",
+          updatedAt: "2026-07-14T18:00:00.000Z",
+        },
+        recordSnapshot: null,
+        recommendation: {
+          id: "34000000-0000-0000-0000-000000000001",
+          status: "ready_for_review",
+          rationaleSummary: "Order the reviewed quantity.",
+          warningState: "warn",
+          warnings: ["One source is unavailable."],
+          confidence: 0.76,
+          freshnessState: "fresh",
+          output: { quantity: 12 },
+          createdAt: "2026-07-14T18:00:00.000Z",
+        },
+        evidence: {
+          id: "35000000-0000-0000-0000-000000000001",
+          sourceRefs: [{ source: "inventory" }],
+          assumptions: [],
+          warnings: [],
+          evidence: [],
+          createdAt: "2026-07-14T18:00:00.000Z",
+        },
+        draft: null,
+        policy: {
+          minimumRole: "approver",
+          requireHumanApproval: true,
+          requireWarningAcknowledgement: true,
+        },
+        reviewState: "ready",
+        version: "a".repeat(64),
+        availableActions: ["approve"],
+        activity: { items: [], nextPage: null },
+      },
+      error: null,
+    })
+
+    const rawReview = await getWorkflowReview({
+      supabase: { rpc } as unknown as WorkflowSupabaseClient,
+      companyId,
+      itemId,
+      activityLimit: 20,
+    })
+    const review = workItemReviewDataSchema.parse({
+      ...rawReview,
+      activity: { items: rawReview.activity.items },
+    })
+
+    expect(review.recommendation?.confidenceMarker).toMatchObject({
+      version: "1.0.0",
+      score: 0.76,
+      sourceCoverage: "partial",
+      freshness: "fresh",
+      agreement: "mixed",
+      policyChecks: "passed",
+      missingInputs: ["supporting_evidence"],
+    })
+    expect(review.recommendation?.confidenceMarker.explanation).toContain(
+      "Source coverage is partial"
     )
   })
 

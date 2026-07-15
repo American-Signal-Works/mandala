@@ -1,11 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { runSyntheticAgentTest } from "@/lib/mandala/agents"
+import {
+  recordAgentTestReadiness,
+  runSyntheticAgentTest,
+} from "@/lib/mandala/agents"
 import { getCompanyMembership } from "@/lib/mandala/workflows"
 import { authenticateRequest } from "@/lib/supabase/request"
 import { POST } from "./route"
 
 vi.mock("@/lib/supabase/request", () => ({ authenticateRequest: vi.fn() }))
-vi.mock("@/lib/mandala/agents", () => ({ runSyntheticAgentTest: vi.fn() }))
+vi.mock("@/lib/mandala/agents", () => ({
+  recordAgentTestReadiness: vi.fn(),
+  runSyntheticAgentTest: vi.fn(),
+}))
 vi.mock("@/lib/mandala/workflows", async (importOriginal) => {
   const original =
     await importOriginal<typeof import("@/lib/mandala/workflows")>()
@@ -64,6 +70,9 @@ describe("POST /api/mandala/agents/[agentId]/test-runs", () => {
         actorUserId: userId,
         clientSurface: "cli",
       })
+    )
+    expect(recordAgentTestReadiness).toHaveBeenCalledWith(
+      expect.objectContaining({ companyId, agentId })
     )
   })
 })

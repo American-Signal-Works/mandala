@@ -3,13 +3,11 @@ import {
   executionRequestSchema,
   executionResponseSchema,
 } from "@workspace/control-plane"
+import { executeAgentActionFromServer } from "@/actions/admin/execute-agent-action"
 import { authenticateRequest } from "@/lib/supabase/request"
 import { deriveControlInputHash } from "@/lib/mandala/control-plane/input-hash"
 import type { Json } from "@/lib/supabase/types"
-import {
-  classifyWorkflowRpcError,
-  executeMockWorkflowActionRpc,
-} from "@/lib/mandala/workflows"
+import { classifyWorkflowRpcError } from "@/lib/mandala/workflows"
 
 export async function POST(request: Request) {
   const auth = await authenticateRequest(request)
@@ -26,7 +24,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const result = await executeMockWorkflowActionRpc({
+    const result = await executeAgentActionFromServer({
       supabase,
       companyId: parsed.data.companyId,
       actionDraftId: parsed.data.actionDraftId,
@@ -34,6 +32,7 @@ export async function POST(request: Request) {
       rawToken: parsed.data.rawToken,
       idempotencyKey: parsed.data.idempotencyKey,
       payload: parsed.data.payload as Json,
+      actorId: auth.user.id,
       inputHash:
         parsed.data.control?.inputHash ??
         deriveControlInputHash("execute_mock_action", {

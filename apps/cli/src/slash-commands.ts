@@ -20,6 +20,9 @@ export type SlashCommandName =
   | "/agent-test"
   | "/agent-activate"
   | "/agent-deactivate"
+  | "/agent-pause"
+  | "/agent-resume"
+  | "/agent-disable"
   | "/agent-versions"
   | "/agent-rollback"
   | "/inbox"
@@ -106,6 +109,9 @@ export type SlashCommandDefinition = {
     | "agent-test"
     | "agent-activate"
     | "agent-deactivate"
+    | "agent-pause"
+    | "agent-resume"
+    | "agent-disable"
     | "agent-versions"
     | "agent-rollback"
     | "fixtures"
@@ -235,6 +241,39 @@ export const slashCommands = [
     {
       argumentMode: "required",
       backendAction: "agent-deactivate",
+      paletteVisible: false,
+    }
+  ),
+  command(
+    "/agent-pause",
+    "agent",
+    "Pause new work while keeping the agent available to resume",
+    "/agent-pause <row-or-id>",
+    {
+      argumentMode: "required",
+      backendAction: "agent-pause",
+      paletteVisible: false,
+    }
+  ),
+  command(
+    "/agent-resume",
+    "agent",
+    "Run a fresh Sandbox readiness check and resume a paused agent",
+    "/agent-resume <row-or-id>",
+    {
+      argumentMode: "required",
+      backendAction: "agent-resume",
+      paletteVisible: false,
+    }
+  ),
+  command(
+    "/agent-disable",
+    "agent",
+    "Disable an agent until a deliberate later change",
+    "/agent-disable <row-or-id>",
+    {
+      argumentMode: "required",
+      backendAction: "agent-disable",
       paletteVisible: false,
     }
   ),

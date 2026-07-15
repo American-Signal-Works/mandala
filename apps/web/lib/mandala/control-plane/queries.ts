@@ -126,7 +126,11 @@ export async function getWorkflowReview(input: {
   itemId: string
   activityLimit: number
   activityPage?: ActivityPage
-}) {
+}): Promise<
+  Record<string, unknown> & {
+    activity: z.infer<typeof activityRpcResultSchema>
+  }
+> {
   const result = await callJsonRpc(input.supabase, "get_workflow_review_v1", {
     p_company_id: input.companyId,
     p_workflow_item_id: input.itemId,
@@ -137,7 +141,90 @@ export async function getWorkflowReview(input: {
   if (result.error) {
     throwControlPlaneRpcError(result.error, "review_failed", true)
   }
-  return sanitizePublicProjection(reviewRpcResultSchema.parse(result.data))
+  const safe = sanitizePublicProjection(
+    reviewRpcResultSchema.parse(result.data)
+  )
+  const enriched = withRecommendationConfidence(safe)
+  const activity = activityRpcResultSchema.parse(enriched.activity)
+  const review = workItemReviewDataSchema.parse({
+    ...enriched,
+    activity: { items: activity.items },
+  })
+  // Keep the database activity page shape here. The HTTP boundary converts
+  // `nextPage` into its signed `nextCursor` before parsing the public schema.
+  return { ...review, activity }
+}
+
+function withRecommendationConfidence(
+  review: Record<string, unknown>
+): Record<string, unknown> {
+  const recommendation = asRecord(review.recommendation)
+  if (!recommendation) return review
+  const evidence = asRecord(review.evidence)
+  const sourceCount = arrayLength(evidence?.sourceRefs)
+  const evidenceCount = arrayLength(evidence?.evidence)
+  const sourceCoverage =
+    sourceCount > 0 && evidenceCount > 0
+      ? "complete"
+      : sourceCount > 0 || evidenceCount > 0
+        ? "partial"
+        : "missing"
+  const freshness =
+    recommendation.freshnessState === "fresh" ||
+    recommendation.freshnessState === "stale"
+      ? recommendation.freshnessState
+      : "unknown"
+  const agreement =
+    recommendation.warningState === "blocked"
+      ? "conflicting"
+      : recommendation.warningState === "warn"
+        ? "mixed"
+        : recommendation.warningState === "pass" && sourceCoverage !== "missing"
+          ? "consistent"
+          : "unknown"
+  const policyChecks =
+    review.reviewState === "blocked"
+      ? "blocked"
+      : review.reviewState === "ready"
+        ? "passed"
+        : "attention"
+  const missingInputs = [
+    ...(sourceCount === 0 ? ["source_coverage"] : []),
+    ...(evidenceCount === 0 ? ["supporting_evidence"] : []),
+    ...(freshness === "unknown" ? ["freshness"] : []),
+    ...(policyChecks === "blocked" ? ["policy_clearance"] : []),
+  ]
+  const score =
+    typeof recommendation.confidence === "number"
+      ? recommendation.confidence
+      : null
+
+  return {
+    ...review,
+    recommendation: {
+      ...recommendation,
+      confidenceMarker: {
+        version: "1.0.0",
+        score,
+        sourceCoverage,
+        freshness,
+        agreement,
+        policyChecks,
+        missingInputs,
+        explanation: `Confidence ${score === null ? "is unavailable" : `is ${Math.round(score * 100)}%`}. Source coverage is ${sourceCoverage}; freshness is ${freshness}; source agreement is ${agreement}; policy checks are ${policyChecks}; missing inputs are ${missingInputs.length ? missingInputs.join(", ") : "none"}.`,
+      },
+    },
+  }
+}
+
+function asRecord(value: unknown): Record<string, unknown> | null {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
+}
+
+function arrayLength(value: unknown): number {
+  return Array.isArray(value) ? value.length : 0
 }
 
 export async function listWorkflowActivity(input: {

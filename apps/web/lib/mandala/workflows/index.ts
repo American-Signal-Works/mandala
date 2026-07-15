@@ -2,6 +2,7 @@ export * from "./engine";
 export * from "./hash";
 export * from "./schema";
 export * from "./persistence";
+export * from "./registered-execution";
 export * from "./fixtures/procurement";
 export * from "./fixtures/procurement-skill";
 export * from "./fixtures/procurement-workflow";

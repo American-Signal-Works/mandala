@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
+import type { WorkItemReviewData } from "@workspace/control-plane"
 import {
   ControlPlaneQueryError,
   getWorkflowReview,
@@ -144,7 +145,7 @@ describe("Cycle 0.0.4 controlled read routes", () => {
   })
 })
 
-function reviewFixture() {
+function reviewFixture(): Omit<WorkItemReviewData, "activity"> {
   return {
     item: {
       id: itemId,

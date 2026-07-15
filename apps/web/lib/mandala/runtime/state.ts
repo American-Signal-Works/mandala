@@ -110,8 +110,17 @@ export type RuntimeApprovalDecision = {
 
 export type RuntimeActionResult = {
   attemptId: string
-  status: "succeeded" | "failed"
+  status:
+    | "pending"
+    | "processing"
+    | "succeeded"
+    | "failed"
+    | "unknown"
+    | "reconciliation_required"
   output: Record<string, unknown>
+  code?: string
+  retryClass?: "none" | "retryable" | "terminal" | "unknown"
+  replayed?: boolean
 }
 
 export type RuntimeAuditEvent = {

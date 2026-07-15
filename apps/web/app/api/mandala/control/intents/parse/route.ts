@@ -126,10 +126,11 @@ export async function POST(request: Request) {
           langSmithTraceId: error.trace?.traceId,
           langSmithRunId: error.trace?.runId,
         }).catch(() => undefined)
+        const unsafe = modelSafetyResponse(error.errorClass)
         return NextResponse.json(
-          { error: "parser_unavailable" },
+          { error: unsafe?.error ?? "parser_unavailable" },
           {
-            status: 503,
+            status: unsafe?.status ?? 503,
             headers: { "cache-control": "private, no-store" },
           }
         )
@@ -166,6 +167,14 @@ export async function POST(request: Request) {
       leaseId: lease.leaseId,
     }).catch(() => undefined)
   }
+}
+
+function modelSafetyResponse(errorClass: string) {
+  if (errorClass === "sensitive_input")
+    return { error: "sensitive_model_input", status: 400 }
+  if (errorClass === "unsafe_model_output")
+    return { error: "unsafe_model_output", status: 502 }
+  return null
 }
 
 async function recordOutcome(input: {

@@ -12,6 +12,7 @@ import {
 } from "@workspace/control-plane"
 import { Client } from "langsmith"
 import { traceable } from "langsmith/traceable"
+import { modelTextSafetyViolation } from "./model-text-safety"
 
 const gatewayBaseUrl = "https://ai-gateway.vercel.sh/v1"
 const maxContextCharacters = 30_000
@@ -39,6 +40,11 @@ export type WorkItemQuestionDependencies = {
   createId?: () => string
 }
 
+export type WorkItemQuestionModelContext = {
+  projectedData: Record<string, unknown>
+  capabilityAliases: string[]
+}
+
 export class WorkItemQuestionUnavailableError extends Error {
   readonly code = "question_unavailable"
 
@@ -48,7 +54,9 @@ export class WorkItemQuestionUnavailableError extends Error {
       | "feature_disabled"
       | "invalid_model_output"
       | "provider_error"
-      | "trace_error",
+      | "sensitive_input"
+      | "trace_error"
+      | "unsafe_model_output",
     readonly model: string | null,
     readonly trace: { traceId: string; runId: string } | null = null
   ) {
@@ -58,9 +66,19 @@ export class WorkItemQuestionUnavailableError extends Error {
 }
 
 export async function answerWorkItemQuestion(
-  input: { detail: WorkItemDetail; question: string },
+  input: {
+    detail: WorkItemDetail
+    question: string
+    modelContext: WorkItemQuestionModelContext
+  },
   dependencies: WorkItemQuestionDependencies = {}
 ): Promise<WorkItemQuestionData> {
+  if (
+    modelTextSafetyViolation(input.question) ||
+    modelTextSafetyViolation(JSON.stringify(input.modelContext.projectedData))
+  ) {
+    throw new WorkItemQuestionUnavailableError("sensitive_input", null)
+  }
   const now = dependencies.now ?? Date.now
   const startedAt = now()
   const messages = questionMessages(input)
@@ -159,11 +177,11 @@ export async function answerWorkItemQuestion(
 function questionMessages(input: {
   detail: WorkItemDetail
   question: string
+  modelContext: WorkItemQuestionModelContext
 }): BaseMessage[] {
   const detail = input.detail
   const context = JSON.stringify({
     item: {
-      title: detail.item.title,
       type: detail.item.itemType,
       status: detail.item.status,
       priority: detail.item.priority,
@@ -171,37 +189,33 @@ function questionMessages(input: {
     },
     context: detail.contextPacket
       ? {
-          sources: detail.contextPacket.sources,
-          facts: detail.contextPacket.facts,
+          projectedData: input.modelContext.projectedData,
+          capabilityAliases: input.modelContext.capabilityAliases,
           freshnessState: detail.contextPacket.freshnessState,
-          warnings: detail.contextPacket.warnings,
+          warningCount: detail.contextPacket.warnings.length,
         }
       : null,
     recommendation: detail.recommendation
       ? {
           status: detail.recommendation.status,
-          rationale: detail.recommendation.rationaleSummary,
           warningState: detail.recommendation.warningState,
-          warnings: detail.recommendation.warnings,
+          warningCount: detail.recommendation.warnings.length,
           confidence: detail.recommendation.confidence,
           freshnessState: detail.recommendation.freshnessState,
-          output: detail.recommendation.output,
         }
       : null,
     evidence: detail.evidence
       ? {
-          sources: detail.evidence.sourceRefs,
-          assumptions: detail.evidence.assumptions,
-          warnings: detail.evidence.warnings,
-          evidence: detail.evidence.evidence,
+          sourceCount: detail.evidence.sourceRefs.length,
+          assumptionCount: detail.evidence.assumptions.length,
+          warningCount: detail.evidence.warnings.length,
+          evidenceCount: detail.evidence.evidence.length,
         }
       : null,
     draft: detail.draft
       ? {
           actionType: detail.draft.actionType,
           status: detail.draft.status,
-          payload: detail.draft.payload,
-          editPolicy: detail.draft.editPolicy,
         }
       : null,
   })
@@ -257,6 +271,9 @@ function parseAnswer(value: string, model: string | null): string {
   const parsed = workItemQuestionDataSchema.shape.answer.safeParse(value)
   if (!parsed.success) {
     throw new WorkItemQuestionUnavailableError("invalid_model_output", model)
+  }
+  if (modelTextSafetyViolation(parsed.data)) {
+    throw new WorkItemQuestionUnavailableError("unsafe_model_output", model)
   }
   return parsed.data
 }

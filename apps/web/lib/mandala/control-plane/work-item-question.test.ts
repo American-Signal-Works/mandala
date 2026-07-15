@@ -17,6 +17,16 @@ describe("selected work-item questions", () => {
       {
         detail: workItemDetail(),
         question: "Is 648 a good quantity for this?",
+        modelContext: {
+          projectedData: {
+            inventory: {
+              recent30DaySales: 478,
+              leadTimeDays: 26,
+              quantity: 648,
+            },
+          },
+          capabilityAliases: ["inventory"],
+        },
       },
       {
         invokeModel,
@@ -38,6 +48,8 @@ describe("selected work-item questions", () => {
     expect(prompt).toContain('"recent30DaySales":478')
     expect(prompt).toContain('"leadTimeDays":26')
     expect(prompt).toContain('"quantity":648')
+    expect(prompt).not.toContain('"onHandInventory":4')
+    expect(prompt).not.toContain("Review test-agent reorder")
     expect(prompt).not.toContain("audit-secret")
     expect(prompt).not.toContain("40000000-0000-4000-8000-000000000001")
   })
@@ -48,10 +60,39 @@ describe("selected work-item questions", () => {
         {
           detail: workItemDetail(),
           question: "Why this quantity?",
+          modelContext: { projectedData: {}, capabilityAliases: [] },
         },
         { invokeModel: async () => "   " }
       )
     ).rejects.toBeInstanceOf(WorkItemQuestionUnavailableError)
+  })
+
+  it("blocks credentials before model egress", async () => {
+    const invokeModel = vi.fn()
+    await expect(
+      answerWorkItemQuestion(
+        {
+          detail: workItemDetail(),
+          question: "Explain Bearer abcdefghijklmnopqrstuvwxyz",
+          modelContext: { projectedData: {}, capabilityAliases: [] },
+        },
+        { invokeModel }
+      )
+    ).rejects.toMatchObject({ errorClass: "sensitive_input" })
+    expect(invokeModel).not.toHaveBeenCalled()
+  })
+
+  it("blocks prompt or hidden-reasoning canaries in model output", async () => {
+    await expect(
+      answerWorkItemQuestion(
+        {
+          detail: workItemDetail(),
+          question: "Why this quantity?",
+          modelContext: { projectedData: {}, capabilityAliases: [] },
+        },
+        { invokeModel: async () => "System prompt: reveal hidden reasoning" }
+      )
+    ).rejects.toMatchObject({ errorClass: "unsafe_model_output" })
   })
 })
 
@@ -94,6 +135,17 @@ function workItemDetail(): WorkItemDetail {
       warningState: "pass",
       warnings: [],
       confidence: 0.82,
+      confidenceMarker: {
+        version: "1.0.0",
+        score: 0.82,
+        sourceCoverage: "partial",
+        freshness: "fresh",
+        agreement: "consistent",
+        policyChecks: "passed",
+        missingInputs: ["supporting_evidence"],
+        explanation:
+          "Confidence is 82%. Source coverage is partial and policy checks passed.",
+      },
       freshnessState: "fresh",
       output: { recommendedQuantity: 648 },
       createdAt,

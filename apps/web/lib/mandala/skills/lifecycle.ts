@@ -14,6 +14,38 @@ const installResultSchema = z
 const snapshotResultSchema = z
   .object({ bindingSnapshotId: z.string().uuid() })
   .passthrough()
+const runtimeStateSchema = z
+  .object({
+    runtimeStateId: z.string().uuid(),
+    companyId: z.string().uuid(),
+    workflowId: z.string().uuid(),
+    lifecycleState: z.enum([
+      "draft",
+      "ready",
+      "active",
+      "paused",
+      "disabled",
+      "invalid",
+      "archived",
+    ]),
+    stateVersion: z.number().int().positive(),
+    readinessStatus: z.enum([
+      "not_checked",
+      "checking",
+      "ready",
+      "blocked",
+      "invalidated",
+    ]),
+    readinessIssues: z.array(z.unknown()),
+    readinessHash: z.string().nullable(),
+    readinessCheckedAt: z.string().nullable(),
+    sampleRunId: z.string().uuid().nullable(),
+    bindingSnapshotId: z.string().uuid().nullable(),
+    updatedAt: z.string(),
+  })
+  .strict()
+
+export type AgentRuntimeState = z.infer<typeof runtimeStateSchema>
 
 export async function installAgentWorkflowVersion(input: {
   supabase: WorkflowSupabaseClient
@@ -72,7 +104,14 @@ export async function listAgentSummaries(input: {
   if (error) throw new Error(error.message)
   if (activationError) throw new Error(activationError.message)
   const activeIds = new Set((activations ?? []).map((row) => row.workflow_id))
-  return (workflows ?? []).map((row) => mapAgentRow(row, activeIds.has(row.id)))
+  const runtimeStates = await Promise.all(
+    (workflows ?? []).map((row) =>
+      getAgentRuntimeState({ ...input, agentId: row.id }).catch(() => null)
+    )
+  )
+  return (workflows ?? []).map((row, index) =>
+    mapAgentRow(row, activeIds.has(row.id), runtimeStates[index] ?? null)
+  )
 }
 
 export async function getAgentSummary(input: {
@@ -100,7 +139,40 @@ export async function getAgentSummary(input: {
   ])
   if (error) throw new Error(error.message)
   if (activationError) throw new Error(activationError.message)
-  return mapAgentRow(workflow, Boolean(activation))
+  const runtimeState = await getAgentRuntimeState(input).catch(() => null)
+  return mapAgentRow(workflow, Boolean(activation), runtimeState)
+}
+
+export async function getAgentRuntimeState(input: {
+  supabase: WorkflowSupabaseClient
+  companyId: string
+  agentId: string
+}): Promise<AgentRuntimeState> {
+  const { data, error } = await invokeRpc(input.supabase, "get_agent_runtime_state_v1", {
+    p_company_id: input.companyId,
+    p_workflow_id: input.agentId,
+  })
+  if (error) throw new Error(error.message)
+  return runtimeStateSchema.parse(data)
+}
+
+export async function transitionAgentWorkflowLifecycle(input: {
+  supabase: WorkflowSupabaseClient
+  companyId: string
+  agentId: string
+  transition: "activate" | "pause" | "resume" | "disable"
+  expectedVersion: number
+  reason: string
+}): Promise<AgentSummary> {
+  const { error } = await invokeRpc(input.supabase, "transition_agent_lifecycle_v1", {
+    p_company_id: input.companyId,
+    p_workflow_id: input.agentId,
+    p_transition: input.transition,
+    p_expected_version: input.expectedVersion,
+    p_reason: input.reason,
+  })
+  if (error) throw new Error(error.message)
+  return getAgentSummary(input)
 }
 
 export async function activateAgentWorkflow(input: {
@@ -189,7 +261,12 @@ export async function rollbackAgentWorkflow(input: {
   companyId: string
   agentId: string
   version: string
+  expectedVersion: number
+  reason: string
 }): Promise<AgentSummary> {
+  const currentState = await getAgentRuntimeState(input)
+  if (currentState.stateVersion !== input.expectedVersion)
+    throw new Error("stale_agent_state")
   const current = await loadWorkflowManifest(input)
   const { data: target, error: targetError } = await input.supabase
     .from("agent_workflows")
@@ -210,6 +287,8 @@ export async function rollbackAgentWorkflow(input: {
     p_workflow_id: target.id,
     p_binding_snapshot_id: bindingSnapshotId,
     p_expected_current_workflow_id: input.agentId,
+    p_expected_state_version: input.expectedVersion,
+    p_reason: input.reason,
   })
   if (error) throw new Error(error.message)
   return getAgentSummary({ ...input, agentId: target.id })
@@ -233,7 +312,8 @@ async function loadWorkflowManifest(input: {
 
 function mapAgentRow(
   row: DatabaseAgentWorkflowRow,
-  active: boolean
+  active: boolean,
+  runtimeState: AgentRuntimeState | null = null
 ): AgentSummary {
   const manifest = row.spec as unknown as CompiledAgentManifest
   const diagnosticObject = asRecord(row.compiler_diagnostics)
@@ -247,12 +327,13 @@ function mapAgentRow(
     workflowType: row.workflow_type,
     name: row.name,
     version: row.version,
-    status: active ? "active" : "draft",
+    status: runtimeState?.lifecycleState ?? (active ? "active" : "draft"),
     skillSchemaVersion: manifest.schemaVersion ?? "mandala.ai/v1",
     compilerVersion: row.compiler_version ?? manifest.compilerVersion,
     skillDigest: row.skill_source_hash,
     manifestDigest: manifest.manifestDigest ?? row.compiled_manifest_hash,
-    active,
+    stateVersion: runtimeState?.stateVersion ?? 1,
+    active: runtimeState ? runtimeState.lifecycleState === "active" : active,
     capabilities: (manifest.capabilityBindings ?? []).map((binding) => ({
       id: binding.id,
       alias: binding.alias,
@@ -265,6 +346,18 @@ function mapAgentRow(
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   })
+}
+
+function invokeRpc(
+  supabase: WorkflowSupabaseClient,
+  functionName: string,
+  args: Record<string, unknown>
+) {
+  const rpc = supabase.rpc.bind(supabase) as unknown as (
+    name: string,
+    parameters: Record<string, unknown>
+  ) => PromiseLike<{ data: unknown; error: { message: string } | null }>
+  return rpc(functionName, args)
 }
 
 type DatabaseAgentWorkflowRow =

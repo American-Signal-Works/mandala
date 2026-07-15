@@ -15,6 +15,8 @@ import {
   controlRequestTransitionResponseSchema,
   controlParseRequestSchema,
   controlParseResponseSchema,
+  contextualChatRequestSchema,
+  contextualChatResponseSchema,
   decisionRequestSchema,
   decisionResponseSchema,
   executionRequestSchema,
@@ -39,6 +41,8 @@ import {
   type ControlRequestTransitionRequest,
   type ControlParseData,
   type ControlParseRequest,
+  type ContextualChatRequest,
+  type ContextualChatResponse,
   type DecisionData,
   type DecisionRequest,
   type ExecutionData,
@@ -77,6 +81,18 @@ export interface ControlApi {
     agentId: string,
     request: AgentActionRequest
   ): Promise<AgentActionData>
+  pauseAgent(
+    agentId: string,
+    request: AgentActionRequest
+  ): Promise<AgentActionData>
+  resumeAgent(
+    agentId: string,
+    request: AgentActionRequest
+  ): Promise<AgentActionData>
+  disableAgent(
+    agentId: string,
+    request: AgentActionRequest
+  ): Promise<AgentActionData>
   rollbackAgent(
     agentId: string,
     request: AgentActionRequest
@@ -102,6 +118,9 @@ export interface ControlApi {
   ): Promise<ExecutionTokenData>
   execute(request: ExecutionRequest): Promise<ExecutionData>
   parseControlIntent(request: ControlParseRequest): Promise<ControlParseData>
+  contextualChat?(
+    request: ContextualChatRequest
+  ): Promise<ContextualChatResponse>
   recordControlRequest(
     request: ControlRequestCreateRequest
   ): Promise<{ request: Record<string, unknown> & { id: string } }>
@@ -178,6 +197,42 @@ export class ApiClient implements ControlApi {
     return this.agentActionRequest(
       agentId,
       "deactivate",
+      agentActionResponseSchema,
+      agentActionRequestSchema.parse(request)
+    )
+  }
+
+  pauseAgent(
+    agentId: string,
+    request: AgentActionRequest
+  ): Promise<AgentActionData> {
+    return this.agentActionRequest(
+      agentId,
+      "pause",
+      agentActionResponseSchema,
+      agentActionRequestSchema.parse(request)
+    )
+  }
+
+  resumeAgent(
+    agentId: string,
+    request: AgentActionRequest
+  ): Promise<AgentActionData> {
+    return this.agentActionRequest(
+      agentId,
+      "resume",
+      agentActionResponseSchema,
+      agentActionRequestSchema.parse(request)
+    )
+  }
+
+  disableAgent(
+    agentId: string,
+    request: AgentActionRequest
+  ): Promise<AgentActionData> {
+    return this.agentActionRequest(
+      agentId,
+      "disable",
       agentActionResponseSchema,
       agentActionRequestSchema.parse(request)
     )
@@ -299,6 +354,19 @@ export class ApiClient implements ControlApi {
         body: controlParseRequestSchema.parse(request),
       }
     ) as Promise<ControlParseData>
+  }
+
+  contextualChat(
+    request: ContextualChatRequest
+  ): Promise<ContextualChatResponse> {
+    return this.request(
+      "/api/mandala/control/chat",
+      contextualChatResponseSchema,
+      {
+        method: "POST",
+        body: contextualChatRequestSchema.parse(request),
+      }
+    )
   }
 
   recordControlRequest(

@@ -1,10 +1,13 @@
+import { randomUUID } from "node:crypto"
 import { readFile } from "node:fs/promises"
 import type { Readable, Writable } from "node:stream"
 import type {
   AgentSummary,
   AgentValidateResponse,
+  ControlIntent,
   WorkItemDetail,
 } from "@workspace/control-plane"
+import { controlIntentSchema } from "@workspace/control-plane"
 import { ApiClient, type ControlApi } from "./api-client.js"
 import { loginWithMagicLink, SessionManager } from "./auth.js"
 import type { CliDependencies } from "./cli.js"
@@ -52,6 +55,13 @@ import {
 } from "./tui-app.js"
 
 type ExecuteCliCommand = typeof executeCliCommand
+type AgentLifecycleUiAction =
+  | "activate"
+  | "deactivate"
+  | "pause"
+  | "resume"
+  | "disable"
+  | "rollback"
 
 export type TuiDependencies = CliDependencies & {
   execute?: ExecuteCliCommand
@@ -215,6 +225,7 @@ class TuiSession {
   private readonly execute: ExecuteCliCommand
   private readonly io: TuiSessionIo
   private readonly confirm: ConfirmMutation
+  private readonly conversationId = randomUUID()
 
   constructor(input: {
     cliDependencies: CliDependencies
@@ -335,6 +346,21 @@ class TuiSession {
       return
     }
 
+    const contextual = await this.contextualConversation(input)
+    if (contextual) {
+      if (contextual.route === "command") {
+        this.writeConversationResult(
+          await this.runCommand(contextualCommandArgs(contextual.command)),
+          input
+        )
+      } else if (contextual.message) {
+        this.write(
+          renderAssistantMessage(contextual.message, this.renderOptions)
+        )
+      }
+      return
+    }
+
     if (this.selectedItem && isReadOnlyQuestion(input)) {
       this.writeConversationResult(
         await this.runCommand([
@@ -350,6 +376,31 @@ class TuiSession {
     }
 
     this.writeConversationResult(await this.runCommand(["chat", input]), input)
+  }
+
+  private async contextualConversation(input: string) {
+    if (!this.currentCompanyId) return undefined
+    const api = this.getAgentApi()
+    if (!api.contextualChat) return undefined
+    try {
+      const contextual = await api.contextualChat({
+        companyId: this.currentCompanyId,
+        input,
+        selectedItemId: this.selectedItem?.id ?? null,
+        expectedReviewVersion: this.selectedItem?.reviewVersion ?? null,
+        conversationId: this.conversationId,
+      })
+      if (this.selectedItem && contextual.reviewVersion) {
+        this.selectedItem = {
+          ...this.selectedItem,
+          reviewVersion: contextual.reviewVersion,
+        }
+        this.notifySnapshot()
+      }
+      return contextual
+    } catch {
+      return undefined
+    }
   }
 
   clearState(): void {
@@ -422,6 +473,18 @@ class TuiSession {
       case "/agent-deactivate":
         await this.changeAgentStatus(
           definition.command === "/agent-activate" ? "activate" : "deactivate",
+          args,
+          definition.usage
+        )
+        return
+      case "/agent-pause":
+      case "/agent-resume":
+      case "/agent-disable":
+        await this.changeAgentStatus(
+          definition.command.slice("/agent-".length) as Exclude<
+            AgentLifecycleUiAction,
+            "rollback"
+          >,
           args,
           definition.usage
         )
@@ -803,7 +866,7 @@ class TuiSession {
   }
 
   private async changeAgentStatus(
-    action: "activate" | "deactivate",
+    action: Exclude<AgentLifecycleUiAction, "rollback">,
     args: string[],
     usage: string
   ): Promise<void> {
@@ -872,15 +935,27 @@ class TuiSession {
         })
       if (agent.active)
         choices.push({
-          value: "deactivate",
-          label: "Deactivate",
-          description: "Stop this agent from starting new work",
+          value: "pause",
+          label: "Pause",
+          description: "Stop new work while keeping this version resumable",
+        })
+      else if (agent.status === "paused")
+        choices.push({
+          value: "resume",
+          label: "Resume",
+          description: "Run a fresh Sandbox readiness check before new work",
         })
       else if (agent.status !== "archived" && !blockers)
         choices.push({
           value: "activate",
           label: "Activate",
           description: "Allow this validated version to start new work",
+        })
+      if (!["archived", "disabled"].includes(agent.status))
+        choices.push({
+          value: "disable",
+          label: "Disable",
+          description: "Block this agent until a deliberate later change",
         })
       if (agent.status !== "archived")
         choices.push({
@@ -916,8 +991,15 @@ class TuiSession {
           )) ?? agent
         continue
       }
-      if (selected === "activate" || selected === "deactivate") {
-        agent = (await this.runAgentLifecycleAction(agent, selected)) ?? agent
+      if (
+        selected === "activate" ||
+        selected === "deactivate" ||
+        selected === "pause" ||
+        selected === "resume" ||
+        selected === "disable"
+      ) {
+        agent =
+          (await this.runAgentLifecycleAction(agent, selected)) ?? agent
       }
     }
   }
@@ -931,7 +1013,7 @@ class TuiSession {
 
   private async runAgentLifecycleAction(
     agent: AgentSummary,
-    action: "activate" | "deactivate" | "rollback",
+    action: AgentLifecycleUiAction,
     version?: string
   ): Promise<AgentSummary | undefined> {
     const confirmed = await this.confirmAgentLifecycle(agent, action, version)
@@ -947,6 +1029,7 @@ class TuiSession {
     const api = this.getAgentApi()
     const request = {
       companyId: this.requireCompanyId(),
+      expectedVersion: agent.stateVersion,
       reason: "Confirmed in the Mandala terminal.",
       ...(version ? { version } : {}),
     }
@@ -955,7 +1038,13 @@ class TuiSession {
         ? await api.activateAgent(agent.id, request)
         : action === "deactivate"
           ? await api.deactivateAgent(agent.id, request)
-          : await api.rollbackAgent(agent.id, request)
+          : action === "pause"
+            ? await api.pauseAgent(agent.id, request)
+            : action === "resume"
+              ? await api.resumeAgent(agent.id, request)
+              : action === "disable"
+                ? await api.disableAgent(agent.id, request)
+                : await api.rollbackAgent(agent.id, request)
     this.write(
       renderAgentLifecycleResult(result.agent, action, this.renderOptions)
     )
@@ -964,7 +1053,7 @@ class TuiSession {
 
   private async confirmAgentLifecycle(
     agent: AgentSummary,
-    action: "activate" | "deactivate" | "rollback",
+    action: AgentLifecycleUiAction,
     version?: string
   ): Promise<boolean> {
     const effect = agentLifecycleEffect(action, agent, version)
@@ -1625,6 +1714,17 @@ class TuiSession {
         "The canonical work item response is incomplete."
       )
     }
+    let reviewVersion: string | undefined
+    try {
+      reviewVersion = (
+        await this.getAgentApi().getWorkItemReview(
+          this.currentCompanyId,
+          id
+        )
+      ).version
+    } catch {
+      reviewVersion = undefined
+    }
     this.selectedItem = {
       companyId: this.currentCompanyId,
       id,
@@ -1632,6 +1732,7 @@ class TuiSession {
       nextAction: nextActionForDetail(detail),
       owner: workItemOwner(item),
       priority: priorityLabel(item?.priority),
+      reviewVersion,
       source: workItemSource(item, detail),
       status,
       title,
@@ -2063,6 +2164,43 @@ class TuiSession {
   }
 }
 
+function contextualCommandArgs(value: unknown): string[] {
+  const parsed = controlIntentSchema.safeParse(value)
+  if (!parsed.success) {
+    throw new CliError(
+      "invalid_intent",
+      "The server returned an invalid typed command. Nothing was changed."
+    )
+  }
+  return explicitCommandArgs(parsed.data)
+}
+
+function explicitCommandArgs(intent: ControlIntent): string[] {
+  switch (intent.kind) {
+    case "run_fixture":
+      return ["workflow", "fixture", "run", intent.scenarioId]
+    case "list_work_items":
+      return intent.status
+        ? ["work", "list", "--status", intent.status]
+        : ["work", "list"]
+    case "inspect_work_item":
+      return ["work", "show", intent.itemId]
+    case "execute_mock_action":
+      return ["work", "execute", intent.itemId]
+    case "record_decision": {
+      const action =
+        intent.decision === "request_rework" ? "rework" : intent.decision
+      const args = ["work", action, intent.itemId]
+      for (const patch of intent.patches ?? []) {
+        args.push("--set", `${patch.pointer}=${JSON.stringify(patch.value)}`)
+      }
+      if (intent.reason) args.push("--reason", intent.reason)
+      if (intent.warningsAcknowledged) args.push("--ack-warnings")
+      return args
+    }
+  }
+}
+
 type AgentTestRunResult = Awaited<ReturnType<ControlApi["testAgent"]>>
 
 function renderAgentList(
@@ -2202,15 +2340,19 @@ function renderAgentTestResult(
 
 function renderAgentLifecycleResult(
   agent: AgentSummary,
-  action: "activate" | "deactivate" | "rollback",
+  action: AgentLifecycleUiAction,
   options: RenderOptions
 ): string {
   const message =
     action === "activate"
       ? `${agent.name} is active and can start new work.`
-      : action === "deactivate"
-        ? `${agent.name} is inactive and will not start new work.`
-        : `${agent.name} was restored to version ${agent.version}.`
+      : action === "deactivate" || action === "pause"
+        ? `${agent.name} is paused and will not start new work.`
+        : action === "resume"
+          ? `${agent.name} is active again after a readiness check.`
+          : action === "disable"
+            ? `${agent.name} is disabled and cannot start work.`
+            : `${agent.name} was restored to version ${agent.version}.`
   return renderAssistantMessage(message, options)
 }
 
@@ -2254,6 +2396,12 @@ function agentStatusLabel(agent: AgentSummary): string {
   switch (agent.status) {
     case "draft":
       return "Draft"
+    case "ready":
+      return "Ready"
+    case "paused":
+      return "Paused"
+    case "disabled":
+      return "Disabled"
     case "inactive":
       return "Inactive"
     case "archived":
@@ -2314,23 +2462,30 @@ function readableAgentRunStatus(status: AgentTestRunResult["status"]): string {
 }
 
 function agentLifecycleEffect(
-  action: "activate" | "deactivate" | "rollback",
+  action: AgentLifecycleUiAction,
   agent: AgentSummary,
   version?: string
 ): string {
   if (action === "activate")
     return "This version may start new work in this workspace."
-  if (action === "deactivate")
+  if (action === "deactivate" || action === "pause")
     return "No new work will start. Existing history is preserved."
+  if (action === "resume")
+    return "A fresh Sandbox run checks readiness and current bindings before new work resumes."
+  if (action === "disable")
+    return "New and queued work stays blocked until a deliberate later change."
   return `Restore version ${version ?? "selected"} instead of version ${agent.version}.`
 }
 
 function agentLifecycleActionLabel(
-  action: "activate" | "deactivate" | "rollback",
+  action: AgentLifecycleUiAction,
   version?: string
 ): string {
   if (action === "activate") return "Activate agent"
   if (action === "deactivate") return "Deactivate agent"
+  if (action === "pause") return "Pause agent"
+  if (action === "resume") return "Resume agent"
+  if (action === "disable") return "Disable agent"
   return `Restore version ${version ?? "selected"}`
 }
 
