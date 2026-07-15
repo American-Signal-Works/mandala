@@ -110,6 +110,7 @@ describe("company authorization", () => {
     ["edit", "workflow.decision.edit"],
     ["reject", "workflow.decision.reject"],
     ["request_rework", "workflow.decision.request_rework"],
+    ["resolve", "workflow.decision.approve"],
   ] as const)("maps %s to its named permission", (decision, permission) => {
     expect(permissionForWorkflowDecision(decision)).toBe(permission)
   })

@@ -568,6 +568,10 @@ BEGIN
     RAISE EXCEPTION 'membership_management_forbidden' USING ERRCODE = '42501';
   END IF;
 
+  IF p_action = 'remove' AND actor_role <> 'owner' THEN
+    RAISE EXCEPTION 'owner_permission_required' USING ERRCODE = '42501';
+  END IF;
+
   SELECT membership.*
   INTO target_membership
   FROM public.company_memberships membership

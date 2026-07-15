@@ -205,8 +205,11 @@ describe("Mandala workflow API routes", () => {
     const response = await recordDecision(
       jsonRequest("/decisions", {
         companyId,
+        workItemId: itemId,
         actionDraftId: draftId,
         decision: "reject",
+        expectedVersion: "v1",
+        idempotencyKey: "web:00000000-0000-4000-8000-000000000009",
         reason: "Not needed",
       })
     )
@@ -233,8 +236,11 @@ describe("Mandala workflow API routes", () => {
     const response = await recordDecision(
       jsonRequest("/decisions", {
         companyId,
+        workItemId: itemId,
         actionDraftId: draftId,
         decision: "approve",
+        expectedVersion: "v1",
+        idempotencyKey: "web:00000000-0000-4000-8000-000000000010",
       })
     )
 

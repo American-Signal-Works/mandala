@@ -44,8 +44,7 @@ export async function POST(request: Request) {
     )
   }
 
-  const permissionFailure = companyPermissionFailure(
-    await authorizeCompanyPermission({
+  const authorization = await authorizeCompanyPermission({
       supabase: auth.supabase,
       companyId: parsed.data.companyId,
       userId: auth.user.id,
@@ -54,7 +53,7 @@ export async function POST(request: Request) {
           ? "company.context.read"
           : "membership.manage",
     })
-  )
+  const permissionFailure = companyPermissionFailure(authorization)
   if (permissionFailure) {
     return NextResponse.json(
       { error: permissionFailure.code },
@@ -62,6 +61,16 @@ export async function POST(request: Request) {
         status: permissionFailure.status,
         headers: privateHeaders,
       }
+    )
+  }
+
+  if (
+    parsed.data.action === "remove" &&
+    (authorization.effect !== "allow" || authorization.role !== "owner")
+  ) {
+    return NextResponse.json(
+      { error: "forbidden" },
+      { status: 403, headers: privateHeaders }
     )
   }
 

@@ -11,6 +11,11 @@ import { ChatOpenAI } from "@langchain/openai"
 import { Client } from "langsmith"
 import { traceable } from "langsmith/traceable"
 import { z } from "zod"
+import {
+  invokeModelWithUsage,
+  UsageServiceError,
+  type ModelUsageRecorder,
+} from "@/lib/mandala/usage"
 import type { CompiledAgentManifest } from "../../skills/compiler"
 import {
   findSyntheticCandidates,
@@ -57,6 +62,7 @@ export type SyntheticAgentDependencies = {
   environment?: Record<string, string | undefined>
   invokeModel?: (messages: BaseMessage[]) => Promise<AIMessage>
   createId?: () => string
+  recordUsage?: ModelUsageRecorder
 }
 
 export class SyntheticProcurementAgentError extends Error {
@@ -173,6 +179,7 @@ async function runSyntheticModelAgent(input: {
       providerOptions: { gateway: { zeroDataRetention: true } },
     },
   }).bindTools(agentTools)
+  let invocationSequence = 0
 
   const traced = traceable(
     async () =>
@@ -182,7 +189,18 @@ async function runSyntheticModelAgent(input: {
         humanPrompt: input.humanPrompt,
         requireSafeSelection: input.requireSafeSelection,
         invokeModel: async (messages) => {
-          const response = await model.invoke(messages)
+          invocationSequence += 1
+          const invocationId = `${traceId}:${invocationSequence}`
+          const response = await invokeModelWithUsage({
+            invoke: () => model.invoke(messages),
+            recordUsage: dependencies.recordUsage,
+            usage: {
+              invocationId,
+              providerModel: configuration.model,
+              traceId,
+              runId: traceId,
+            },
+          })
           if (!AIMessage.isInstance(response)) {
             throw new SyntheticProcurementAgentError("model_error")
           }
@@ -214,6 +232,7 @@ async function runSyntheticModelAgent(input: {
   try {
     loop = await traced()
   } catch (error) {
+    if (error instanceof UsageServiceError) throw error
     if (error instanceof SyntheticProcurementAgentError) throw error
     throw new SyntheticProcurementAgentError("model_error")
   }
@@ -419,16 +438,14 @@ function searchSyntheticProducts(
 ): SyntheticCommerceProduct[] {
   const score = (product: SyntheticCommerceProduct) => {
     const gap =
-      product.reorderPoint -
-      (product.inventoryOnHand + product.inboundUnits)
+      product.reorderPoint - (product.inventoryOnHand + product.inboundUnits)
     if (input.sort === "sales_spike") return product.recentSpikeMultiplier
     if (input.sort === "largest_gap") return gap
     return gap * Math.max(1, product.recentSpikeMultiplier)
   }
   return dataset.products
     .filter(
-      (product) =>
-        product.recentSpikeMultiplier >= input.minimumSpikeMultiplier
+      (product) => product.recentSpikeMultiplier >= input.minimumSpikeMultiplier
     )
     .sort((left, right) => score(right) - score(left))
     .slice(0, input.limit)

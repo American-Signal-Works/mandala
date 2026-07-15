@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(64);
+SELECT plan(65);
 
 INSERT INTO auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -422,6 +422,18 @@ SELECT throws_ok(
   '42501',
   NULL,
   'admins cannot manage owner memberships'
+);
+
+SELECT throws_ok(
+  $$SELECT public.transition_company_membership(
+      '72000000-0000-0000-0000-000000000001',
+      '71000000-0000-0000-0000-000000000005',
+      'remove',
+      NULL
+    )$$,
+  '42501',
+  NULL,
+  'admins cannot remove members'
 );
 
 RESET ROLE;

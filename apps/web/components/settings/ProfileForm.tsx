@@ -1,8 +1,13 @@
-"use client";
-import { useState, useTransition } from "react";
-import { Button } from "@workspace/ui/components/button";
-import { Input } from "@workspace/ui/components/input";
-import { Field, FieldGroup, FieldLabel, FieldDescription } from "@workspace/ui/components/field";
+"use client"
+import { useState, useTransition } from "react"
+import { Button } from "@workspace/ui/components/button"
+import { Input } from "@workspace/ui/components/input"
+import {
+  Field,
+  FieldGroup,
+  FieldLabel,
+  FieldDescription,
+} from "@workspace/ui/components/field"
 import {
   Combobox,
   ComboboxInput,
@@ -10,41 +15,60 @@ import {
   ComboboxList,
   ComboboxItem,
   ComboboxEmpty,
-} from "@workspace/ui/components/combobox";
-import { toast } from "sonner";
-import { updateProfile } from "@/actions/settings";
-import { AvatarUpload } from "./AvatarUpload";
+} from "@workspace/ui/components/combobox"
+import { toast } from "sonner"
+import { updateProfile } from "@/actions/settings"
+import { AvatarUpload } from "./AvatarUpload"
 
-const TIMEZONES: string[] =
-  Intl.supportedValuesOf?.("timeZone") ??
-  ["UTC", "America/New_York", "America/Los_Angeles", "Europe/London", "Asia/Tokyo"];
+const TIMEZONES: string[] = Intl.supportedValuesOf?.("timeZone") ?? [
+  "UTC",
+  "America/New_York",
+  "America/Los_Angeles",
+  "Europe/London",
+  "Asia/Tokyo",
+]
 
 export function ProfileForm({
   initialName,
   initialTimezone,
   avatarUrl,
+  initialVersion,
 }: {
-  initialName: string;
-  initialTimezone: string;
-  avatarUrl: string | null;
+  initialName: string
+  initialTimezone: string
+  avatarUrl: string | null
+  initialVersion: number
 }) {
-  const [name, setName] = useState(initialName);
-  const [tz, setTz] = useState(initialTimezone);
-  const [, startTransition] = useTransition();
+  const [name, setName] = useState(initialName)
+  const [tz, setTz] = useState(initialTimezone)
+  const [version, setVersion] = useState(initialVersion)
+  const [, startTransition] = useTransition()
 
   function commit(nextTz?: string) {
     startTransition(async () => {
-      const result = await updateProfile({ display_name: name, timezone: nextTz ?? tz });
-      if (!result.ok) toast.error(result.error.message);
-      else toast.success("Saved.");
-    });
+      const result = await updateProfile({
+        display_name: name,
+        timezone: nextTz ?? tz,
+        expected_version: version,
+      })
+      if (!result.ok) toast.error(result.error.message)
+      else {
+        setVersion(result.data.version)
+        toast.success("Saved.")
+      }
+    })
   }
 
   return (
     <FieldGroup>
       <Field>
         <FieldLabel>Avatar</FieldLabel>
-        <AvatarUpload initialUrl={avatarUrl} displayName={name || "?"} />
+        <AvatarUpload
+          initialUrl={avatarUrl}
+          displayName={name || "?"}
+          expectedVersion={version}
+          onVersionChange={setVersion}
+        />
       </Field>
       <Field>
         <FieldLabel htmlFor="display-name">Display name</FieldLabel>
@@ -63,9 +87,9 @@ export function ProfileForm({
         <Combobox
           value={tz}
           onValueChange={(v: string | null) => {
-            if (!v) return;
-            setTz(v);
-            commit(v);
+            if (!v) return
+            setTz(v)
+            commit(v)
           }}
         >
           <ComboboxInput placeholder="Search timezones…" />
@@ -85,5 +109,5 @@ export function ProfileForm({
         <Button onClick={() => commit()}>Save</Button>
       </div>
     </FieldGroup>
-  );
+  )
 }

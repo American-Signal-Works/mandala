@@ -12,6 +12,10 @@ import {
 } from "@workspace/control-plane"
 import { Client } from "langsmith"
 import { traceable } from "langsmith/traceable"
+import {
+  invokeModelWithUsage,
+  type ModelUsageRecorder,
+} from "@/lib/mandala/usage"
 import { modelTextSafetyViolation } from "./model-text-safety"
 
 const gatewayBaseUrl = "https://ai-gateway.vercel.sh/v1"
@@ -38,6 +42,7 @@ export type WorkItemQuestionDependencies = {
   invokeModel?: (messages: BaseMessage[]) => Promise<string>
   now?: () => number
   createId?: () => string
+  recordUsage?: ModelUsageRecorder
 }
 
 export type WorkItemQuestionModelContext = {
@@ -118,7 +123,16 @@ export async function answerWorkItemQuestion(
 
   const traced = traceable(
     async () => {
-      const response = await model.invoke(messages)
+      const response = await invokeModelWithUsage({
+        invoke: () => model.invoke(messages),
+        recordUsage: dependencies.recordUsage,
+        usage: {
+          invocationId: traceId,
+          providerModel: configuration.model,
+          traceId,
+          runId: traceId,
+        },
+      })
       return parseAnswer(messageText(response.content), configuration.model)
     },
     {

@@ -1,5 +1,6 @@
 export * from "./authorization.js"
 export * from "./json-pointer.js"
+export * from "./invitations.js"
 export * from "./membership.js"
 export * from "./parser.js"
 export * from "./policy.js"

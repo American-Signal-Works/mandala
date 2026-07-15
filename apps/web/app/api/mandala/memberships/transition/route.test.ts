@@ -114,6 +114,23 @@ describe("membership transition route", () => {
     expect(transitionCompanyMembershipRpc).toHaveBeenCalledOnce()
   })
 
+  it("requires an owner for member removal", async () => {
+    vi.mocked(authorizeCompanyPermission).mockResolvedValue({
+      effect: "allow",
+      reason: "role_permission_granted",
+      role: "admin",
+      permission: "membership.manage",
+    })
+
+    const response = await POST(
+      request({ companyId, targetUserId, action: "remove" })
+    )
+
+    expect(response.status).toBe(403)
+    await expect(response.json()).resolves.toEqual({ error: "forbidden" })
+    expect(transitionCompanyMembershipRpc).not.toHaveBeenCalled()
+  })
+
   it("rejects attempts to leave another user's membership before preflight", async () => {
     const response = await POST(
       request({ companyId, targetUserId, action: "leave" })

@@ -104,5 +104,7 @@ export function permissionForWorkflowDecision(
       return "workflow.decision.reject"
     case "request_rework":
       return "workflow.decision.request_rework"
+    case "resolve":
+      return "workflow.decision.approve"
   }
 }

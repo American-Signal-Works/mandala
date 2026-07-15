@@ -34,7 +34,11 @@ import { cn } from "@workspace/ui/lib/utils"
 type AuthStep = "email" | "link" | "verifying" | "success"
 type AuthMode = "sign-in" | "sign-up"
 type SocialProvider = "google" | "microsoft"
-type PendingAction = AuthCallbackPendingAction | "logout" | null
+type PendingAction =
+  | AuthCallbackPendingAction
+  | "logout"
+  | "replace-session"
+  | null
 type SocialLoginButtonConfig = {
   iconSrc: string
   provider: SocialProvider
@@ -94,12 +98,16 @@ export function LoginAuthFlow({
   initialStep = "email",
   initialFormMessage = null,
   initialPendingAction = null,
+  initialSessionReplacementRequired = false,
   mode = "sign-in",
+  postAuthPath,
 }: {
   initialStep?: AuthStep
   initialFormMessage?: string | null
   initialPendingAction?: AuthCallbackPendingAction | null
+  initialSessionReplacementRequired?: boolean
   mode?: AuthMode
+  postAuthPath?: string
 } = {}) {
   const [step, setStep] = useState<AuthStep>(initialStep)
   const [pendingAction, setPendingAction] =
@@ -111,6 +119,9 @@ export function LoginAuthFlow({
     initialFormMessage
   )
   const [resendCooldown, setResendCooldown] = useState(0)
+  const [sessionReplacementRequired, setSessionReplacementRequired] = useState(
+    initialSessionReplacementRequired
+  )
 
   const emailInputRef = useRef<HTMLInputElement>(null)
 
@@ -181,6 +192,7 @@ export function LoginAuthFlow({
     setFormMessage(null)
 
     const { error } = await requestEmailMagicLink(nextEmail, {
+      postAuthPath,
       shouldCreateUser: mode === "sign-up",
     })
 
@@ -208,7 +220,9 @@ export function LoginAuthFlow({
     setEmailError(null)
     setFormMessage(null)
 
-    const { error } = await requestOAuthSignIn(provider)
+    const { error } = postAuthPath
+      ? await requestOAuthSignIn(provider, postAuthPath)
+      : await requestOAuthSignIn(provider)
 
     if (error) {
       setPendingAction(null)
@@ -241,6 +255,35 @@ export function LoginAuthFlow({
     setStep("email")
   }
 
+  async function handleSessionReplacement(confirm: boolean) {
+    setPendingAction("replace-session")
+    setFormMessage(null)
+    try {
+      const response = await fetch("/api/auth/session/replacement", {
+        method: confirm ? "POST" : "DELETE",
+        headers: { "content-type": "application/json" },
+      })
+      const result = (await response.json()) as {
+        continuation?: string
+        status?: string
+      }
+      if (!response.ok) {
+        setFormMessage("We couldn't switch accounts. Request a new sign-in link.")
+        return
+      }
+      if (confirm && result.status === "session_replaced") {
+        window.location.assign(result.continuation || "/")
+        return
+      }
+      setSessionReplacementRequired(false)
+      window.location.assign("/")
+    } catch {
+      setFormMessage("We couldn't switch accounts. Try again.")
+    } finally {
+      setPendingAction(null)
+    }
+  }
+
   return (
     <main
       className="min-h-svh bg-background text-foreground"
@@ -261,7 +304,14 @@ export function LoginAuthFlow({
             data-auth-step={step}
             className="flex w-full max-w-[432px] flex-col items-start gap-6"
           >
-            {(step === "email" || step === "link") && (
+            {sessionReplacementRequired ? (
+              <SessionReplacementStep
+                formMessage={formMessage}
+                isPending={pendingAction === "replace-session"}
+                onCancel={() => handleSessionReplacement(false)}
+                onConfirm={() => handleSessionReplacement(true)}
+              />
+            ) : (step === "email" || step === "link") && (
               <EmailStep
                 email={
                   step === "link" && resendCooldown > 0 ? submittedEmail : email
@@ -293,6 +343,52 @@ export function LoginAuthFlow({
         </div>
       </section>
     </main>
+  )
+}
+
+function SessionReplacementStep({
+  formMessage,
+  isPending,
+  onCancel,
+  onConfirm,
+}: {
+  formMessage: string | null
+  isPending: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  return (
+    <div className="flex w-full flex-col items-start gap-6">
+      <AuthIntro title="Switch accounts?" />
+      <p className="text-sm leading-5 text-foreground">
+        Continue to replace the current browser session with the account from
+        this sign-in link.
+      </p>
+      {formMessage && (
+        <p className="text-sm leading-5 text-destructive" role="alert">
+          {formMessage}
+        </p>
+      )}
+      <div className="flex w-full flex-col gap-2 sm:flex-row">
+        <Button
+          className={cn("flex-1", authPrimaryClass, authPrimaryButtonDepthClass)}
+          disabled={isPending}
+          onClick={onConfirm}
+          type="button"
+        >
+          {isPending ? "Switching accounts" : "Switch accounts"}
+        </Button>
+        <Button
+          className={cn("flex-1", authSurfaceClass, authSecondaryButtonDepthClass)}
+          disabled={isPending}
+          onClick={onCancel}
+          type="button"
+          variant="secondary"
+        >
+          Keep current account
+        </Button>
+      </div>
+    </div>
   )
 }
 
@@ -336,7 +432,7 @@ function AuthMark() {
 function AuthVisual() {
   return (
     <div
-      className="relative hidden min-h-svh min-w-0 flex-1 overflow-hidden md:block"
+      className="pointer-events-none relative hidden min-h-svh min-w-0 flex-1 overflow-hidden md:block"
       data-auth-visual="true"
     >
       <Image

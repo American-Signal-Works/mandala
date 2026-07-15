@@ -1,17 +1,21 @@
-import * as Sentry from "@sentry/nextjs";
+import * as Sentry from "@sentry/nextjs"
+import {
+  sanitizeTelemetryEvent,
+  sanitizeTelemetrySpan,
+  sanitizeTelemetryText,
+  stripUrlSecrets,
+} from "@/lib/telemetry/sanitize"
 
-const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN;
+const dsn = process.env.NEXT_PUBLIC_SENTRY_DSN
 if (dsn) {
   Sentry.init({
     dsn,
     tracesSampleRate: 0.1,
     replaysSessionSampleRate: 0,
     replaysOnErrorSampleRate: 0,
-    beforeSend(event) {
-      // Strip user PII — capture errors, not who hit them.
-      if (event.user) event.user = { id: event.user.id };
-      return event;
-    },
+    beforeSend: sanitizeTelemetryEvent,
+    beforeSendSpan: sanitizeTelemetrySpan,
+    beforeSendTransaction: sanitizeTelemetryEvent,
     beforeBreadcrumb(breadcrumb) {
       // Strip query strings from fetch/xhr/navigation breadcrumbs (may contain tokens).
       if (
@@ -20,12 +24,15 @@ if (dsn) {
         breadcrumb.category === "navigation"
       ) {
         if (breadcrumb.data?.url && typeof breadcrumb.data.url === "string") {
-          breadcrumb.data.url = breadcrumb.data.url.split("?")[0];
+          breadcrumb.data.url = stripUrlSecrets(breadcrumb.data.url)
         }
       }
-      return breadcrumb;
+      if (breadcrumb.message) {
+        breadcrumb.message = sanitizeTelemetryText(breadcrumb.message)
+      }
+      return breadcrumb
     },
-  });
+  })
 }
 
-export const onRouterTransitionStart = Sentry.captureRouterTransitionStart;
+export const onRouterTransitionStart = Sentry.captureRouterTransitionStart

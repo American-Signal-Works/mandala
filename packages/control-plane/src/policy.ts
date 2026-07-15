@@ -13,7 +13,12 @@ export const principalTypeSchema = z.enum([
   "integration",
 ])
 export const principalStateSchema = z.enum(["active", "disabled"])
-export const executionModeSchema = z.enum(["mock", "dry_run", "shadow", "live"])
+export const policyExecutionModeSchema = z.enum([
+  "mock",
+  "dry_run",
+  "shadow",
+  "live",
+])
 
 export const companyPrincipalSchema = z
   .object({
@@ -73,7 +78,7 @@ export const companyPolicyEvaluationRequestSchema = z
     policyVersion: identifierSchema,
     principal: companyPrincipalSchema,
     permission: companyPermissionSchema,
-    mode: executionModeSchema,
+    mode: policyExecutionModeSchema,
     approval: policyApprovalContextSchema,
   })
   .strict()
@@ -98,13 +103,13 @@ export const companyPolicyDecisionSchema = z
     principalId: z.string().uuid(),
     principalType: principalTypeSchema,
     permission: companyPermissionSchema,
-    mode: executionModeSchema,
+    mode: policyExecutionModeSchema,
   })
   .strict()
 
 export type PrincipalType = z.infer<typeof principalTypeSchema>
 export type CompanyPrincipal = z.infer<typeof companyPrincipalSchema>
-export type ExecutionMode = z.infer<typeof executionModeSchema>
+export type PolicyExecutionMode = z.infer<typeof policyExecutionModeSchema>
 export type PolicyApprovalContext = z.infer<typeof policyApprovalContextSchema>
 export type CompanyPolicyEvaluationRequest = z.infer<
   typeof companyPolicyEvaluationRequestSchema

@@ -1,36 +1,112 @@
 # Mandala
 
-A workspace for your data. Pages of blocks, collections, connections.
+Mandala is a workspace for defining, running, and reviewing permissioned AI
+workflows over connected business data.
 
-## Features (v1)
+It combines structured records, connectors, durable agent runs, human approval,
+and controlled execution. Users describe a workflow in one versioned
+`SKILL.md`; Mandala compiles that definition into a constrained runtime instead
+of giving the model unrestricted access to data or actions.
 
-- **Pages** — dashboards (Plate.js block editor) or collections (typed list view)
-- **Collections** — text, number, currency, datetime, select, multi-select, checkbox fields
-- **Generic blocks** — Card, Chart, Table, Row blocks read from any collection (configure-after-drop, no separate block per chart type)
-- **IBKR Activity Statement importer** with round-trip trade aggregation (flat → position → flat, with flip handling)
-- **Trading templates** — Performance Dashboard, Daily Journal, Weekly Review (placeholder substitution)
-- **Auth foundation** — Supabase sessions and RLS; sign-in UI is being rebuilt
-- **Settings** — Account (password, sign out, delete), Profile (avatar, name, timezone), Appearance (light/dark mode + accent color), Connections
-- **Cmd+K command palette** — fuzzy-search pages, create new ones, jump to settings
-- **Page emoji picker** — emoji-mart in a popover
-- **Multi-tenant** via Supabase RLS (owner_type/owner_id pattern)
-- **Observability** — Sentry error tracking (PII-stripped), Vercel Analytics, Lighthouse CI gate (a11y ≥ 0.9)
+## How it works
 
-## Stack
+```mermaid
+flowchart LR
+  data["Connected data"] --> policy["Capabilities and policy"]
+  skill["SKILL.md"] --> compiler["Validated workflow compiler"]
+  policy --> compiler
+  compiler --> runtime["Durable agent runtime"]
+  runtime --> inbox["Inbox and human review"]
+  inbox --> execution["Controlled execution"]
+```
 
-- Next.js 15 (App Router) + shadcn/ui + Plate.js (added in Plan 3)
-- Supabase (Auth + Postgres + Storage)
-- Turborepo + pnpm workspaces
+1. **Connect data** — integrations expose versioned capabilities such as
+   reading records or creating a draft action.
+2. **Define an agent** — a `SKILL.md` contains decision guidance plus a strict
+   contract for data, rules, records, approvals, and allowed actions.
+3. **Compile safely** — Mandala validates the file, resolves it against the
+   workspace's installed connectors, and creates an immutable workflow version.
+4. **Run durably** — the agent can investigate permitted evidence while
+   LangGraph checkpoints preserve progress through retries and approval pauses.
+5. **Review and act** — recommendations, evidence, warnings, and drafts appear
+   in the Inbox. State-changing work remains policy-checked, approval-gated,
+   auditable, and idempotent.
+
+The model may interpret evidence and propose a course of action. It cannot add
+tools, widen permissions, bypass deterministic safeguards, approve its own
+draft, or access connector credentials.
+
+## Product surfaces
+
+- **Terminal client** — guided menus for the Inbox, reviews, evidence,
+  decisions, agent installation, Sandbox runs, activation, and rollback.
+- **Web application** — authenticated workspace for pages, collections,
+  records, imports, settings, and future visual workflow surfaces.
+- **Shared control plane** — both clients use the same tenant-aware APIs,
+  workflow records, policies, approvals, and audit history.
+- **Skill runtime** — reusable compiler and graph runtime with no
+  workflow-name routing or workflow-specific execution privileges.
+
+## Safety model
+
+An agent receives only the intersection of:
+
+- capabilities requested by its compiled skill;
+- capabilities offered by an installed connector version;
+- workspace grants and field-level policy;
+- current connector health and schema compatibility; and
+- the acting user's role.
+
+Unknown skill fields, arbitrary operations, schema drift, missing grants,
+unhealthy connectors, and unapproved writes fail closed. Activated versions
+and their capability bindings are immutable so a run can always be explained
+from the version that produced it.
+
+## Repository layout
+
+```text
+apps/web/                 Next.js application, APIs, compiler, and runtime
+apps/cli/                 Interactive terminal client and scripted commands
+packages/control-plane/   Shared request and response contracts
+skills/                   Installable example workflow definitions
+supabase/migrations/      Tenant, workflow, capability, and record schemas
+supabase/tests/           Database authorization and behavior tests
+seed/                     Local workspace and connector seed data
+```
+
+The included skills are examples of the generic contract:
+
+- `skills/procurement-reorder/SKILL.md`
+- `skills/sales-spike-investigator/SKILL.md`
+
+They compile through the same capability resolver and runtime. The second skill
+exists specifically to prove that a new workflow does not need its own API
+route, database tables, or runtime branch.
+
+## Technology
+
+- Next.js 15, React, shadcn/ui, and Plate.js
+- Supabase Auth, Postgres, Storage, and Row-Level Security
+- LangGraph for durable workflow execution and approval checkpoints
+- LangSmith for optional tracing and evaluation
+- Turborepo, pnpm workspaces, TypeScript, Vitest, and Playwright
 
 ## Local development
 
-Prerequisites: Node 22+, pnpm 9+, Docker, Supabase CLI.
+Prerequisites:
+
+- Node.js 22 or newer
+- pnpm
+- Docker
+- Supabase CLI
+
+Start the local stack:
 
 ```bash
 pnpm install --frozen-lockfile
 supabase start
 supabase db reset
-cp .env.example apps/web/.env.local   # then edit with values from `supabase status`
+cp .env.example apps/web/.env.local
 pnpm seed
 pnpm db:types
 pnpm dev
@@ -40,23 +116,16 @@ In Windows PowerShell, use
 `Copy-Item .env.example apps/web/.env.local` instead of `cp`. The remaining
 commands are the same.
 
-Visit http://localhost:3000.
+Populate the local Supabase values in `apps/web/.env.local` from
+`supabase status`. The Web application runs at <http://localhost:3000> and the
+local email inbox runs at <http://127.0.0.1:54324>.
 
-## Scripts
-
-- `pnpm dev` — run the app in dev
-- `pnpm build` / `pnpm start`
-- `pnpm test` — unit tests
-- `pnpm test:e2e` — Playwright e2e (requires local Supabase running)
-- `pnpm db:migrate` — apply migrations to local Supabase
-- `pnpm db:types` — regenerate Supabase TypeScript types
-- `pnpm seed` — create the local seed user, demo company, membership, and approval policy
-- `pnpm cli:build` — compile the terminal client
-- `pnpm cli:link` — compile and link `mandala` into `~/.local/bin`
+The seed command creates a local user and workspace and prints the development
+login details. Do not reuse those credentials outside the local environment.
 
 ## Terminal client
 
-The terminal is a thin client over the same authenticated API and persisted workflow state as the web app. After local setup and while `pnpm dev` is running:
+Build and link the `mandala` command:
 
 ```bash
 pnpm cli:link
@@ -84,100 +153,80 @@ Open [local Inbucket](http://127.0.0.1:54324), open the newest message for `seed
 mandala
 ```
 
-Use `/run-fixture clean_reorder` to create the first review item, `/inbox` to list work, and `/open 1` to select it. The local demo password printed by `pnpm seed` is for browser testing; the CLI uses a one-time magic link.
+If `~/.local/bin` is not on `PATH` on macOS or Linux, add it to your shell
+configuration or set `MANDALA_BIN_DIR` before running `pnpm cli:link`.
 
-For a shared or hosted backend, collaborators should set `MANDALA_API_URL`, `MANDALA_SUPABASE_URL`, and `MANDALA_SUPABASE_ANON_KEY` in their shell. AI Gateway, LangSmith, service-role, and parser-binding credentials remain server-only and must never be placed in the CLI environment or committed.
+The terminal guides interactive users through authentication and workspace
+selection. For automation, equivalent scripted commands remain available.
 
-## Conversational control parser
+Useful interactive entry points:
 
-The optional Slice 2B parser is disabled by default. Explicit CLI commands and deterministic phrases continue to work without model credentials.
+- `/inbox` — review work that needs attention;
+- `/agents` — validate, install, test, activate, deactivate, or restore agents;
+- `/workspace` — inspect or change the active workspace;
+- `/fixtures` — create local Sandbox scenarios; and
+- `/help` — show commands valid for the current context.
 
-Set these server-only values in `apps/web/.env.local` to test conversational parsing. After setting the binding secret, run `set -a; source apps/web/.env.local; set +a; pnpm seed` once to provision the matching database trust record.
+For a hosted backend, set the public CLI endpoint and Supabase client values in
+the shell. Service-role credentials, connector credentials, model credentials,
+workflow database URLs, and signing secrets are server-only.
 
-```bash
-MANDALA_CONVERSATIONAL_PARSER_ENABLED=true
-MANDALA_TEST_AGENT_ENABLED=true
-MANDALA_CONTROL_PARSER_MODEL=openai/gpt-5.4-mini
-MANDALA_TEST_AGENT_MODEL=openai/gpt-5.4-mini
-MANDALA_CONTROL_INPUT_HASH_KEY=<at-least-32-random-characters>
-MANDALA_CONTROL_BINDING_SECRET=<a-different-32-character-random-secret>
-AI_GATEWAY_API_KEY=...
-LANGSMITH_TRACING=true
-LANGSMITH_API_KEY=...
-LANGSMITH_PROJECT=mandala-control-plane
-LANGSMITH_HIDE_INPUTS=true
-LANGSMITH_HIDE_OUTPUTS=true
-```
+## Agent configuration
 
-`VERCEL_OIDC_TOKEN` may replace `AI_GATEWAY_API_KEY` on Vercel or after pulling Vercel environment values. Set a stable `MANDALA_CONTROL_INPUT_HASH_KEY` in hosted environments so conversational audit correlation uses a server-keyed HMAC; local development falls back to an ephemeral process key. Provision the same `MANDALA_CONTROL_BINDING_SECRET` once through the service-role-only `configure_workflow_control_parser_trust` RPC. Conversational parsing fails closed when the server secret or matching database trust record is absent. The parser requests AI Gateway zero-data-retention routing and uses LangSmith only for hidden-input/hidden-output traces and synthetic evaluations.
+The default local experience works without enabling model-backed parsing.
+Optional model reasoning, conversational parsing, and tracing are configured
+with server-only values documented in `.env.example`, including:
 
-The API enforces database-backed per-user and per-company request and concurrency limits before calling the model. Configure AI Gateway team budgets and alerts as an additional operational limit.
+- `AI_GATEWAY_API_KEY` or a supported hosted identity token;
+- `MANDALA_TEST_AGENT_ENABLED` and `MANDALA_TEST_AGENT_MODEL`;
+- `MANDALA_CONVERSATIONAL_PARSER_ENABLED`;
+- `MANDALA_CONTROL_INPUT_HASH_KEY` and
+  `MANDALA_CONTROL_BINDING_SECRET`; and
+- the `LANGSMITH_*` tracing settings.
 
-Run the versioned synthetic evaluation before enabling the parser by default:
-
-```bash
-pnpm --filter web eval:control-parser
-```
-
-The optional `synthetic_agent_run` Sandbox scenario creates the fictional
-**Mandala Bean Co.** catalog with 1,200 beans, teas, mugs, brewing tools,
-filters, syrups, accessories, and gift products, plus
-90 days of daily sales records and synthetic inventory/business events. A
-traced model can inspect the dataset only through bounded read-only tools and
-select one SKU for review. Deterministic policy code validates the selection,
-calculates the quantity, and persists the normal human-approval Inbox item.
-The model cannot approve or execute the draft.
-
-### Skill-defined agents
-
-Mandala agents are installed from one versioned `SKILL.md`. The file combines
-plain-language decision guidance with a strictly validated YAML contract for
-the data it needs, deterministic safeguards, Inbox records, approvals, and
-allowed actions. Connector definitions and credentials remain system-owned;
-the skill can only request capabilities already installed and permitted for
-the workspace.
-
-Two complete examples live in:
-
-- `skills/procurement-reorder/SKILL.md`
-- `skills/sales-spike-investigator/SKILL.md`
-
-The first creates a guarded mock purchase-order review. The second is a
-read-only investigation and demonstrates that a new workflow does not need a
-custom route, database migration, or runtime adapter.
-
-Durable LangGraph checkpoints use a separate Postgres schema. Local Supabase
-uses its standard database connection automatically. For hosted environments,
-set `MANDALA_WORKFLOW_DATABASE_URL`. You can initialize the schema explicitly:
+Durable checkpoints use the local Supabase database automatically. Hosted
+environments must set `MANDALA_WORKFLOW_DATABASE_URL`. Initialize the checkpoint
+schema explicitly with:
 
 ```bash
 pnpm --filter web workflow:checkpoint:setup
 ```
 
-In the terminal, open `/agents` for the guided install, Sandbox test,
-activation, deactivation, and rollback flow. Scripted commands remain
-available for automated testing.
+The repository ships with a synthetic connector and generated business data
+for Sandbox evaluation. Included state-changing actions are mock-only; adding a
+live connector requires an explicit capability definition, workspace grant,
+policy, approval path, and controlled executor.
 
-## Codex workflow
+## Validation
 
-Mandala keeps shared Codex workflow instructions in the repo. For Figma-to-implementation work, use `.codex/skills/orchestrator/SKILL.md`.
-
-Install or update the skill for local Codex discovery:
+Run the checks closest to the changed surface:
 
 ```bash
-mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills"
-mkdir -p "${CODEX_HOME:-$HOME/.codex}/skills/orchestrator"
-rsync -a "$PWD/.codex/skills/orchestrator/" "${CODEX_HOME:-$HOME/.codex}/skills/orchestrator/"
+pnpm --filter web typecheck
+pnpm --filter web lint
+pnpm --filter web test
+
+pnpm --filter @workspace/cli typecheck
+pnpm --filter @workspace/cli lint
+pnpm --filter @workspace/cli test
+
+supabase test db
+supabase db lint --local --level warning
+pnpm test:e2e
+pnpm --filter web build
 ```
 
-## Project layout
+## Documentation and contribution
 
-See `docs/superpowers/specs/2026-04-28-backdesk-v1-design.md` for the full design.
-Plans live in `docs/superpowers/plans/`.
+- Shared contributor instructions live in `AGENTS.md` and `CLAUDE.md`.
+- Engineering documentation lives in `docs/`.
+- The original workspace specification is in
+  `docs/superpowers/specs/2026-04-28-backdesk-v1-design.md`.
+- Codex workflow artifacts belong under
+  `docs/codex/runs/<date>-<feature>/` and should not be merged unless they are
+  intentionally durable.
 
-## Mintlify docs
-
-Current engineering docs live in `docs/` and are configured by `docs/docs.json`.
+To preview the Mintlify documentation locally:
 
 ```bash
 cd docs

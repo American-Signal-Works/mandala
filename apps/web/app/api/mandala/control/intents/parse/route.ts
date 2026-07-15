@@ -26,6 +26,7 @@ import {
 } from "@/lib/mandala/workflows"
 import { authenticateRequest } from "@/lib/supabase/request"
 import type { Json } from "@/lib/supabase/types"
+import { createServerModelUsageRecorder } from "@/actions/admin/provider-usage"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -108,10 +109,19 @@ export async function POST(request: Request) {
 
   try {
     try {
-      const result = await parseConversationalControlInput({
-        companyId: parsed.data.companyId,
-        phrase: parsed.data.input,
-      })
+      const result = await parseConversationalControlInput(
+        {
+          companyId: parsed.data.companyId,
+          phrase: parsed.data.input,
+        },
+        {
+          recordUsage: createServerModelUsageRecorder({
+            companyId: parsed.data.companyId,
+            actorUserId: auth.user.id,
+            sourceOperation: "mandala.control.intent.parse",
+          }),
+        }
+      )
       const controlRequest = await recordOutcome({
         auth,
         companyId: parsed.data.companyId,

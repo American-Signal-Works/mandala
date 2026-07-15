@@ -12,6 +12,7 @@ import type {
 } from "../runtime/state"
 import type { RuntimeCapabilityProvider } from "../runtime/graph"
 import type { CompiledAgentManifest } from "../skills/compiler"
+import { UsageServiceError, type ModelUsageRecorder } from "../usage"
 import { createAgentWorkflowBindingSnapshot } from "../skills/lifecycle"
 import {
   generateSyntheticCommerceDataset,
@@ -56,6 +57,7 @@ type TestRunDependencies = {
   persist?: typeof persistCompiledWorkflowReview
   modelEnabled?: boolean
   loadCheckpointer?: () => Promise<BaseCheckpointSaver>
+  recordUsage?: ModelUsageRecorder
 }
 
 export async function runSyntheticAgentTest(input: {
@@ -98,9 +100,9 @@ export async function runSyntheticAgentTest(input: {
     state: {} as never,
     manifest: workflow.manifest,
     bindings: workflow.manifest.capabilityBindings,
-    allowedTools: workflow.manifest.graph.find(
-      (node) => node.handler === "load_data"
-    )?.allowedTools ?? [],
+    allowedTools:
+      workflow.manifest.graph.find((node) => node.handler === "load_data")
+        ?.allowedTools ?? [],
   })
   const declaredTrigger =
     workflow.manifest.workflow.triggers.find(
@@ -121,11 +123,11 @@ export async function runSyntheticAgentTest(input: {
     dataset,
     data: data.data,
     trigger,
-    runModelAgent:
-      dependencies.runModelAgent ?? runSyntheticManifestTestAgent,
+    runModelAgent: dependencies.runModelAgent ?? runSyntheticManifestTestAgent,
     modelEnabled:
       dependencies.modelEnabled ??
       process.env.MANDALA_TEST_AGENT_ENABLED === "true",
+    recordUsage: dependencies.recordUsage,
   })
   const store = new WorkflowMemoryStore()
   const run = await runCompiledWorkflowInMemory({
@@ -277,6 +279,7 @@ async function createSyntheticJudgment(input: {
   trigger: RuntimeTrigger
   runModelAgent: typeof runSyntheticManifestTestAgent
   modelEnabled: boolean
+  recordUsage?: ModelUsageRecorder
 }): Promise<{
   value: RuntimeAgentJudgment
   trace?: { langSmithTraceId?: string | null; langSmithRunId?: string | null }
@@ -292,6 +295,9 @@ async function createSyntheticJudgment(input: {
       modelRun = await input.runModelAgent({
         dataset: input.dataset,
         manifest: input.manifest,
+        ...(input.recordUsage
+          ? { dependencies: { recordUsage: input.recordUsage } }
+          : {}),
       })
       if (
         evaluateCandidate(
@@ -305,6 +311,7 @@ async function createSyntheticJudgment(input: {
         modelFallback = "invalid_selection"
       }
     } catch (error) {
+      if (error instanceof UsageServiceError) throw error
       modelFallback =
         error instanceof SyntheticProcurementAgentError
           ? error.errorClass
@@ -350,7 +357,9 @@ async function createSyntheticJudgment(input: {
   }
 }
 
-function hasModelReadableCapabilities(manifest: CompiledAgentManifest): boolean {
+function hasModelReadableCapabilities(
+  manifest: CompiledAgentManifest
+): boolean {
   return manifest.capabilityBindings.some(
     (binding) =>
       binding.access === "read" &&

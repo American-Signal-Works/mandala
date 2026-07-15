@@ -7,80 +7,54 @@ import {
   signOutCurrentSession,
 } from "./client"
 import { createClient } from "@/lib/supabase/browser"
-import { createClient as createSupabaseClient } from "@supabase/supabase-js"
 
 vi.mock("@/lib/supabase/browser", () => ({
   createClient: vi.fn(),
 }))
 
-vi.mock("@supabase/supabase-js", () => ({
-  createClient: vi.fn(),
-}))
-
 const createClientMock = vi.mocked(createClient)
-const createSupabaseClientMock = vi.mocked(createSupabaseClient)
 
 describe("auth client helpers", () => {
   beforeEach(() => {
     createClientMock.mockReset()
-    createSupabaseClientMock.mockReset()
   })
 
   afterEach(() => {
     vi.unstubAllEnvs()
+    vi.unstubAllGlobals()
   })
 
   it("returns errors instead of throwing when magic link requests fail at the network layer", async () => {
-    createSupabaseClientMock.mockReturnValue({
-      auth: {
-        signInWithOtp: vi.fn().mockRejectedValue(new Error("fetch failed")),
-      },
-    } as never)
+    vi.stubGlobal("fetch", vi.fn().mockRejectedValue(new Error("fetch failed")))
 
     const result = await requestEmailMagicLink("person@example.com")
 
     expect(result.error).toBeInstanceOf(Error)
-    expect(result.error?.message).toBe("fetch failed")
+    expect(result.error?.message).toBe("Authentication email request failed.")
   })
 
-  it("requests email magic links with callback and sign-up intent", async () => {
-    vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://mandala.md")
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://project.supabase.co")
-    vi.stubEnv("NEXT_PUBLIC_SUPABASE_ANON_KEY", "anon-key")
-    const signInWithOtp = vi.fn().mockResolvedValue({
-      data: {},
-      error: null,
-    })
-    createSupabaseClientMock.mockReturnValue({
-      auth: {
-        signInWithOtp,
-      },
-    } as never)
+  it("requests magic links through the same-origin endpoint", async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify({ accepted: true }), { status: 202 })
+    )
+    vi.stubGlobal("fetch", fetchMock)
 
-    await requestEmailMagicLink("person@example.com", {
+    const result = await requestEmailMagicLink("person@example.com", {
+      postAuthPath: "/invitation/complete",
       shouldCreateUser: true,
     })
 
-    expect(signInWithOtp).toHaveBeenCalledWith({
-      email: "person@example.com",
-      options: {
-        emailRedirectTo:
-          "https://mandala.md/callback?next=%2Flogin%3Fauth%3Dsuccess&method=email",
+    expect(fetchMock).toHaveBeenCalledWith("/api/auth/magic-link", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        email: "person@example.com",
+        postAuthPath: "/invitation/complete",
         shouldCreateUser: true,
-      },
+      }),
     })
-    expect(createSupabaseClientMock).toHaveBeenCalledWith(
-      "https://project.supabase.co",
-      "anon-key",
-      {
-        auth: {
-          autoRefreshToken: false,
-          detectSessionInUrl: false,
-          flowType: "implicit",
-          persistSession: false,
-        },
-      }
-    )
+    expect(createClientMock).not.toHaveBeenCalled()
+    expect(result).toEqual({ data: { accepted: true }, error: null })
   })
 
   it("starts Google sign-on through Supabase OAuth", async () => {

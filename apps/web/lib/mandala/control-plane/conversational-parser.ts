@@ -14,6 +14,10 @@ import {
 } from "@workspace/control-plane"
 import { Client } from "langsmith"
 import { getCurrentRunTree, traceable } from "langsmith/traceable"
+import {
+  invokeModelWithUsage,
+  type ModelUsageRecorder,
+} from "@/lib/mandala/usage"
 import { modelTextSafetyViolation } from "./model-text-safety"
 
 const gatewayBaseUrl = "https://ai-gateway.vercel.sh/v1"
@@ -62,6 +66,7 @@ export type ProposalInvoker = (input: {
   apiKey: string
   langSmithApiKey: string
   langSmithProject: string
+  recordUsage?: ModelUsageRecorder
 }) => Promise<ControlIntentProposal>
 
 export type StructuredControlModel = {
@@ -73,6 +78,7 @@ export type ConversationalParserDependencies = {
   invokeProposal?: ProposalInvoker
   now?: () => number
   createId?: () => string
+  recordUsage?: ModelUsageRecorder
 }
 
 export class ConversationalParserUnavailableError extends Error {
@@ -138,6 +144,7 @@ export async function parseConversationalControlInput(
       apiKey: configuration.apiKey,
       langSmithApiKey: configuration.langSmithApiKey,
       langSmithProject: configuration.langSmithProject,
+      recordUsage: dependencies.recordUsage,
     })
     const parsed = controlIntentProposalSchema.safeParse(proposal)
     if (!parsed.success) {
@@ -179,6 +186,7 @@ async function invokeLangChainProposal(input: {
   apiKey: string
   langSmithApiKey: string
   langSmithProject: string
+  recordUsage?: ModelUsageRecorder
 }): Promise<ControlIntentProposal> {
   const client = new Client({
     apiKey: input.langSmithApiKey,
@@ -203,16 +211,29 @@ async function invokeLangChainProposal(input: {
       name: "mandala_control_intent_candidate",
       method: "jsonSchema",
       strict: true,
+      includeRaw: true,
     }
   )
 
   const traced = traceable(
     async () => {
       try {
-        const parsed = await invokeStructuredControlModel(
-          structuredModel,
-          input.phrase
-        )
+        const result = await invokeModelWithUsage({
+          invoke: () =>
+            structuredModel.invoke([
+              new SystemMessage(systemPrompt),
+              new HumanMessage(input.phrase),
+            ]),
+          recordUsage: input.recordUsage,
+          usage: {
+            invocationId: input.traceId,
+            providerModel: input.model,
+            traceId: input.traceId,
+            runId: input.traceId,
+          },
+          usageResponse: (response) => response.raw,
+        })
+        const parsed = controlIntentProposalSchema.parse(result.parsed)
         updateCurrentTrace({ resolutionStatus: parsed.resolution })
         return parsed
       } catch (error) {
