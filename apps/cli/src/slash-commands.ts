@@ -594,14 +594,24 @@ function tokenize(
     current = ""
   }
 
-  for (const character of value) {
+  const characters = [...value]
+  for (let index = 0; index < characters.length; index += 1) {
+    const character = characters[index] ?? ""
     if (escaped) {
       current += character
       escaped = false
       continue
     }
     if (character === "\\") {
-      escaped = true
+      const next = characters[index + 1]
+      if (
+        next !== undefined &&
+        (next === "\\" || next === '"' || next === "'" || /\s/.test(next))
+      ) {
+        escaped = true
+      } else {
+        current += character
+      }
       continue
     }
     if (quote) {

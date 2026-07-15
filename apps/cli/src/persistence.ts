@@ -191,6 +191,7 @@ async function runWindowsDataProtection(
 ): Promise<string> {
   const script = [
     "$ErrorActionPreference = 'Stop'",
+    "Add-Type -AssemblyName System.Security",
     "$source = [Convert]::FromBase64String([Console]::In.ReadToEnd())",
     `$result = [System.Security.Cryptography.ProtectedData]::${operation}($source, $null, [System.Security.Cryptography.DataProtectionScope]::CurrentUser)`,
     "[Console]::Out.Write([Convert]::ToBase64String($result))",

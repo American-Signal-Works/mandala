@@ -75,6 +75,16 @@ describe("slash command registry", () => {
       ok: false,
       message: expect.stringContaining("Did you mean /inbox?"),
     })
+    expect(
+      parseSlashCommand(
+        String.raw`/agent-install C:\Users\Example\agents\SKILL.md`
+      )
+    ).toMatchObject({
+      ok: true,
+      value: {
+        args: [String.raw`C:\Users\Example\agents\SKILL.md`],
+      },
+    })
   })
 })
 
