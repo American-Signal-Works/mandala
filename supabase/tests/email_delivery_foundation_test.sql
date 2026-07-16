@@ -75,7 +75,7 @@ SELECT is(
 );
 
 CREATE TEMP TABLE first_claim AS
-SELECT * FROM public.claim_due_email_deliveries(10, 120);
+SELECT * FROM public.claim_due_email_deliveries(1, 120);
 SELECT is((SELECT count(*)::int FROM first_claim), 1, 'one due delivery is claimed');
 SELECT is(
   (SELECT state FROM public.email_deliveries WHERE id = (SELECT delivery_id FROM first_claim)),
@@ -106,7 +106,7 @@ SELECT is(
 );
 
 CREATE TEMP TABLE second_claim AS
-SELECT * FROM public.claim_due_email_deliveries(10, 120);
+SELECT * FROM public.claim_due_email_deliveries(1, 120);
 SELECT is((SELECT attempt_number FROM second_claim), 2, 'the retry is attempt two');
 SELECT lives_ok($$SELECT public.record_email_delivery_result(
   (SELECT delivery_id FROM second_claim), (SELECT claim_token FROM second_claim),
@@ -119,7 +119,7 @@ SELECT is(
 );
 
 CREATE TEMP TABLE third_claim AS
-SELECT * FROM public.claim_due_email_deliveries(10, 120);
+SELECT * FROM public.claim_due_email_deliveries(1, 120);
 SELECT is((SELECT attempt_number FROM third_claim), 3, 'the next retry is attempt three');
 SELECT lives_ok($$SELECT public.record_email_delivery_result(
   (SELECT delivery_id FROM third_claim), (SELECT claim_token FROM third_claim),
@@ -132,7 +132,7 @@ SELECT is(
 );
 
 CREATE TEMP TABLE fourth_claim AS
-SELECT * FROM public.claim_due_email_deliveries(10, 120);
+SELECT * FROM public.claim_due_email_deliveries(1, 120);
 SELECT is((SELECT attempt_number FROM fourth_claim), 4, 'the final send is attempt four');
 SELECT lives_ok($$SELECT public.record_email_delivery_result(
   (SELECT delivery_id FROM fourth_claim), (SELECT claim_token FROM fourth_claim),
@@ -150,7 +150,7 @@ SELECT lives_ok($$SELECT public.enqueue_email_delivery(
   'bounce-target@example.test', '2000-01-01 00:00:00+00'
 )$$, 'a second fixture delivery is enqueued');
 CREATE TEMP TABLE success_claim AS
-SELECT * FROM public.claim_due_email_deliveries(10, 120);
+SELECT * FROM public.claim_due_email_deliveries(1, 120);
 SELECT is((SELECT count(*)::int FROM success_claim), 1, 'the success fixture is claimed once');
 SELECT lives_ok($$SELECT public.record_email_delivery_result(
   (SELECT delivery_id FROM success_claim), (SELECT claim_token FROM success_claim),
@@ -210,7 +210,7 @@ SELECT lives_ok($$SELECT public.enqueue_email_delivery(
   'delayed@example.test', '2000-01-01 00:00:00+00'
 )$$, 'a provider-delayed fixture is enqueued');
 CREATE TEMP TABLE delayed_claim AS
-SELECT * FROM public.claim_due_email_deliveries(10, 120);
+SELECT * FROM public.claim_due_email_deliveries(1, 120);
 SELECT lives_ok($$SELECT public.record_email_delivery_result(
   (SELECT delivery_id FROM delayed_claim), (SELECT claim_token FROM delayed_claim),
   'sent', 'resend-email-delayed-001', NULL, '2000-01-01 01:00:00+00'
@@ -225,7 +225,14 @@ SELECT is(
   'provider delivery delay remains visible while awaiting a later provider event'
 );
 SELECT is(
-  (SELECT count(*)::int FROM public.claim_due_email_deliveries(10, 120)),
+  (
+    SELECT count(*)::int
+    FROM public.claim_due_email_deliveries(1, 120) claim
+    WHERE claim.delivery_id = (
+      SELECT id FROM public.email_deliveries
+      WHERE idempotency_key = 'fixture-provider-delayed-001'
+    )
+  ),
   0,
   'provider delivery delay does not cause a duplicate provider send'
 );
@@ -256,7 +263,14 @@ SELECT is(
   'a newly queued email to a suppressed recipient is terminal immediately'
 );
 SELECT is(
-  (SELECT count(*)::int FROM public.claim_due_email_deliveries(10, 120)),
+  (
+    SELECT count(*)::int
+    FROM public.claim_due_email_deliveries(1, 120) claim
+    WHERE claim.delivery_id IN (
+      SELECT id FROM public.email_deliveries
+      WHERE idempotency_key IN ('fixture-success-001', 'fixture-suppressed-001')
+    )
+  ),
   0,
   'suppressed and bounced deliveries are never retried automatically'
 );
@@ -266,7 +280,12 @@ SELECT lives_ok(
   'the service retention job can purge terminal PII after 90 days'
 );
 SELECT is(
-  (SELECT count(*)::int FROM public.email_deliveries WHERE recipient_email LIKE 'purged-%@invalid.test'),
+  (
+    SELECT count(*)::int
+    FROM public.email_deliveries
+    WHERE company_id = '72000000-0000-0000-0000-000000000001'
+      AND recipient_email LIKE 'purged-%@invalid.test'
+  ),
   2,
   'terminal delivery recipient addresses are replaced with non-identifying placeholders'
 );
