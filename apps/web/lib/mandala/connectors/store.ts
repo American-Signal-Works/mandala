@@ -1,0 +1,310 @@
+import { randomUUID } from "node:crypto"
+
+import {
+  connectorAccessSchema,
+  connectorSyncConfigSchema,
+  type ConnectorCursor,
+  type ConnectorRecord,
+  type ConnectorSyncStore,
+  type SyncableSource,
+  type UpsertOutcome,
+} from "./types"
+
+// Service-role store for connector sync. Source claims and completions carry a
+// unique lease token so an expired worker cannot overwrite a newer worker.
+//
+// external_records writes cascade into the context-index outbox, signal
+// change windows, and the workspace data catalog via AFTER-write triggers,
+// so this store only writes rows whose payload actually changed: unchanged
+// rows are skipped entirely rather than re-upserted.
+
+const UPSERT_CHUNK = 200
+
+// Minimal structural view of the Supabase client this store needs; the
+// concrete admin client is injected at the Server Action boundary.
+export type ConnectorSyncClient = {
+  from(table: string): any // eslint-disable-line @typescript-eslint/no-explicit-any
+}
+
+export class SupabaseConnectorSyncStore implements ConnectorSyncStore {
+  constructor(private readonly client: ConnectorSyncClient) {}
+
+  async claimDueSource(input: {
+    now: Date
+    sourceKeys: string[]
+    leaseSeconds: number
+  }): Promise<SyncableSource | null> {
+    const { data, error } = await this.client
+      .from("external_sources")
+      .select(
+        "id, company_id, source_key, kind, config, sync_status, last_synced_at"
+      )
+      .in("source_key", input.sourceKeys)
+      // Cursor saves touch updated_at, so this rotates long backfills across
+      // sources instead of letting one provider starve every other provider.
+      .order("updated_at", { ascending: true })
+    if (error)
+      throw new Error(`connector_sources_load_failed: ${error.message}`)
+
+    const nowMs = input.now.getTime()
+    for (const row of data ?? []) {
+      const access = connectorAccessSchema.safeParse(
+        (row.config ?? {}).access ?? {}
+      )
+      if (
+        !access.success ||
+        access.data.status !== "connected" ||
+        !access.data.permissions.read
+      ) {
+        continue
+      }
+      const parsed = connectorSyncConfigSchema.safeParse(
+        (row.config ?? {}).sync ?? {}
+      )
+      if (!parsed.success) continue
+      const sync = parsed.data
+      if (!sync.enabled) continue
+
+      const nextAttemptMs = sync.nextAttemptAt
+        ? new Date(sync.nextAttemptAt).getTime()
+        : null
+      if (
+        nextAttemptMs !== null &&
+        Number.isFinite(nextAttemptMs) &&
+        nextAttemptMs > nowMs
+      ) {
+        continue
+      }
+
+      const leaseMs = sync.leaseExpiresAt
+        ? new Date(sync.leaseExpiresAt).getTime()
+        : Number.NaN
+      const leaseExpired = !Number.isFinite(leaseMs) || leaseMs < nowMs
+      if (row.sync_status === "syncing" && !leaseExpired) continue
+
+      const midCycle = sync.cursor != null
+      const intervalElapsed =
+        !row.last_synced_at ||
+        nowMs - new Date(row.last_synced_at).getTime() >=
+          sync.intervalMinutes * 60_000
+      if (!midCycle && !intervalElapsed) continue
+
+      const leaseExpiresAt = new Date(
+        nowMs + input.leaseSeconds * 1000
+      ).toISOString()
+      const leaseToken = randomUUID()
+      const claimedConfig = {
+        ...(row.config ?? {}),
+        sync: { ...sync, leaseExpiresAt, leaseToken },
+      }
+      let claimQuery = this.client
+        .from("external_sources")
+        .update({ sync_status: "syncing", config: claimedConfig })
+        .eq("id", row.id)
+        .eq("sync_status", row.sync_status)
+      claimQuery = sync.leaseToken
+        ? claimQuery.eq("config->sync->>leaseToken", sync.leaseToken)
+        : claimQuery.is("config->sync->>leaseToken", null)
+      const claim = await claimQuery.select("id")
+      if (claim.error)
+        throw new Error(`connector_claim_failed: ${claim.error.message}`)
+      if (!claim.data?.length) continue // lost the race — try the next source
+
+      return {
+        id: row.id,
+        companyId: row.company_id,
+        sourceKey: row.source_key,
+        kind: row.kind,
+        config: claimedConfig,
+        sync: { ...sync, leaseExpiresAt, leaseToken },
+        lastSyncedAt: row.last_synced_at,
+      }
+    }
+    return null
+  }
+
+  async upsertRecords(input: {
+    source: SyncableSource
+    records: ConnectorRecord[]
+    pulledAt: string
+  }): Promise<UpsertOutcome> {
+    let written = 0
+    let skipped = 0
+
+    // Dedup within the pull slice (a record can legitimately repeat, e.g.
+    // vendor rows emitted once per PO) — last occurrence wins.
+    const byIdentity = new Map<string, ConnectorRecord>()
+    for (const record of input.records) {
+      byIdentity.set(
+        JSON.stringify([record.recordType, record.externalId]),
+        record
+      )
+    }
+    const deduped = [...byIdentity.values()]
+
+    const byType = new Map<string, ConnectorRecord[]>()
+    for (const record of deduped) {
+      const group = byType.get(record.recordType) ?? []
+      group.push(record)
+      byType.set(record.recordType, group)
+    }
+
+    for (const [recordType, records] of byType) {
+      for (let offset = 0; offset < records.length; offset += UPSERT_CHUNK) {
+        const chunk = records.slice(offset, offset + UPSERT_CHUNK)
+        const existing = await this.client
+          .from("external_records")
+          .select("external_id, payload")
+          .eq("company_id", input.source.companyId)
+          .eq("source_id", input.source.id)
+          .eq("record_type", recordType)
+          .in(
+            "external_id",
+            chunk.map((record) => record.externalId)
+          )
+        if (existing.error) {
+          throw new Error(
+            `connector_existing_load_failed: ${existing.error.message}`
+          )
+        }
+        const existingPayloads = new Map<string, string>(
+          (existing.data ?? []).map(
+            (row: { external_id: string; payload: unknown }) => [
+              row.external_id,
+              stableStringify(row.payload),
+            ]
+          )
+        )
+
+        const changed = chunk.filter(
+          (record) =>
+            existingPayloads.get(record.externalId) !==
+            stableStringify(record.payload)
+        )
+        skipped += chunk.length - changed.length
+        if (!changed.length) continue
+
+        const upsert = await this.client.from("external_records").upsert(
+          changed.map((record) => ({
+            company_id: input.source.companyId,
+            source_id: input.source.id,
+            record_type: record.recordType,
+            external_id: record.externalId,
+            payload: record.payload,
+            pulled_at: input.pulledAt,
+          })),
+          { onConflict: "company_id,source_id,record_type,external_id" }
+        )
+        if (upsert.error) {
+          throw new Error(`connector_upsert_failed: ${upsert.error.message}`)
+        }
+        written += changed.length
+      }
+    }
+    return { written, skipped }
+  }
+
+  async saveCursor(input: {
+    source: SyncableSource
+    cursor: ConnectorCursor
+  }): Promise<void> {
+    await this.updateSource(input.source, {
+      sync_status: "idle",
+      last_sync_error: null,
+      config: this.mergeSync(input.source, {
+        cursor: input.cursor,
+        leaseExpiresAt: null,
+        leaseToken: null,
+        failureCount: 0,
+        nextAttemptAt: null,
+      }),
+    })
+  }
+
+  async completeSync(input: {
+    source: SyncableSource
+    now: Date
+    watermarks?: Record<string, string>
+  }): Promise<void> {
+    await this.updateSource(input.source, {
+      sync_status: "idle",
+      last_synced_at: input.now.toISOString(),
+      last_sync_error: null,
+      config: this.mergeSync(input.source, {
+        cursor: null,
+        leaseExpiresAt: null,
+        leaseToken: null,
+        failureCount: 0,
+        nextAttemptAt: null,
+        watermarks: {
+          ...input.source.sync.watermarks,
+          ...(input.watermarks ?? {}),
+        },
+      }),
+    })
+  }
+
+  async failSync(input: {
+    source: SyncableSource
+    error: string
+    now: Date
+  }): Promise<void> {
+    const failureCount = input.source.sync.failureCount + 1
+    const retryMinutes = Math.min(360, 5 * 2 ** Math.min(failureCount - 1, 6))
+    await this.updateSource(input.source, {
+      sync_status: "error",
+      last_sync_error: input.error.slice(0, 500),
+      // Cursor is kept: the next due claim resumes rather than restarting.
+      config: this.mergeSync(input.source, {
+        leaseExpiresAt: null,
+        leaseToken: null,
+        failureCount,
+        nextAttemptAt: new Date(
+          input.now.getTime() + retryMinutes * 60_000
+        ).toISOString(),
+      }),
+    })
+  }
+
+  private mergeSync(source: SyncableSource, patch: Record<string, unknown>) {
+    return {
+      ...source.config,
+      sync: { ...source.sync, ...patch },
+    }
+  }
+
+  private async updateSource(
+    source: SyncableSource,
+    patch: Record<string, unknown>
+  ) {
+    let query = this.client
+      .from("external_sources")
+      .update(patch)
+      .eq("id", source.id)
+    query = source.sync.leaseToken
+      ? query.eq("config->sync->>leaseToken", source.sync.leaseToken)
+      : query.is("config->sync->>leaseToken", null)
+    const { data, error } = await query.select("id")
+    if (error)
+      throw new Error(`connector_source_update_failed: ${error.message}`)
+    if (!data?.length) throw new Error("connector_source_lease_lost")
+  }
+}
+
+// Key-sorted JSON so semantically-equal payloads compare equal regardless of
+// property order (jsonb round-trips do not preserve key order).
+export function stableStringify(value: unknown): string {
+  return JSON.stringify(sortKeys(value))
+}
+
+function sortKeys(value: unknown): unknown {
+  if (Array.isArray(value)) return value.map(sortKeys)
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
+        .map(([key, entry]) => [key, sortKeys(entry)])
+    )
+  }
+  return value
+}
