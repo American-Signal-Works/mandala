@@ -99,13 +99,23 @@ export async function listWorkflowQueue(input: {
   page?: QueueSnapshotPage
 }) {
   const payload = {
-    search: input.query.search,
+    ...(input.query.search ? { search: input.query.search } : {}),
     statuses: input.query.statuses,
-    itemTypes: input.query.itemTypes,
-    priorities: input.query.priorities,
-    sourceTypes: input.query.sourceTypes,
-    ownerRoles: input.query.ownerRoles,
-    assigneeIds: input.query.assigneeIds,
+    ...(input.query.itemTypes.length > 0
+      ? { itemTypes: input.query.itemTypes }
+      : {}),
+    ...(input.query.priorities.length > 0
+      ? { priorities: input.query.priorities }
+      : {}),
+    ...(input.query.sourceTypes.length > 0
+      ? { sourceTypes: input.query.sourceTypes }
+      : {}),
+    ...(input.query.ownerRoles.length > 0
+      ? { ownerRoles: input.query.ownerRoles }
+      : {}),
+    ...(input.query.assigneeIds.length > 0
+      ? { assigneeIds: input.query.assigneeIds }
+      : {}),
     sort: input.query.sort,
     limit: input.query.limit,
     ...(input.page
