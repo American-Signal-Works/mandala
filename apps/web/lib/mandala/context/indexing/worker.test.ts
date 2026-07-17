@@ -154,9 +154,8 @@ describe("Context provider-neutral index worker", () => {
     )
   })
 
-  it("marks accepted/incomplete provider outcomes for reconciliation", async () => {
+  it("persists accepted provider identity for poll-only completion", async () => {
     const repository = repositoryFor([lease("add", 1)])
-    repository.fail = vi.fn().mockResolvedValue("reconciliation_required")
     const provider = providerFor()
     provider.add = vi.fn(async (document) => ({
       requestId: document.requestId,
@@ -175,13 +174,96 @@ describe("Context provider-neutral index worker", () => {
       workerId: "context-worker-1",
       now,
     })
-    expect(result).toMatchObject({ reconciliationRequired: 1 })
-    expect(repository.fail).toHaveBeenCalledWith(
+    expect(result).toMatchObject({ providerProcessing: 1 })
+    expect(repository.accept).toHaveBeenCalledWith(
       expect.objectContaining({
-        disposition: "reconciliation_required",
-        errorCode: "provider_completion_unknown",
+        providerDocumentId: "provider-doc-1",
       })
     )
+    expect(repository.fail).not.toHaveBeenCalled()
+  })
+
+  it("never retries a provider write when acceptance persistence fails", async () => {
+    const repository = repositoryFor([lease("add", 1)])
+    repository.accept = vi.fn().mockRejectedValue(new Error("database down"))
+    const provider = providerFor()
+    provider.add = vi.fn(async (document) => ({
+      requestId: document.requestId,
+      provider: "supermemory" as const,
+      operation: "add" as const,
+      status: "accepted" as const,
+      providerDocumentId: "provider-doc-1",
+      receipt: null,
+      estimatedCostMicrounits: 0,
+      completedAt: now.toISOString(),
+    }))
+
+    const result = await runContextIndexBatch({
+      repository,
+      resolveProvider: createContextIndexProviderResolver([provider]),
+      workerId: "context-worker-1",
+      now,
+    })
+
+    expect(result).toMatchObject({ leaseUnresolved: 1, retryScheduled: 0 })
+    expect(provider.add).toHaveBeenCalledOnce()
+    expect(repository.fail).not.toHaveBeenCalled()
+  })
+
+  it("polls accepted work without dispatching another provider write", async () => {
+    const repository = repositoryFor([])
+    repository.claimProcessing = vi.fn().mockResolvedValue([processingLease()])
+    const provider = providerFor()
+    provider.processingStatus = vi.fn().mockResolvedValue({
+      requestId: processingLease().event.id,
+      provider: "supermemory",
+      scope: {
+        companyId: processingLease().companyId,
+        workspaceScopeId: processingLease().companyId,
+      },
+      stableCustomId: processingLease().stableCustomId,
+      status: "complete",
+      checkedAt: now.toISOString(),
+    })
+
+    const result = await runContextIndexBatch({
+      repository,
+      resolveProvider: createContextIndexProviderResolver([provider]),
+      workerId: "context-worker-1",
+      now,
+    })
+
+    expect(result).toMatchObject({ completed: 1, providerProcessing: 0 })
+    expect(provider.processingStatus).toHaveBeenCalledOnce()
+    expect(provider.add).not.toHaveBeenCalled()
+    expect(provider.replace).not.toHaveBeenCalled()
+    expect(repository.claim).not.toHaveBeenCalled()
+    expect(repository.complete).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outcome: expect.objectContaining({
+          providerDocumentId: "provider-doc-1",
+        }),
+      })
+    )
+  })
+
+  it("drains provider deletions before polling long-running work", async () => {
+    const repository = repositoryFor([])
+    repository.claimCleanup = vi.fn().mockResolvedValue([lease("delete", 3)])
+    repository.claimProcessing = vi.fn().mockResolvedValue([processingLease()])
+    const provider = providerFor()
+
+    const result = await runContextIndexBatch({
+      repository,
+      resolveProvider: createContextIndexProviderResolver([provider]),
+      workerId: "context-worker-1",
+      now,
+    })
+
+    expect(result).toMatchObject({ claimed: 1, completed: 1 })
+    expect(provider.delete).toHaveBeenCalledOnce()
+    expect(repository.claimProcessing).not.toHaveBeenCalled()
+    expect(provider.processingStatus).not.toHaveBeenCalled()
   })
 
   it("leaves leases unresolved after provider success or failed failure recording", async () => {
@@ -258,7 +340,11 @@ function repositoryFor(leases: ContextIndexLease[]): ContextIndexRepository {
       preparedAt: now.toISOString(),
     }),
     reconcile: vi.fn(),
+    claimProcessing: vi.fn().mockResolvedValue([]),
+    claimCleanup: vi.fn().mockResolvedValue([]),
     claim: vi.fn().mockResolvedValue(leases),
+    accept: vi.fn().mockResolvedValue(undefined),
+    deferProcessing: vi.fn().mockResolvedValue("awaiting_provider"),
     loadProjection: vi.fn(async ({ lease }) => lease.projectionSource!),
     complete: vi.fn().mockResolvedValue(undefined),
     fail: vi.fn().mockResolvedValue("dead_letter"),
@@ -278,6 +364,24 @@ function providerFor(): ContextIndexProvider {
     list: vi.fn(),
     processingStatus: vi.fn(),
     health: vi.fn(),
+  }
+}
+
+function processingLease() {
+  return {
+    leaseId: "71000000-0000-4000-8000-000000000001",
+    leasedUntil: "2026-07-17T03:02:00.000Z",
+    event: {
+      id: "31000000-0000-4000-8000-000000000001",
+      operation: "add" as const,
+    },
+    companyId: "20000000-0000-4000-8000-000000000001",
+    provider: "supermemory" as const,
+    stableCustomId: `ctx_${"1".repeat(64)}`,
+    providerDocumentId: "provider-doc-1",
+    expectedContentHash: "a".repeat(64),
+    pollAttempt: 1,
+    maximumPollAttempts: 120,
   }
 }
 

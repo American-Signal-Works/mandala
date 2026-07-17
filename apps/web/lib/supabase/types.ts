@@ -2935,6 +2935,71 @@ export type Database = {
           },
         ]
       }
+      context_index_operation_audits: {
+        Row: {
+          actor_kind: string
+          canary_record_limit: number
+          company_id: string
+          created_at: string
+          daily_cost_cap_microunits: number
+          daily_operation_cap: number
+          id: string
+          previous_canary_record_limit: number
+          previous_daily_operation_cap: number
+          previous_readiness: string
+          previous_worker_enabled: boolean
+          provider: string
+          readiness: string
+          reason: string
+          requests_per_minute: number
+          worker_enabled: boolean
+        }
+        Insert: {
+          actor_kind?: string
+          canary_record_limit: number
+          company_id: string
+          created_at?: string
+          daily_cost_cap_microunits: number
+          daily_operation_cap: number
+          id?: string
+          previous_canary_record_limit: number
+          previous_daily_operation_cap: number
+          previous_readiness: string
+          previous_worker_enabled: boolean
+          provider: string
+          readiness: string
+          reason: string
+          requests_per_minute: number
+          worker_enabled: boolean
+        }
+        Update: {
+          actor_kind?: string
+          canary_record_limit?: number
+          company_id?: string
+          created_at?: string
+          daily_cost_cap_microunits?: number
+          daily_operation_cap?: number
+          id?: string
+          previous_canary_record_limit?: number
+          previous_daily_operation_cap?: number
+          previous_readiness?: string
+          previous_worker_enabled?: boolean
+          provider?: string
+          readiness?: string
+          reason?: string
+          requests_per_minute?: number
+          worker_enabled?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "context_index_operation_audits_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       context_index_operation_controls: {
         Row: {
           canary_record_limit: number
@@ -2944,6 +3009,9 @@ export type Database = {
           estimated_operation_cost_microunits: number
           max_attempts: number
           provider: string
+          provider_health_checked_at: string | null
+          provider_health_detail_code: string | null
+          provider_health_status: string
           requests_per_minute: number
           updated_at: string
           worker_enabled: boolean
@@ -2956,6 +3024,9 @@ export type Database = {
           estimated_operation_cost_microunits?: number
           max_attempts?: number
           provider?: string
+          provider_health_checked_at?: string | null
+          provider_health_detail_code?: string | null
+          provider_health_status?: string
           requests_per_minute?: number
           updated_at?: string
           worker_enabled?: boolean
@@ -2968,6 +3039,9 @@ export type Database = {
           estimated_operation_cost_microunits?: number
           max_attempts?: number
           provider?: string
+          provider_health_checked_at?: string | null
+          provider_health_detail_code?: string | null
+          provider_health_status?: string
           requests_per_minute?: number
           updated_at?: string
           worker_enabled?: boolean
@@ -2992,6 +3066,7 @@ export type Database = {
           content_hash: string
           created_at: string
           delivery_state: string
+          dispatch_started_at: string | null
           id: string
           idempotency_key: string
           job_id: string | null
@@ -3001,8 +3076,13 @@ export type Database = {
           operation: string
           policy_hash: string
           policy_version: number
+          poll_attempt_count: number
           provider: string
+          provider_accepted_at: string | null
+          provider_checked_at: string | null
           provider_document_id: string | null
+          provider_processing_status: string | null
+          provider_result_document_id: string | null
           record_type: string
           reserved_cost_microunits: number
           safe_error_code: string | null
@@ -3020,6 +3100,7 @@ export type Database = {
           content_hash: string
           created_at?: string
           delivery_state?: string
+          dispatch_started_at?: string | null
           id?: string
           idempotency_key: string
           job_id?: string | null
@@ -3029,8 +3110,13 @@ export type Database = {
           operation: string
           policy_hash: string
           policy_version: number
+          poll_attempt_count?: number
           provider: string
+          provider_accepted_at?: string | null
+          provider_checked_at?: string | null
           provider_document_id?: string | null
+          provider_processing_status?: string | null
+          provider_result_document_id?: string | null
           record_type: string
           reserved_cost_microunits?: number
           safe_error_code?: string | null
@@ -3048,6 +3134,7 @@ export type Database = {
           content_hash?: string
           created_at?: string
           delivery_state?: string
+          dispatch_started_at?: string | null
           id?: string
           idempotency_key?: string
           job_id?: string | null
@@ -3057,8 +3144,13 @@ export type Database = {
           operation?: string
           policy_hash?: string
           policy_version?: number
+          poll_attempt_count?: number
           provider?: string
+          provider_accepted_at?: string | null
+          provider_checked_at?: string | null
           provider_document_id?: string | null
+          provider_processing_status?: string | null
+          provider_result_document_id?: string | null
           record_type?: string
           reserved_cost_microunits?: number
           safe_error_code?: string | null
@@ -5817,6 +5909,15 @@ export type Database = {
         Args: { p_token_digest: string }
         Returns: Json
       }
+      accept_context_index_work_v1: {
+        Args: {
+          p_lease_id: string
+          p_now?: string
+          p_provider_document_id: string
+          p_worker_id: string
+        }
+        Returns: Json
+      }
       acquire_workflow_control_parser_lease: {
         Args: { p_company_id: string }
         Returns: Json
@@ -5856,6 +5957,24 @@ export type Database = {
       }
       claim_cli_device_authorization_v1: {
         Args: { p_device_code_hash: string }
+        Returns: Json
+      }
+      claim_context_index_cleanup_v1: {
+        Args: {
+          p_lease_seconds?: number
+          p_limit?: number
+          p_now?: string
+          p_worker_id: string
+        }
+        Returns: Json
+      }
+      claim_context_index_processing_v1: {
+        Args: {
+          p_lease_seconds?: number
+          p_limit?: number
+          p_now?: string
+          p_worker_id: string
+        }
         Returns: Json
       }
       claim_context_index_work_v1: {
@@ -5922,6 +6041,20 @@ export type Database = {
         }
         Returns: Json
       }
+      configure_context_index_operations_v1: {
+        Args: {
+          p_canary_record_limit: number
+          p_company_id: string
+          p_daily_cost_cap_microunits: number
+          p_daily_operation_cap: number
+          p_now?: string
+          p_readiness: string
+          p_reason: string
+          p_requests_per_minute: number
+          p_worker_enabled: boolean
+        }
+        Returns: Json
+      }
       configure_workflow_control_parser_trust: {
         Args: { p_server_secret: string }
         Returns: undefined
@@ -5964,6 +6097,15 @@ export type Database = {
           p_company_id: string | null
           p_decision: string
           p_subject_hash: string
+        }
+        Returns: Json
+      }
+      defer_context_index_processing_v1: {
+        Args: {
+          p_lease_id: string
+          p_now?: string
+          p_processing_status: string
+          p_worker_id: string
         }
         Returns: Json
       }
@@ -6083,6 +6225,10 @@ export type Database = {
           p_period_end: string
           p_period_start: string
         }
+        Returns: Json
+      }
+      get_context_index_status_legacy_v1: {
+        Args: { p_company_id: string }
         Returns: Json
       }
       get_context_index_status_v1: {
@@ -6219,6 +6365,10 @@ export type Database = {
         Returns: Json
       }
       preflight_account_deletion: { Args: never; Returns: Json }
+      prepare_context_index_work_legacy_v1: {
+        Args: { p_limit?: number; p_now?: string }
+        Returns: Json
+      }
       prepare_context_index_work_v1: {
         Args: { p_limit?: number; p_now?: string }
         Returns: Json
@@ -6314,6 +6464,10 @@ export type Database = {
           p_sample_run_id: string
           p_workflow_id: string
         }
+        Returns: Json
+      }
+      record_context_provider_health_v1: {
+        Args: { p_detail_code: string; p_now?: string; p_status: string }
         Returns: Json
       }
       record_email_delivery_result: {
@@ -6498,6 +6652,10 @@ export type Database = {
           p_invitation_id: string
           p_token_digest: string
         }
+        Returns: Json
+      }
+      reserve_context_provider_health_v1: {
+        Args: { p_now?: string }
         Returns: Json
       }
       retrieve_agent_memory_v1: {

@@ -110,7 +110,7 @@ const documentListResponseSchema = z
 const documentStatusResponseSchema = z
   .object({
     id: SAFE_PROVIDER_REFERENCE,
-    customId: STABLE_CUSTOM_ID.optional(),
+    customId: STABLE_CUSTOM_ID,
     status: z.string().trim().min(1).max(100),
   })
   .passthrough()
@@ -318,13 +318,15 @@ export class SupermemoryContextProvider
       timeoutMs: 10_000,
       body: documentWriteBody(parsed),
     })
-    return deepFreeze(
-      indexOperationResult(
-        parsed,
-        "replace",
-        parseWriteResponse(response.data),
-        this.now()
+    const providerResult = parseWriteResponse(response.data)
+    if (providerResult.id !== parsedDocumentId) {
+      throw new SupermemoryProviderError(
+        "provider_response_identity_mismatch",
+        "failed"
       )
+    }
+    return deepFreeze(
+      indexOperationResult(parsed, "replace", providerResult, this.now())
     )
   }
 
@@ -334,11 +336,21 @@ export class SupermemoryContextProvider
     const parsed = contextIndexDeleteRequestSchema.parse(request)
     assertSupermemoryProvider(parsed.provider)
     STABLE_CUSTOM_ID.parse(parsed.stableCustomId)
-    await this.request({
-      method: "DELETE",
-      path: `/v3/documents/${encodeURIComponent(parsed.providerDocumentId)}`,
-      timeoutMs: 10_000,
-    })
+    try {
+      await this.request({
+        method: "DELETE",
+        path: `/v3/documents/${encodeURIComponent(parsed.providerDocumentId)}`,
+        timeoutMs: 10_000,
+      })
+    } catch (error) {
+      if (
+        !(error instanceof SupermemoryProviderError) ||
+        error.code !== "provider_document_not_found"
+      ) {
+        throw error
+      }
+      // A previously completed delete is idempotently complete.
+    }
     return deepFreeze(
       contextIndexOperationResultSchema.parse({
         requestId: parsed.requestId,
@@ -428,46 +440,33 @@ export class SupermemoryContextProvider
     const providerDocumentId = SAFE_PROVIDER_REFERENCE.parse(
       input.providerDocumentId
     )
-    try {
-      const response = await this.request({
-        method: "GET",
-        path: `/v3/documents/${encodeURIComponent(providerDocumentId)}`,
-        timeoutMs: 10_000,
-      })
-      const result = documentStatusResponseSchema.safeParse(response.data)
-      if (
-        !result.success ||
-        result.data.id !== providerDocumentId ||
-        (result.data.customId !== undefined &&
-          result.data.customId !== stableCustomId)
-      ) {
-        throw new SupermemoryProviderError(
-          "provider_response_malformed",
-          "failed"
-        )
-      }
-      return deepFreeze(
-        contextIndexProcessingStatusSchema.parse({
-          requestId,
-          provider: "supermemory",
-          scope,
-          stableCustomId,
-          status: mapProcessingStatus(result.data.status),
-          checkedAt: this.now().toISOString(),
-        })
-      )
-    } catch {
-      return deepFreeze(
-        contextIndexProcessingStatusSchema.parse({
-          requestId,
-          provider: "supermemory",
-          scope,
-          stableCustomId,
-          status: "failed",
-          checkedAt: this.now().toISOString(),
-        })
+    const response = await this.request({
+      method: "GET",
+      path: `/v3/documents/${encodeURIComponent(providerDocumentId)}`,
+      timeoutMs: 10_000,
+    })
+    const result = documentStatusResponseSchema.safeParse(response.data)
+    if (
+      !result.success ||
+      result.data.id !== providerDocumentId ||
+      (result.data.customId !== undefined &&
+        result.data.customId !== stableCustomId)
+    ) {
+      throw new SupermemoryProviderError(
+        "provider_response_malformed",
+        "failed"
       )
     }
+    return deepFreeze(
+      contextIndexProcessingStatusSchema.parse({
+        requestId,
+        provider: "supermemory",
+        scope,
+        stableCustomId,
+        status: mapProcessingStatus(result.data.status),
+        checkedAt: this.now().toISOString(),
+      })
+    )
   }
 
   private async request(input: ProviderRequest): Promise<ProviderResponse> {
@@ -901,8 +900,13 @@ function mapProcessingStatus(
     case "done":
     case "complete":
       return "complete"
-    default:
+    case "failed":
       return "failed"
+    default:
+      throw new SupermemoryProviderError(
+        "provider_response_malformed",
+        "failed"
+      )
   }
 }
 
@@ -960,6 +964,9 @@ function errorForHttpStatus(status: number): SupermemoryProviderError {
       "provider_authentication_failed",
       "failed"
     )
+  }
+  if (status === 404) {
+    return new SupermemoryProviderError("provider_document_not_found", "failed")
   }
   return new SupermemoryProviderError("provider_request_failed", "failed")
 }

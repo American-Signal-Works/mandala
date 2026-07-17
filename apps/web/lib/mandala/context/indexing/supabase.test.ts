@@ -159,6 +159,73 @@ describe("Supabase Context index repository", () => {
     })
   })
 
+  it("maps accepted provider identity into poll-only RPCs", async () => {
+    const processing = {
+      outboxId: claim().outboxId,
+      leaseId: "71000000-0000-4000-8000-000000000001",
+      leaseExpiresAt: "2026-07-17T03:02:00.000Z",
+      companyId: claim().companyId,
+      provider: "supermemory",
+      operation: "add",
+      stableCustomId: claim().stableCustomId,
+      providerDocumentId: "provider-doc-1",
+      contentHash: claim().contentHash,
+      pollAttempt: 1,
+      maximumPollAttempts: 120,
+    }
+    const rpc = vi
+      .fn<ContextIndexRpcExecutor["rpc"]>()
+      .mockResolvedValueOnce({ data: { claims: [processing] }, error: null })
+      .mockResolvedValueOnce({
+        data: { outboxId: claim().outboxId, status: "awaiting_provider" },
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: { outboxId: claim().outboxId, status: "awaiting_provider" },
+        error: null,
+      })
+    const repository = new SupabaseContextIndexRepository({ rpc })
+    const [lease] = await repository.claimProcessing({
+      workerId: "worker-1",
+      limit: 1,
+      leaseSeconds: 120,
+      now,
+    })
+    expect(lease).toMatchObject({
+      providerDocumentId: "provider-doc-1",
+    })
+    expect(lease).not.toHaveProperty("projectionSource")
+    await repository.accept({
+      workerId: "worker-1",
+      lease: lease!,
+      providerDocumentId: "provider-doc-1",
+      now,
+    })
+    await expect(
+      repository.deferProcessing({
+        workerId: "worker-1",
+        lease: lease!,
+        status: "processing",
+        now,
+      })
+    ).resolves.toBe("awaiting_provider")
+    expect(rpc).toHaveBeenNthCalledWith(
+      1,
+      contextIndexRpcNames.claimProcessing,
+      expect.objectContaining({ p_worker_id: "worker-1" })
+    )
+    expect(rpc).toHaveBeenNthCalledWith(
+      2,
+      contextIndexRpcNames.accept,
+      expect.objectContaining({ p_provider_document_id: "provider-doc-1" })
+    )
+    expect(rpc).toHaveBeenNthCalledWith(
+      3,
+      contextIndexRpcNames.deferProcessing,
+      expect.objectContaining({ p_processing_status: "processing" })
+    )
+  })
+
   it("never places projected content into completion or failure RPCs", async () => {
     const rpc = vi
       .fn<ContextIndexRpcExecutor["rpc"]>()

@@ -13,6 +13,8 @@ import {
 import {
   ContextIndexRepositoryError,
   type ContextIndexRepository,
+  type ContextIndexLeaseReference,
+  type ContextIndexProcessingLease,
 } from "./repository"
 import {
   ContextProjectionError,
@@ -94,12 +96,47 @@ export async function runContextIndexBatch(input: {
     concurrency: input.concurrency ?? 4,
     now: (input.now ?? new Date()).toISOString(),
   })
-  const leases = await input.repository.claim({
+  const claimInput = {
     workerId: options.workerId,
     limit: options.limit,
     leaseSeconds: options.leaseSeconds,
     now: options.now,
-  })
+  }
+  // Cleanup always wins so provider data cannot be stranded behind a long
+  // processing backlog or a repeatedly deferred provider job.
+  const cleanupLeases = await input.repository.claimCleanup(claimInput)
+  if (cleanupLeases.length > 0) {
+    const results = await mapWithConcurrency(
+      cleanupLeases,
+      options.concurrency,
+      (lease) =>
+        executeLease({
+          repository: input.repository,
+          resolveProvider: input.resolveProvider,
+          workerId: options.workerId,
+          lease,
+          now: options.now,
+        })
+    )
+    return contextIndexWorkerSummarySchema.parse(summarize(results))
+  }
+  const processingLeases = await input.repository.claimProcessing(claimInput)
+  if (processingLeases.length > 0) {
+    const results = await mapWithConcurrency(
+      processingLeases,
+      options.concurrency,
+      (lease) =>
+        executeProcessingLease({
+          repository: input.repository,
+          resolveProvider: input.resolveProvider,
+          workerId: options.workerId,
+          lease,
+          now: options.now,
+        })
+    )
+    return contextIndexWorkerSummarySchema.parse(summarize(results))
+  }
+  const leases = await input.repository.claim(claimInput)
   const results = await mapWithConcurrency(
     leases,
     options.concurrency,
@@ -113,6 +150,114 @@ export async function runContextIndexBatch(input: {
       })
   )
   return contextIndexWorkerSummarySchema.parse(summarize(results))
+}
+
+async function executeProcessingLease(input: {
+  repository: ContextIndexRepository
+  resolveProvider: ContextIndexProviderResolver
+  workerId: string
+  lease: ContextIndexProcessingLease
+  now: string
+}): Promise<ContextIndexWorkResult> {
+  const provider = input.resolveProvider(input.lease.provider)
+  if (!provider || provider.provider !== input.lease.provider) {
+    return failProcessing(input, "provider_adapter_missing", "terminal")
+  }
+  let processing
+  try {
+    processing = await provider.processingStatus({
+      requestId: input.lease.event.id,
+      scope: {
+        companyId: input.lease.companyId,
+        workspaceScopeId: input.lease.companyId,
+      },
+      stableCustomId: input.lease.stableCustomId,
+      providerDocumentId: input.lease.providerDocumentId,
+    })
+  } catch {
+    return deferProcessing(input, "unavailable")
+  }
+  if (
+    processing.requestId !== input.lease.event.id ||
+    processing.provider !== input.lease.provider ||
+    processing.scope.companyId !== input.lease.companyId ||
+    processing.scope.workspaceScopeId !== input.lease.companyId ||
+    processing.stableCustomId !== input.lease.stableCustomId
+  ) {
+    return failProcessing(input, "invalid_provider_result", "terminal")
+  }
+  if (processing.status === "pending" || processing.status === "processing") {
+    return deferProcessing(input, processing.status)
+  }
+  if (processing.status !== "complete") {
+    return failProcessing(input, "provider_processing_failed", "terminal")
+  }
+  try {
+    await input.repository.complete({
+      workerId: input.workerId,
+      lease: input.lease,
+      outcome: contextIndexCompletionOutcomeSchema.parse({
+        eventId: input.lease.event.id,
+        provider: input.lease.provider,
+        operation: input.lease.event.operation,
+        providerDocumentId: input.lease.providerDocumentId,
+        receipt: null,
+        contentHash: input.lease.expectedContentHash,
+        estimatedCostMicrounits: 0,
+        completedAt: input.now,
+      }),
+    })
+    return resultFor(input.lease, "completed")
+  } catch {
+    return resultFor(input.lease, "lease_unresolved")
+  }
+}
+
+async function deferProcessing(
+  input: Parameters<typeof executeProcessingLease>[0],
+  status: "pending" | "processing" | "unavailable"
+): Promise<ContextIndexWorkResult> {
+  try {
+    const state = await input.repository.deferProcessing({
+      workerId: input.workerId,
+      lease: input.lease,
+      status,
+      now: input.now,
+    })
+    return resultFor(
+      input.lease,
+      state === "awaiting_provider"
+        ? "provider_processing"
+        : "reconciliation_required",
+      state === "awaiting_provider" ? undefined : "provider_processing_timeout"
+    )
+  } catch {
+    return resultFor(input.lease, "lease_unresolved")
+  }
+}
+
+async function failProcessing(
+  input: Parameters<typeof executeProcessingLease>[0],
+  code: string,
+  failureClass: ContextIndexFailureClass
+): Promise<ContextIndexWorkResult> {
+  try {
+    const state = await input.repository.fail({
+      workerId: input.workerId,
+      lease: input.lease,
+      disposition:
+        failureClass === "terminal" ? "terminal" : "reconciliation_required",
+      errorCode: code,
+      now: input.now,
+    })
+    return resultFor(
+      input.lease,
+      state === "dead_letter" ? "dead_letter" : "reconciliation_required",
+      code
+    )
+  } catch {
+    return resultFor(input.lease, "lease_unresolved", code)
+  }
 }
 
 async function executeLease(input: {
@@ -160,6 +305,21 @@ async function executeLease(input: {
             )
     }
     const parsedResult = parseProviderResult(providerResult, input.lease)
+    if (parsedResult.status === "accepted") {
+      try {
+        await input.repository.accept({
+          workerId: input.workerId,
+          lease: input.lease,
+          providerDocumentId: parsedResult.providerDocumentId!,
+          now: input.now,
+        })
+        return resultFor(input.lease, "provider_processing")
+      } catch {
+        // The provider already accepted the write. Lease expiry must move the
+        // durable dispatch marker to reconciliation; never replay it here.
+        return resultFor(input.lease, "lease_unresolved")
+      }
+    }
     completion = contextIndexCompletionOutcomeSchema.parse({
       eventId: event.id,
       provider: event.provider,
@@ -242,11 +402,14 @@ function parseProviderResult(result: unknown, lease: ContextIndexLease) {
       "terminal"
     )
   }
-  if (value.status === "accepted") {
+  if (value.status === "accepted" && value.providerDocumentId === null) {
     throw new ContextIndexProviderExecutionError(
-      "provider_completion_unknown",
-      "unknown"
+      "invalid_provider_result",
+      "terminal"
     )
+  }
+  if (value.status === "accepted") {
+    return value
   }
   if (value.status !== "complete") {
     throw new ContextIndexProviderExecutionError(
@@ -279,13 +442,34 @@ function classifyFailure(error: unknown): {
     }
     return { code: error.code, failureClass: "terminal" }
   }
+  if (
+    error instanceof Error &&
+    error.name === "SupermemoryProviderError" &&
+    "code" in error &&
+    typeof error.code === "string"
+  ) {
+    if (error.code === "provider_rate_limited") {
+      return { code: error.code, failureClass: "transient" }
+    }
+    if (
+      [
+        "provider_authentication_failed",
+        "provider_configuration_invalid",
+        "provider_document_not_found",
+        "provider_request_failed",
+        "provider_scope_mismatch",
+      ].includes(error.code)
+    ) {
+      return { code: error.code, failureClass: "terminal" }
+    }
+  }
   // A provider may have accepted the request before throwing. Blind replay is
   // unsafe, so genuinely unknown exceptions always require reconciliation.
   return { code: "provider_outcome_unknown", failureClass: "unknown" }
 }
 
 function resultFor(
-  lease: ContextIndexLease,
+  lease: ContextIndexLeaseReference,
   status: ContextIndexWorkResult["status"],
   errorCode?: string
 ): ContextIndexWorkResult {
@@ -322,6 +506,7 @@ function summarize(results: ContextIndexWorkResult[]) {
     completed: count(results, "completed"),
     retryScheduled: count(results, "retry_scheduled"),
     deadLettered: count(results, "dead_letter"),
+    providerProcessing: count(results, "provider_processing"),
     reconciliationRequired: count(results, "reconciliation_required"),
     leaseUnresolved: count(results, "lease_unresolved"),
     results,
