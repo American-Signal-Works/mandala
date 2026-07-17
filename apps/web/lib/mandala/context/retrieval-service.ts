@@ -297,7 +297,11 @@ export class ServerContextRetriever implements RuntimeContextRetriever {
     let settings: z.infer<typeof storedSettingsSchema>
     try {
       settings = await this.repository.readSettings(companyId)
-    } catch {
+    } catch (error) {
+      console.error(
+        "Context retrieval settings lookup failed.",
+        safeRetrievalErrorCode(error)
+      )
       return fallbackResult({
         provider: "supermemory",
         status: "unavailable",
@@ -344,7 +348,11 @@ export class ServerContextRetriever implements RuntimeContextRetriever {
         companyId,
         candidates,
       })
-    } catch {
+    } catch (error) {
+      console.error(
+        "Context retrieval eligibility lookup failed.",
+        safeRetrievalErrorCode(error)
+      )
       return fallbackResult({
         provider: "supermemory",
         status: "unavailable",
@@ -494,6 +502,14 @@ function uniqueBy<T>(values: readonly T[], keyFor: (value: T) => string): T[] {
     seen.add(key)
     return true
   })
+}
+
+function safeRetrievalErrorCode(error: unknown): string {
+  return error instanceof ContextRetrievalServiceError
+    ? error.code
+    : error instanceof z.ZodError
+      ? "invalid_repository_response"
+      : "unknown_retrieval_error"
 }
 
 function buildQuery(input: RuntimeContextRetrievalInput): string {
