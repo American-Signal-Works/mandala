@@ -37,32 +37,22 @@ export async function captureSandboxFingerprint(input: {
   const db = asWorkspaceDatabase(input.supabase)
   const entries = await Promise.all(
     monitoredTables.map(async ({ name, clock }) => {
-      const [countResult, latestResult] = await Promise.all([
-        db
-          .from(name)
-          .select("id", { count: "exact", head: true })
-          .eq("company_id", input.companyId),
-        db
-          .from<Record<string, string | undefined>>(name)
-          .select(`id, ${clock}`)
-          .eq("company_id", input.companyId)
-          .order(clock, { ascending: false })
-          .limit(1)
-          .maybeSingle(),
-      ])
-      if (countResult.error)
+      const result = await db
+        .from<Record<string, string | undefined>>(name)
+        .select(`id, ${clock}`, { count: "exact" })
+        .eq("company_id", input.companyId)
+        .order(clock, { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (result.error)
         throw new Error(
-          `Sandbox proof could not count ${name}: ${countResult.error.message || "database query failed"}`
-        )
-      if (latestResult.error)
-        throw new Error(
-          `Sandbox proof could not inspect ${name}: ${latestResult.error.message || "database query failed"}`
+          `Sandbox proof could not inspect ${name}: ${result.error.message || "database query failed"}`
         )
       return [
         name,
         {
-          count: countResult.count ?? 0,
-          latest: latestResult.data?.[clock] ?? null,
+          count: result.count ?? 0,
+          latest: result.data?.[clock] ?? null,
         },
       ] as const
     })

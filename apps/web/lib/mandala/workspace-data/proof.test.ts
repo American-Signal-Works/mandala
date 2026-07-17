@@ -2,13 +2,15 @@ import { describe, expect, it } from "vitest"
 import { captureSandboxFingerprint } from "./proof"
 
 describe("Sandbox persistence fingerprint", () => {
-  it("uses a valid table-specific clock for every monitored persistence surface", async () => {
+  it("captures the exact count and latest table-specific clock in one query", async () => {
     const clocks = new Map<string, string>()
+    const selectCalls = new Map<string, number>()
     const supabase = {
       from: (table: string) => {
         const query = {
-          select: (columns: string, options?: { head?: boolean }) => {
-            if (!options?.head) clocks.set(table, columns.split(", ")[1]!)
+          select: (columns: string) => {
+            selectCalls.set(table, (selectCalls.get(table) ?? 0) + 1)
+            clocks.set(table, columns.split(", ")[1]!)
             return query
           },
           eq: () => query,
@@ -17,14 +19,7 @@ describe("Sandbox persistence fingerprint", () => {
             return query
           },
           limit: () => query,
-          maybeSingle: async () => ({ data: null, error: null }),
-          then: (
-            resolve: (value: {
-              data: never[]
-              error: null
-              count: number
-            }) => void
-          ) => resolve({ data: [], error: null, count: 0 }),
+          maybeSingle: async () => ({ data: null, error: null, count: 0 }),
         }
         return query
       },
@@ -36,6 +31,7 @@ describe("Sandbox persistence fingerprint", () => {
     })
 
     expect(result.tables).toHaveLength(19)
+    expect([...selectCalls.values()]).toEqual(Array(19).fill(1))
     expect(clocks.get("workflow_runs")).toBe("started_at")
     expect(clocks.get("agent_execution_receipts")).toBe("recorded_at")
     expect(clocks.get("workflow_action_attempts")).toBe("created_at")
