@@ -1,7 +1,10 @@
 import { readFile } from "node:fs/promises"
 import { resolve } from "node:path"
 import { beforeAll, describe, expect, it } from "vitest"
-import { compileAgentSkill, type CompiledAgentManifest } from "../skills/compiler"
+import {
+  compileAgentSkill,
+  type CompiledAgentManifest,
+} from "../skills/compiler"
 import { syntheticCompilerCapabilities } from "../skills/catalog-compiler"
 import {
   WorkflowMemoryStore,
@@ -10,8 +13,12 @@ import {
   type StaticProcurementFixtureScenarioId,
 } from "../workflows"
 import { createGenericWorkflowRuntime } from "./graph"
+import {
+  TEST_CONTEXT_COMPANY_ID,
+  testContextRetriever,
+} from "./context-test-support"
 
-const companyId = "company-parity"
+const companyId = TEST_CONTEXT_COMPANY_ID
 const actorId = "actor-parity"
 let manifest: CompiledAgentManifest
 
@@ -37,52 +44,63 @@ describe("compiled procurement shadow parity", () => {
     ["duplicate_open_order", "blocked"],
     ["stale_inventory", "blocked"],
     ["no_action", "suppressed"],
-  ] as const)("matches legacy business behavior for %s", async (scenarioId, status) => {
-    const scenario = getProcurementFixtureScenario(scenarioId)
-    const legacy = runProcurementFixtureScenario({
-      store: new WorkflowMemoryStore(),
-      companyId,
-      actorUserId: actorId,
-      scenarioId,
-      now: new Date("2026-07-13T12:00:00.000Z"),
-    })
-    const generic = await runCompiledScenario(scenarioId)
-
-    expect(generic.output.status).toBe(status)
-    if (status === "waiting_for_approval") {
-      expect(generic.output.review?.recommendation.output).toMatchObject({
-        recommendedQuantity: legacy.recommendation?.output.recommendedQuantity,
-        availableInventory: legacy.recommendation?.output.availableInventory,
-        reorderPoint: legacy.recommendation?.output.reorderPoint,
+  ] as const)(
+    "matches legacy business behavior for %s",
+    async (scenarioId, status) => {
+      const scenario = getProcurementFixtureScenario(scenarioId)
+      const legacy = runProcurementFixtureScenario({
+        store: new WorkflowMemoryStore(),
+        companyId,
+        actorUserId: actorId,
+        scenarioId,
+        now: new Date("2026-07-13T12:00:00.000Z"),
       })
-      expect(generic.output.review?.item.priority).toBe(legacy.item?.priority)
-      expect(generic.output.warnings).toEqual(legacy.recommendation?.warnings)
-    } else {
-      expect(generic.output.review).toBeNull()
-      expect(legacy.item).toBeNull()
+      const generic = await runCompiledScenario(scenarioId)
+
+      expect(generic.output.status).toBe(status)
+      if (status === "waiting_for_approval") {
+        expect(generic.output.review?.recommendation.output).toMatchObject({
+          recommendedQuantity:
+            legacy.recommendation?.output.recommendedQuantity,
+          availableInventory: legacy.recommendation?.output.availableInventory,
+          reorderPoint: legacy.recommendation?.output.reorderPoint,
+        })
+        expect(generic.output.review?.item.priority).toBe(legacy.item?.priority)
+        expect(generic.output.warnings).toEqual(legacy.recommendation?.warnings)
+      } else {
+        expect(generic.output.review).toBeNull()
+        expect(legacy.item).toBeNull()
+      }
+      expect(scenario.sku.sku).toBeTruthy()
     }
-    expect(scenario.sku.sku).toBeTruthy()
-  })
+  )
 })
 
-async function runCompiledScenario(scenarioId: StaticProcurementFixtureScenarioId) {
+async function runCompiledScenario(
+  scenarioId: StaticProcurementFixtureScenarioId
+) {
   const scenario = getProcurementFixtureScenario(scenarioId)
   const runtime = createGenericWorkflowRuntime({
     manifest,
     dependencies: {
+      contextRetriever: testContextRetriever(),
       capabilityProvider: {
         load: async ({ bindings }) => ({
           data: Object.fromEntries(
             bindings
               .filter((binding) => binding.access === "read")
-              .map((binding) => [binding.alias, { snapshot: scenario.sourceSnapshotId }])
+              .map((binding) => [
+                binding.alias,
+                { snapshot: scenario.sourceSnapshotId },
+              ])
           ),
           sourceRefs: [],
         }),
       },
       agentJudgment: async () => ({
         proposal: { selection: scenario.sku },
-        rationale: "Compiled shadow run selected the fixture product from bounded source data.",
+        rationale:
+          "Compiled shadow run selected the fixture product from bounded source data.",
         confidence: 0.86,
         warnings: [],
         context: {},

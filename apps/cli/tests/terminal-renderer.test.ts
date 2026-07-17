@@ -373,6 +373,8 @@ describe("terminal renderer", () => {
       expect(outputs[2]).toContain("Why it exists")
       expect(outputs[3]).toContain("Current stock")
       expect(outputs[4]).toContain("Memory provenance")
+      expect(outputs[4]).toContain("Canonical citations")
+      expect(outputs[4]).toContain("providerReference")
       expect(outputs[5]).toContain("APPROVE")
       expect(outputs[6]).toContain("MOCK ONLY")
       expect(outputs[7]).toContain("audit-marker")
@@ -421,6 +423,30 @@ describe("terminal renderer", () => {
     expect(output).toContain(
       "Approve · Edit and approve · Request rework · Reject"
     )
+  })
+
+  it("keeps detail citations visible when the review supplies its own record snapshot", () => {
+    const input = {
+      detail: productDetail(),
+      review: {
+        recordSnapshot: {
+          sources: ["Review snapshot source"],
+          facts: { availableInventory: "8 units" },
+          freshnessState: "fresh",
+        },
+        availableActions: ["approve"],
+        activity: { items: [] },
+      },
+    }
+
+    const workspace = renderReviewWorkspace(input, { width: 100 })
+    const evidenceTab = renderReviewWorkspaceTabs(input, {
+      width: 100,
+    }).find(({ id }) => id === "evidence")?.content
+
+    expect(workspace).toContain("Canonical citations")
+    expect(workspace).toContain("provider-search-result-1")
+    expect(evidenceTab).toContain("provider-search-result-1")
   })
 
   it("projects five independently replaceable item tabs", () => {
@@ -678,6 +704,19 @@ function productDetail() {
         },
       ],
       memoryRefs: ["prior approved reorder"],
+      operationalContext: {
+        provider: "supermemory",
+        status: "complete",
+        citations: [
+          {
+            providerReference: "provider-search-result-1",
+            canonicalRecordId: "22000000-0000-4000-8000-000000000001",
+            sourceKey: "shopify",
+            recordType: "inventory_item",
+            rank: 1,
+          },
+        ],
+      },
     },
     recommendation: {
       rationaleSummary: "Order 24 units from Acme Supply",

@@ -108,6 +108,58 @@ describe("WorkspaceDatasetProvider", () => {
     )
   })
 
+  it("carries only canonical records that underpin the selected signal", async () => {
+    const store: WorkspaceDataStore = {
+      resolveMapping: async () => ({
+        mappingVersionId: "10000000-0000-4000-8000-000000000001",
+        mappingKey: "workspace.records.read",
+        specHash: "b".repeat(64),
+        catalogDigest: "c".repeat(64),
+        spec,
+      }),
+      loadRecords: async () => [
+        {
+          id: "r-signal",
+          companyId: "company",
+          sourceId: "source",
+          sourceKey: "helpdesk",
+          recordType: "support_ticket",
+          externalId: "T-42",
+          payload: { ticket_id: "T-42", severity: 5 },
+          pulledAt: "2026-07-16T19:00:00.000Z",
+        },
+        {
+          id: "r-unrelated",
+          companyId: "company",
+          sourceId: "source",
+          sourceKey: "helpdesk",
+          recordType: "support_ticket",
+          externalId: "T-99",
+          payload: { ticket_id: "T-99", severity: 1 },
+          pulledAt: "2026-07-16T19:00:00.000Z",
+        },
+      ],
+    }
+    const provider = new WorkspaceDatasetProvider(
+      store,
+      () => new Date("2026-07-16T20:00:00.000Z")
+    )
+    await provider.prepare({ companyId: "company", bindings: [binding] })
+
+    const loaded = await provider.load({
+      state: { companyId: "company" } as never,
+      manifest: {} as never,
+      bindings: [binding],
+      allowedTools: [binding.toolName],
+    })
+
+    expect(loaded.sourceRefs).toHaveLength(1)
+    expect(loaded.sourceRefs[0]?.reference).toMatchObject({
+      canonicalRecordId: "r-signal",
+      entityValues: ["T-42"],
+    })
+  })
+
   it("enforces declared row and byte bounds", async () => {
     const store: WorkspaceDataStore = {
       resolveMapping: async () => ({

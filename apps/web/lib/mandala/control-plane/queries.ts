@@ -1,5 +1,8 @@
 import type { WorkflowSupabaseClient } from "@/lib/mandala/workflows"
-import { workItemReviewDataSchema } from "@workspace/control-plane"
+import {
+  contextPacketProvenanceSchema,
+  workItemReviewDataSchema,
+} from "@workspace/control-plane"
 import { z } from "zod"
 import type { Json } from "@/lib/supabase/types"
 import type { NormalizedQueueQuery } from "./queue-query"
@@ -385,6 +388,13 @@ export async function getWorkflowItemDetail(input: {
     ...review,
     activity: { items: activity.items },
   })
+  const operationalContext = parsed.recordSnapshot
+    ? await readOperationalContext({
+        supabase: input.supabase,
+        companyId: input.companyId,
+        contextPacketId: parsed.recordSnapshot.contextPacketId,
+      })
+    : null
 
   return {
     item: {
@@ -404,6 +414,7 @@ export async function getWorkflowItemDetail(input: {
           sources: parsed.recordSnapshot.sources,
           facts: parsed.recordSnapshot.facts,
           memoryRefs: [],
+          operationalContext,
           freshnessState: parsed.recordSnapshot.freshnessState,
           warnings: parsed.recordSnapshot.warnings,
           createdAt: parsed.recordSnapshot.capturedAt,
@@ -434,4 +445,21 @@ export async function getWorkflowItemDetail(input: {
       createdAt: event.createdAt,
     })),
   }
+}
+
+async function readOperationalContext(input: {
+  supabase: WorkflowSupabaseClient
+  companyId: string
+  contextPacketId: string
+}) {
+  const { data, error } = await input.supabase.rpc(
+    "get_workflow_context_provenance_v1",
+    {
+      p_company_id: input.companyId,
+      p_context_packet_id: input.contextPacketId,
+    }
+  )
+  if (error) throw new ControlPlaneQueryError("item_detail_failed")
+  if (!data) return null
+  return contextPacketProvenanceSchema.parse(data)
 }

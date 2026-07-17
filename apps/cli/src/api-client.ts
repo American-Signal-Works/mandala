@@ -508,7 +508,7 @@ export class ApiClient implements ControlApi {
   private agentActionRequest<T>(
     agentId: string,
     action: string,
-    schema: z.ZodType<T>,
+    schema: z.ZodType<T, z.ZodTypeDef, unknown>,
     body: unknown
   ): Promise<T> {
     return this.request(
@@ -520,7 +520,7 @@ export class ApiClient implements ControlApi {
 
   private async request<T>(
     path: string,
-    schema: z.ZodType<T>,
+    schema: z.ZodType<T, z.ZodTypeDef, unknown>,
     options: RequestOptions = {}
   ): Promise<T> {
     let response = await this.send(path, options, false)

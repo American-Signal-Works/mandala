@@ -1,3 +1,5 @@
 export * from "./off-provider"
+export * from "./supermemory-provider"
+export * from "./retrieval-service"
 export * from "./settings"
 export * from "./indexing"

@@ -12,6 +12,11 @@ import {
 } from "../workflows"
 import type { ProcurementSkuSnapshot } from "../workflows/fixtures/procurement"
 import { runCompiledWorkflowInMemory } from "./memory-runner"
+import {
+  TEST_CONTEXT_COMPANY_ID,
+  testCompleteContextResult,
+  testContextRetriever,
+} from "./context-test-support"
 
 let procurementManifest: CompiledAgentManifest
 let investigationManifest: CompiledAgentManifest
@@ -31,6 +36,9 @@ describe("compiled workflow memory runner", () => {
       scenario: scenario.sku,
       manifest: procurementManifest,
       triggerId: "review-run",
+      contextResult: testCompleteContextResult(
+        "Prior bounded supplier evidence."
+      ),
     })
 
     expect(result.run).toMatchObject({
@@ -51,11 +59,31 @@ describe("compiled workflow memory runner", () => {
       itemType: "procurement_reorder_review",
     })
     expect(result.contextPacket?.facts).toHaveProperty("rules")
+    expect(result.contextPacket?.memoryRefs).toEqual([])
+    expect(result.contextPacket?.operationalContext).toMatchObject({
+      provider: "supermemory",
+      status: "complete",
+      resultCount: 1,
+    })
+    expect(JSON.stringify(result.contextPacket)).not.toContain(
+      "Prior bounded supplier evidence."
+    )
     expect(result.recommendation?.output).toMatchObject({
       sku: scenario.sku.sku,
       recommendedQuantity: 144,
     })
     expect(result.evidence?.sourceRefs).toHaveLength(5)
+    expect(result.evidence?.evidence).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          kind: "operational_context_citation",
+          untrustedEvidence: true,
+        }),
+      ])
+    )
+    expect(JSON.stringify(result.evidence)).not.toContain(
+      "Prior bounded supplier evidence."
+    )
     expect(result.draft).toMatchObject({
       status: "pending_review",
       actionType: "execute_mock_purchase_order",
@@ -119,7 +147,7 @@ describe("compiled workflow memory runner", () => {
     const result = await runCompiledWorkflowInMemory({
       store,
       manifest: investigationManifest,
-      companyId: "company-memory",
+      companyId: TEST_CONTEXT_COMPANY_ID,
       actorUserId: "user-memory",
       trigger: {
         id: "spike-review",
@@ -127,6 +155,7 @@ describe("compiled workflow memory runner", () => {
         input: { source: "test" },
       },
       capabilityProvider: capabilityProvider(investigationManifest),
+      contextRetriever: testContextRetriever(),
       agentJudgment: async () => ({
         proposal: {
           selection: {
@@ -192,11 +221,12 @@ async function runProcurement(input: {
   scenario: ProcurementSkuSnapshot
   manifest: CompiledAgentManifest
   triggerId: string
+  contextResult?: ReturnType<typeof testCompleteContextResult>
 }) {
   return runCompiledWorkflowInMemory({
     store: input.store,
     manifest: input.manifest,
-    companyId: "company-memory",
+    companyId: TEST_CONTEXT_COMPANY_ID,
     actorUserId: "user-memory",
     trigger: {
       id: input.triggerId,
@@ -204,6 +234,7 @@ async function runProcurement(input: {
       input: { snapshot: input.triggerId },
     },
     capabilityProvider: capabilityProvider(input.manifest),
+    contextRetriever: testContextRetriever(input.contextResult),
     agentJudgment: async () => ({
       proposal: { selection: input.scenario },
       rationale: "A bounded source-data review selected this product.",

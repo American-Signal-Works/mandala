@@ -166,7 +166,18 @@ export class WorkspaceDatasetProvider implements RuntimeCapabilityProvider {
         ...(selected ?? {}),
         [projection.binding.spec.output.collection]: projection.records,
       }
-      sourceRefs.push(...projection.sourceRefs)
+      sourceRefs.push(
+        ...projection.sourceRefs.filter((sourceRef) => {
+          const entityValues = sourceRef.reference.entityValues
+          return (
+            Array.isArray(entityValues) &&
+            entityValues.some(
+              (entityValue) =>
+                String(entityValue) === prepared.signal.entityValue
+            )
+          )
+        })
+      )
       warnings.push(...projection.warnings)
     }
     return { data, sourceRefs, warnings }
@@ -209,24 +220,36 @@ export class WorkspaceDatasetProvider implements RuntimeCapabilityProvider {
           `Required dataset ${dataset.alias} returned no rows.`
         )
       }
-      const normalized = records
-        .flatMap((record) =>
-          normalizeRecord(record, dataset.rowsPath, dataset.entityPath)
-        )
-        .slice(0, remaining)
+      const normalizedRecords = records.map((record) => ({
+        record,
+        rows: normalizeRecord(record, dataset.rowsPath, dataset.entityPath),
+      }))
+      let normalizedRemaining = remaining
+      const boundedNormalizedRecords = normalizedRecords.flatMap((entry) => {
+        if (normalizedRemaining <= 0) return []
+        const rows = entry.rows.slice(0, normalizedRemaining)
+        normalizedRemaining -= rows.length
+        return rows.length > 0 ? [{ record: entry.record, rows }] : []
+      })
+      const normalized = boundedNormalizedRecords.flatMap(({ rows }) => rows)
       inputRows += normalized.length
       datasets.set(dataset.alias, groupRowsByEntity(normalized))
-      for (const record of records.slice(0, 100)) {
+      for (const { record, rows } of boundedNormalizedRecords.slice(0, 100)) {
+        const entityValues = unique(rows.map((row) => row.entity)).slice(0, 100)
+        if (entityValues.length === 0) continue
         sourceRefs.push({
           capabilityAlias: requirementAlias,
           connectorId: "mandala.workspace-data",
           observedAt: record.pulledAt,
           reference: {
+            canonicalRecordId: record.id,
+            sourceId: record.sourceId,
             mappingVersionId: binding.mappingVersionId,
             catalogDigest: binding.catalogDigest,
             sourceKey: record.sourceKey,
             recordType: record.recordType,
             externalId: record.externalId,
+            entityValues,
           },
         })
       }

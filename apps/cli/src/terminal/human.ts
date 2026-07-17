@@ -696,12 +696,20 @@ export function renderReviewWorkspace(
       ? root.availableActions
       : []
   const item = { ...detailItem, ...reviewItem }
+  const detailContext = recordOrEmpty(detail.contextPacket)
   const context = recordOrEmpty(
     Object.keys(recordSnapshot).length > 0
-      ? recordSnapshot
-      : detail.contextPacket
+      ? {
+          ...detailContext,
+          ...recordSnapshot,
+          operationalContext:
+            recordSnapshot.operationalContext ??
+            detailContext.operationalContext,
+        }
+      : detailContext
   )
   const facts = recordOrEmpty(context.facts)
+  const operationalContext = recordOrEmpty(context.operationalContext)
   const recommendation = recordOrEmpty(
     review.recommendation ?? detail.recommendation
   )
@@ -833,6 +841,15 @@ export function renderReviewWorkspace(
           read(recommendation, ["confidenceMarker", "confidence"]),
         ],
         ["Memory provenance", read(context, ["memoryRefs"])],
+        [
+          "Context retrieval",
+          firstValue(operationalContext, operationalContext, [
+            "status",
+            "provider",
+            "fallbackReason",
+          ]),
+        ],
+        ["Canonical citations", read(operationalContext, ["citations"])],
         ["Warning · Blocking", warnings.blocking],
         ["Warning · Informational", warnings.informational],
       ],
@@ -894,12 +911,20 @@ export function renderReviewWorkspaceTabs(
     ...recordOrEmpty(review.item),
   }
   const recordSnapshot = recordOrEmpty(review.recordSnapshot)
+  const detailContext = recordOrEmpty(detail.contextPacket)
   const context = recordOrEmpty(
     Object.keys(recordSnapshot).length > 0
-      ? recordSnapshot
-      : detail.contextPacket
+      ? {
+          ...detailContext,
+          ...recordSnapshot,
+          operationalContext:
+            recordSnapshot.operationalContext ??
+            detailContext.operationalContext,
+        }
+      : detailContext
   )
   const facts = recordOrEmpty(context.facts)
+  const operationalContext = recordOrEmpty(context.operationalContext)
   const recommendation = recordOrEmpty(
     review.recommendation ?? detail.recommendation
   )
@@ -1033,6 +1058,15 @@ export function renderReviewWorkspaceTabs(
         "Memory provenance",
         read(evidence, ["memoryProvenance"]) ?? read(context, ["memoryRefs"]),
       ],
+      [
+        "Context retrieval",
+        firstValue(operationalContext, operationalContext, [
+          "status",
+          "provider",
+          "fallbackReason",
+        ]),
+      ],
+      ["Canonical citations", read(operationalContext, ["citations"])],
       ["Warning · Blocking", warnings.blocking],
       ["Warning · Informational", warnings.informational],
     ],
@@ -1333,6 +1367,7 @@ export function renderEvidenceSummary(
   const root = recordOrEmpty(value)
   const evidence = recordOrEmpty(isRecord(root.evidence) ? root.evidence : root)
   const context = recordOrEmpty(root.contextPacket)
+  const operationalContext = recordOrEmpty(context.operationalContext)
   const recommendation = recordOrEmpty(root.recommendation)
   const warnings = collectWarnings(root)
   return renderProductSections(
@@ -1384,6 +1419,15 @@ export function renderEvidenceSummary(
           "memoryReferences",
         ]),
       ],
+      [
+        "Context retrieval",
+        firstValue(operationalContext, operationalContext, [
+          "status",
+          "provider",
+          "fallbackReason",
+        ]),
+      ],
+      ["Canonical citations", read(operationalContext, ["citations"])],
       ["Warning · Blocking", warnings.blocking],
       ["Warning · Informational", warnings.informational],
       [

@@ -116,8 +116,10 @@ export const contextFallbackReasonSchema = z.enum([
 export const contextCitationSchema = z
   .object({
     providerReference: providerReferenceSchema,
+    providerDocumentId: providerReferenceSchema.nullable(),
     stableCustomId: providerReferenceSchema,
     canonicalRecordId: z.string().uuid(),
+    canonicalRecordVersion: z.string().trim().min(1).max(200),
     sourceId: z.string().uuid(),
     sourceKey: boundedKeySchema,
     recordType: boundedKeySchema,
@@ -127,6 +129,7 @@ export const contextCitationSchema = z
     sourceObservedAt: timestampSchema,
     freshness: z.enum(["fresh", "stale", "unknown"]),
     contentHash: sha256Schema,
+    policyHash: sha256Schema,
   })
   .strict()
 
@@ -1074,6 +1077,7 @@ export interface ContextIndexProvider {
     readonly requestId: string
     readonly scope: ContextTenantScope
     readonly stableCustomId: string
+    readonly providerDocumentId: string
   }): Promise<ContextIndexProcessingStatus>
   health(scope: ContextTenantScope): Promise<ContextProviderHealth>
 }

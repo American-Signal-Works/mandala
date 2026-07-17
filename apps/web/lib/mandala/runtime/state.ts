@@ -1,4 +1,5 @@
 import { Annotation } from "@langchain/langgraph"
+import type { ContextRetrievalResult } from "@workspace/control-plane"
 
 export type RuntimeMode = "mock" | "dry_run" | "shadow"
 export type RuntimeOperatingMode = "sandbox" | "live"
@@ -36,7 +37,9 @@ export function resolveRuntimeSandboxEnabled(
   return true
 }
 
-export function runtimeOperatingMode(sandboxEnabled: boolean): RuntimeOperatingMode {
+export function runtimeOperatingMode(
+  sandboxEnabled: boolean
+): RuntimeOperatingMode {
   return sandboxEnabled ? "sandbox" : "live"
 }
 
@@ -45,6 +48,7 @@ export type RuntimeStatus =
   | "bindings_resolved"
   | "data_loaded"
   | "validated"
+  | "context_retrieved"
   | "judgment_ready"
   | "rules_applied"
   | "review_projected"
@@ -186,6 +190,10 @@ export const RuntimeStateAnnotation = Annotation.Root({
     reducer: (_current, update) => update,
     default: () => [],
   }),
+  contextRetrieval: Annotation<ContextRetrievalResult | null>({
+    reducer: (_current, update) => update,
+    default: () => null,
+  }),
   warnings: Annotation<string[]>({
     reducer: (_current, update) => update,
     default: () => [],
@@ -258,6 +266,7 @@ export function createRuntimeStartState(
     status: "created",
     data: {},
     sourceRefs: [],
+    contextRetrieval: null,
     warnings: [],
     agent: null,
     ruleResult: null,

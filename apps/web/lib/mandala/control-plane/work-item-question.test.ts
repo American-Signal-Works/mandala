@@ -182,6 +182,7 @@ function workItemDetail(): WorkItemDetail {
         leadTimeDays: 26,
       },
       memoryRefs: [],
+      operationalContext: null,
       freshnessState: "fresh",
       warnings: [],
       createdAt,

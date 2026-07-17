@@ -3,6 +3,7 @@ import type { WorkspaceSandboxRunResponse } from "@workspace/control-plane"
 import { workspaceSandboxRunResponseSchema } from "@workspace/control-plane"
 import type { WorkflowSupabaseClient } from "../workflows"
 import { WorkflowMemoryStore } from "../workflows"
+import { createServerContextRetriever } from "../context/retrieval-service"
 import { runCompiledWorkflowInMemory } from "../runtime/memory-runner"
 import type { RuntimeAgentJudgment } from "../runtime/state"
 import { WorkspaceDatasetProvider, type WorkspaceProjection } from "./provider"
@@ -58,6 +59,10 @@ export async function runWorkspaceSandboxGoldenPath(input: {
       },
     },
     capabilityProvider: provider,
+    contextRetriever: createServerContextRetriever({
+      supabase: input.proofSupabase,
+      now: () => now,
+    }),
     agentJudgment: createWorkspaceJudgment(
       prepared.projections,
       prepared.signal.entityValue

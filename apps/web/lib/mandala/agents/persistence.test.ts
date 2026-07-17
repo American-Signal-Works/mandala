@@ -3,6 +3,10 @@ import { syntheticCompilerCapabilities } from "../skills/catalog-compiler"
 import { compileAgentSkill } from "../skills/compiler"
 import { WorkflowMemoryStore } from "../workflows"
 import { runCompiledWorkflowInMemory } from "../runtime/memory-runner"
+import {
+  testCompleteContextResult,
+  testContextRetriever,
+} from "../runtime/context-test-support"
 import { persistCompiledWorkflowReview } from "./persistence"
 
 const companyId = "20000000-0000-4000-8000-000000000001"
@@ -16,6 +20,14 @@ describe("compiled workflow review persistence", () => {
       capabilities: syntheticCompilerCapabilities(),
     })
     if (!manifest.ok) throw new Error("Test manifest did not compile.")
+    const baseContext = testCompleteContextResult()
+    const retrievedContext = {
+      ...baseContext,
+      provenance: {
+        ...baseContext.provenance,
+        scope: { companyId, workspaceScopeId: companyId },
+      },
+    }
     const run = await runCompiledWorkflowInMemory({
       store: new WorkflowMemoryStore(),
       manifest: manifest.manifest,
@@ -29,6 +41,7 @@ describe("compiled workflow review persistence", () => {
           sourceRefs: [],
         }),
       },
+      contextRetriever: testContextRetriever(retrievedContext),
       agentJudgment: async () => ({
         proposal: { selection: { sku: "SYN-1" } },
         rationale: "Synthetic test selection.",
@@ -38,15 +51,19 @@ describe("compiled workflow review persistence", () => {
       }),
       now: new Date("2026-07-13T12:00:00.000Z"),
     })
-    const rpc = vi.fn(async () => ({
-      data: {
-        workflowRunId: run.run.id,
-        itemId: run.item!.id,
-        draftId: null,
-        duplicate: false,
-      },
-      error: null,
-    }))
+    let capturedPayload: unknown
+    const rpc = vi.fn(async (_name: string, args: Record<string, unknown>) => {
+      capturedPayload = args.p_payload
+      return {
+        data: {
+          workflowRunId: run.run.id,
+          itemId: run.item!.id,
+          draftId: null,
+          duplicate: false,
+        },
+        error: null,
+      }
+    })
 
     const persisted = await persistCompiledWorkflowReview({
       supabase: { rpc } as never,
@@ -81,6 +98,16 @@ describe("compiled workflow review persistence", () => {
         }),
       })
     )
+    const payload = capturedPayload as {
+      context_packet: {
+        facts: Record<string, unknown>
+        memory_refs: unknown[]
+      }
+    }
+    expect(payload.context_packet.facts).toMatchObject({
+      __mandalaOperationalContextV1: retrievedContext.provenance,
+    })
+    expect(payload.context_packet.memory_refs).toEqual([])
   })
 })
 
