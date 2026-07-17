@@ -909,6 +909,7 @@ export const contextIndexWorkResultSchema = z
       "completed",
       "retry_scheduled",
       "dead_letter",
+      "provider_processing",
       "reconciliation_required",
       "lease_unresolved",
     ]),
@@ -926,6 +927,7 @@ export const contextIndexWorkerSummarySchema = z
     completed: z.number().int().nonnegative(),
     retryScheduled: z.number().int().nonnegative(),
     deadLettered: z.number().int().nonnegative(),
+    providerProcessing: z.number().int().nonnegative(),
     reconciliationRequired: z.number().int().nonnegative(),
     leaseUnresolved: z.number().int().nonnegative(),
     results: z
@@ -938,6 +940,7 @@ export const contextIndexWorkerSummarySchema = z
       summary.completed +
       summary.retryScheduled +
       summary.deadLettered +
+      summary.providerProcessing +
       summary.reconciliationRequired +
       summary.leaseUnresolved
     if (

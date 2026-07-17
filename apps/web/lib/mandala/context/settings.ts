@@ -35,6 +35,15 @@ const contextIndexStatusEvidenceSchema = z
     recentErrorCount: z.number().int().nonnegative().nullable(),
     workerEnabled: z.boolean(),
     canaryRecordLimit: z.number().int().nonnegative(),
+    providerHealthStatus: z.enum([
+      "unknown",
+      "healthy",
+      "degraded",
+      "unavailable",
+    ]),
+    providerHealthCheckedAt: z.string().datetime({ offset: true }).nullable(),
+    providerHealthDetailCode: z.string().min(1).max(100).nullable(),
+    providerHealthFresh: z.boolean(),
   })
   .strict()
 
@@ -85,9 +94,14 @@ export async function setContextWorkspaceConfiguration(input: {
   })
   const provider = request.provider ?? current.provider
   const sandboxEnabled = request.sandboxEnabled ?? current.sandbox_enabled
-  // Slice 3 has no operational Supermemory adapter. Readiness is derived by
-  // trusted server code and can never be supplied by the CLI.
-  const readiness = provider === "off" ? "disabled" : "not_ready"
+  // Readiness remains server-owned. Selecting Supermemory starts not ready;
+  // later user-only changes preserve a trusted operational transition.
+  const readiness =
+    provider === "off"
+      ? "disabled"
+      : current.provider === "supermemory"
+        ? current.readiness
+        : "not_ready"
 
   const result = await input.supabase.rpc(
     "set_context_workspace_configuration_v1",
@@ -114,9 +128,18 @@ export function projectContextWorkspaceStatus(
 ): ContextWorkspaceStatus {
   const stored = storedContextWorkspaceSettingsSchema.parse(value)
   const providerOff = stored.provider === "off"
-  // Do not trust a persisted ready/error marker until an operational provider
-  // adapter can verify it. This projection makes the public status truthful.
-  const readiness = providerOff ? "disabled" : "not_ready"
+  const operational =
+    stored.readiness === "ready" &&
+    evidence?.workerEnabled === true &&
+    evidence.providerHealthStatus === "healthy" &&
+    evidence.providerHealthFresh
+  const readiness = providerOff
+    ? "disabled"
+    : stored.readiness === "error"
+      ? "error"
+      : operational
+        ? "ready"
+        : "not_ready"
 
   return contextWorkspaceStatusSchema.parse({
     schemaVersion: 1,
@@ -127,9 +150,15 @@ export function projectContextWorkspaceStatus(
     configurationVersion: stored.configuration_version,
     updatedAt: stored.updated_at,
     providerStatus: {
-      operational: false,
+      operational,
       status: readiness,
-      detailCode: providerOff ? "context_off" : "provider_not_operational",
+      detailCode: providerOff
+        ? "context_off"
+        : operational
+          ? evidence?.providerHealthDetailCode ?? "provider_ready"
+          : readiness === "error"
+            ? "provider_error"
+            : "provider_not_operational",
     },
     indexingCoverage: projectIndexingCoverage(stored, evidence),
     synchronization: projectSynchronization(stored, evidence),

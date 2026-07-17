@@ -43,6 +43,10 @@ function evidence(overrides: Record<string, unknown> = {}) {
     recentErrorCount: null,
     workerEnabled: false,
     canaryRecordLimit: 0,
+    providerHealthStatus: "unknown",
+    providerHealthCheckedAt: null,
+    providerHealthDetailCode: null,
+    providerHealthFresh: false,
     ...overrides,
   }
 }
@@ -89,18 +93,25 @@ describe("Context workspace settings service", () => {
     })
   })
 
-  it("normalizes any stored Supermemory marker to non-operational not_ready", () => {
+  it("reports only a server-ready, worker-enabled provider as operational", () => {
     expect(
       projectContextWorkspaceStatus(
-        row({ provider: "supermemory", readiness: "ready" })
+        row({ provider: "supermemory", readiness: "ready" }),
+        evidence({
+          workerEnabled: true,
+          providerHealthStatus: "healthy",
+          providerHealthCheckedAt: timestamp,
+          providerHealthDetailCode: "provider_ready",
+          providerHealthFresh: true,
+        }) as never
       )
     ).toMatchObject({
       provider: "supermemory",
-      readiness: "not_ready",
+      readiness: "ready",
       providerStatus: {
-        operational: false,
-        status: "not_ready",
-        detailCode: "provider_not_operational",
+        operational: true,
+        status: "ready",
+        detailCode: "provider_ready",
       },
     })
   })
@@ -188,13 +199,13 @@ describe("Context workspace settings service", () => {
   })
 
   it("preserves the configured provider on a Sandbox-only mutation", async () => {
-    const current = row({ provider: "supermemory", readiness: "not_ready" })
+    const current = row({ provider: "supermemory", readiness: "ready" })
     const mock = supabaseMock([
       { data: current, error: null },
       {
         data: row({
           provider: "supermemory",
-          readiness: "not_ready",
+          readiness: "ready",
           sandbox_enabled: false,
           configuration_version: 2,
         }),
@@ -219,7 +230,7 @@ describe("Context workspace settings service", () => {
       expect.objectContaining({
         p_provider: "supermemory",
         p_sandbox_enabled: false,
-        p_readiness: "not_ready",
+        p_readiness: "ready",
       })
     )
   })

@@ -1,28 +1,27 @@
 import { timingSafeEqual } from "node:crypto"
-import { prepareContextIndexMaintenance } from "@/actions/admin/context-index-maintenance"
+import { runContextIndexMaintenance } from "@/actions/admin/context-index-maintenance"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+export const maxDuration = 60
 
 const privateHeaders = { "cache-control": "private, no-store" }
-const disabledBatch = {
-  claimed: 0,
-  completed: 0,
-  retryScheduled: 0,
-  deadLettered: 0,
-  reconciliationRequired: 0,
-  leaseUnresolved: 0,
-  results: [],
-} as const
-
 export async function POST(request: Request) {
+  return run(request, true)
+}
+
+export async function GET(request: Request) {
+  return run(request, false)
+}
+
+async function run(request: Request, validateBody: boolean) {
   if (!isAuthorized(request)) {
     return Response.json(
       { error: "unauthorized" },
       { status: 401, headers: privateHeaders }
     )
   }
-  if (!(await hasEmptyBody(request))) {
+  if (validateBody && !(await hasEmptyBody(request))) {
     return Response.json(
       { error: "invalid_request" },
       { status: 400, headers: privateHeaders }
@@ -30,13 +29,9 @@ export async function POST(request: Request) {
   }
 
   try {
-    const preparation = await prepareContextIndexMaintenance()
-    // Slice 4 has no provider adapter. Maintenance may recover expired leases,
-    // but this shipped endpoint cannot claim or dispatch provider work.
-    return Response.json(
-      { preparation, batch: disabledBatch, providerOperational: false },
-      { headers: privateHeaders }
-    )
+    return Response.json(await runContextIndexMaintenance(), {
+      headers: privateHeaders,
+    })
   } catch {
     return Response.json(
       { error: "context_index_worker_failed" },
@@ -55,12 +50,16 @@ function isAuthorized(request: Request) {
   const supplied = authorization.startsWith("Bearer ")
     ? authorization.slice(7)
     : ""
-  const expected = process.env.CONTEXT_INDEX_WORKER_SECRET?.trim() ?? ""
   const suppliedBytes = Buffer.from(supplied)
-  const expectedBytes = Buffer.from(expected)
-  return (
-    expectedBytes.length >= 32 &&
-    suppliedBytes.length === expectedBytes.length &&
-    timingSafeEqual(suppliedBytes, expectedBytes)
-  )
+  return [
+    process.env.CONTEXT_INDEX_WORKER_SECRET,
+    process.env.CRON_SECRET,
+  ].some((candidate) => {
+    const expectedBytes = Buffer.from(candidate?.trim() ?? "")
+    return (
+      expectedBytes.length >= 32 &&
+      suppliedBytes.length === expectedBytes.length &&
+      timingSafeEqual(suppliedBytes, expectedBytes)
+    )
+  })
 }

@@ -264,7 +264,7 @@ describe("SupermemoryContextProvider indexing", () => {
     const provider = providerWith(async (url, init) => {
       calls.push({ url, init })
       return jsonResponse({
-        id: calls.length === 1 ? "provider_doc_add" : "provider_doc_replace",
+        id: "provider_doc_add",
         status: calls.length === 1 ? "queued" : "done",
       })
     })
@@ -280,7 +280,7 @@ describe("SupermemoryContextProvider indexing", () => {
     expect(replaced).toMatchObject({
       operation: "replace",
       status: "complete",
-      providerDocumentId: "provider_doc_replace",
+      providerDocumentId: "provider_doc_add",
     })
     expect(calls.map((call) => [call.init.method, call.url])).toEqual([
       ["POST", "https://api.supermemory.ai/v3/documents"],
@@ -338,6 +338,23 @@ describe("SupermemoryContextProvider indexing", () => {
       status: "complete",
       providerDocumentId: "provider/doc id",
     })
+  })
+
+  it("treats an already-missing provider document as an idempotent delete", async () => {
+    const provider = providerWith(
+      async () => new Response(null, { status: 404 })
+    )
+
+    await expect(
+      provider.delete({
+        requestId,
+        provider: "supermemory",
+        scope: { companyId, workspaceScopeId: companyId },
+        stableCustomId: `ctx_${"1".repeat(64)}`,
+        providerDocumentId: "provider_doc_1",
+        canonicalRecordId,
+      })
+    ).resolves.toMatchObject({ status: "complete" })
   })
 
   it("uses v3 array container tags for bounded pagination", async () => {
@@ -457,7 +474,20 @@ describe("SupermemoryContextProvider indexing", () => {
         stableCustomId: `ctx_${"1".repeat(64)}`,
         providerDocumentId: "provider_doc_1",
       })
-    ).resolves.toMatchObject({ status: "failed" })
+    ).rejects.toMatchObject({
+      code: "provider_response_malformed",
+      failureClass: "failed",
+    })
+  })
+
+  it("rejects a replacement response for a different provider document", async () => {
+    const provider = providerWith(async () =>
+      jsonResponse({ id: "provider_doc_other", status: "done" })
+    )
+
+    await expect(
+      provider.replace("provider_doc_1", indexDocument())
+    ).rejects.toMatchObject({ code: "provider_response_identity_mismatch" })
   })
 
   it("reports scoped health with no document content request", async () => {
