@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Readable, Writable } from "node:stream"
+import { fileURLToPath } from "node:url"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { ControlApi } from "../src/api-client.js"
 import { executeCliCommand, runCli } from "../src/cli.js"
@@ -271,10 +272,9 @@ describe("CLI commands", () => {
   it("runs the installed skill golden path only after mapping confirmation", async () => {
     const runWorkspaceSandbox = vi.fn(async () => workspaceSandboxRun())
     const api = fakeApi({ runWorkspaceSandbox })
-    const skillPath = new URL(
-      "../../../skills/procurement-reorder/SKILL.md",
-      import.meta.url
-    ).pathname
+    const skillPath = fileURLToPath(
+      new URL("../../../skills/procurement-reorder/SKILL.md", import.meta.url)
+    )
 
     expect(
       await command(
