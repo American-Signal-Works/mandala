@@ -7,7 +7,6 @@ import {
   renderEvidenceSummary,
   renderExecutionResult,
   renderHeader,
-  renderHomeSummary,
   renderHumanResult,
   renderInbox,
   renderInboxItemOverview,
@@ -330,25 +329,6 @@ describe("terminal renderer", () => {
     (width) => {
       const detail = productDetail()
       const outputs = [
-        renderHomeSummary(
-          {
-            context: {
-              companyName: "Mandala Local Demo",
-              mode: "mock",
-            },
-            items: [
-              detail.item,
-              {
-                title: "Old completed work",
-                status: "resolved",
-                type: "Status",
-              },
-            ],
-            itemCount: 1,
-            warningCount: 2,
-          },
-          { width }
-        ),
         renderInbox(
           { items: [detail.item, { title: "Done", status: "resolved" }] },
           { width }
@@ -367,17 +347,16 @@ describe("terminal renderer", () => {
           true
         )
       }
-      expect(outputs[0]).toContain("Workspace")
-      expect(outputs[1]).toContain("1 active")
-      expect(outputs[1]).not.toContain("Done")
-      expect(outputs[2]).toContain("Why it exists")
-      expect(outputs[3]).toContain("Current stock")
-      expect(outputs[4]).toContain("Memory provenance")
-      expect(outputs[4]).toContain("Canonical citations")
-      expect(outputs[4]).toContain("providerReference")
-      expect(outputs[5]).toContain("APPROVE")
-      expect(outputs[6]).toContain("MOCK ONLY")
-      expect(outputs[7]).toContain("audit-marker")
+      expect(outputs[0]).toContain("1 active")
+      expect(outputs[0]).not.toContain("Done")
+      expect(outputs[1]).toContain("Why it exists")
+      expect(outputs[2]).toContain("Current stock")
+      expect(outputs[3]).toContain("Memory provenance")
+      expect(outputs[3]).toContain("Canonical citations")
+      expect(outputs[3]).toContain("providerReference")
+      expect(outputs[4]).toContain("APPROVE")
+      expect(outputs[5]).toContain("MOCK ONLY")
+      expect(outputs[6]).toContain("audit-marker")
     }
   )
 
@@ -609,7 +588,6 @@ describe("terminal renderer", () => {
       rawToken: secret,
     }
     const outputs = [
-      renderHomeSummary(input),
       renderInbox(input),
       renderInboxItemOverview(input),
       renderProcurementReview(input),

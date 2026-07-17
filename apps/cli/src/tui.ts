@@ -43,7 +43,6 @@ import {
   renderEvidenceSummary,
   renderExecutionResult,
   renderHeader,
-  renderHomeSummary,
   renderHumanResult,
   renderInbox,
   renderProcurementReview,
@@ -333,10 +332,7 @@ class TuiSession {
     )
     if (inbox?.error) {
       this.writeError(inbox.error)
-      this.writeHomeSummary(undefined, context.data)
-      return
     }
-    this.writeHomeSummary(inbox, context.data)
   }
 
   async handleLine(line: string): Promise<void> {
@@ -1820,7 +1816,9 @@ class TuiSession {
       previousStatus,
       refreshedDetail,
     })
-    await this.showInboxSummary()
+    // A mutation can reorder or remove rows. Require the user to reopen the
+    // relevant list before a numeric row target can be used again.
+    this.itemRows.clear()
     return true
   }
 
@@ -2139,27 +2137,13 @@ class TuiSession {
     )
     if (inbox?.error) {
       this.writeError(inbox.error)
-      this.writeHomeSummary(undefined, result.data)
-      return
     }
-    this.writeHomeSummary(inbox, result.data)
   }
 
   private writeSignedOutState(error: CliError): void {
     this.clearState()
     this.write(renderHeader({ mode: "sandbox" }, this.renderOptions))
     this.writeError(error)
-    this.write(
-      renderHomeSummary(
-        {
-          context: { authenticated: false },
-          items: [],
-          itemCount: 0,
-          mode: "sandbox",
-        },
-        this.renderOptions
-      )
-    )
   }
 
   private showHelp(): void {
@@ -2190,25 +2174,6 @@ class TuiSession {
         )
         .join("\n\n")
     )
-  }
-
-  private async showInboxSummary(): Promise<void> {
-    const view = getSlashCommand("/inbox")?.view
-    if (!view) return
-    // A mutation can reorder or remove rows. Require a newly rendered list
-    // before a numeric target can be used again, even if refresh fails.
-    this.itemRows.clear()
-    const result = await this.runCommand([...view.backendArgs])
-    if (!result.ok) {
-      this.writeError(result.error)
-      return
-    }
-    const items = filterWorkItems(result.data, view)
-    this.writeHomeSummary({
-      items,
-      itemCount: items.length,
-      warningCount: countItemsWithWarnings(items),
-    })
   }
 
   private async loadInbox(): Promise<{
@@ -2312,29 +2277,6 @@ class TuiSession {
         ? { id: this.currentCompanyId, name: this.currentCompanyName }
         : undefined,
     })
-  }
-
-  private writeHomeSummary(
-    inbox?: {
-      items?: unknown[]
-      itemCount?: number
-      warningCount?: number
-    },
-    context?: unknown
-  ): void {
-    this.write(
-      renderHomeSummary(
-        {
-          context,
-          mode: this.currentEnvironment ?? "sandbox",
-          items: inbox?.items ?? [],
-          itemCount: inbox?.itemCount ?? 0,
-          warningCount: inbox?.warningCount ?? 0,
-          workspaceName: this.currentCompanyName ?? null,
-        },
-        this.renderOptions
-      )
-    )
   }
 
   private writeItemOverview(detail: WorkItemDetail): void {

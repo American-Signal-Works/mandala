@@ -711,8 +711,8 @@ describe("interactive TUI", () => {
     expect(stderr.value).toContain("sign-in expired or was revoked")
     expect(stderr.value).toContain("/login")
     expect(stderr.value).not.toContain("| Field")
-    expect(stdout.value).toContain("Next action")
-    expect(stdout.value).toContain("Sign in with /login")
+    expect(stdout.value).not.toContain("Home")
+    expect(stdout.value).not.toContain("Next action")
   })
 
   it("explains the seeded local account after an unknown-email login", async () => {
@@ -811,15 +811,14 @@ describe("interactive TUI", () => {
     expect(stderr.value).not.toContain("unknown_slash_command")
   })
 
-  it("starts signed-in users on a useful home summary", async () => {
+  it("starts signed-in users without a redundant home summary", async () => {
     const execute = fakeExecute()
     const { stdout } = await session("/exit\n", execute)
 
-    expect(stdout.value).toContain("Home")
-    expect(stdout.value).toContain("Workspace")
     expect(stdout.value).toContain("Example Company")
-    expect(stdout.value).toContain("Active work")
-    expect(stdout.value).toContain("Open the inbox to review work")
+    expect(stdout.value).not.toContain("Home")
+    expect(stdout.value).not.toContain("Active work")
+    expect(stdout.value).not.toContain("Next action")
     expect(stdout.value).toContain("Context: Off")
     expect(stdout.value).toContain("Sandbox: On")
     expect(commandCalls(execute).slice(0, 2)).toEqual([
@@ -829,7 +828,7 @@ describe("interactive TUI", () => {
     expect(commandCalls(execute)).toContainEqual(["context", "status"])
   })
 
-  it("keeps home available when workspace settings status cannot load", async () => {
+  it("keeps the header available when workspace settings status cannot load", async () => {
     const base = fakeExecute()
     const execute = vi.fn(async (args: string[]): Promise<CliCommandResult> => {
       if (args[0] === "context" && args[1] === "status") {
@@ -846,8 +845,8 @@ describe("interactive TUI", () => {
 
     const { stdout } = await session("/exit\n", execute)
 
-    expect(stdout.value).toContain("Home")
-    expect(stdout.value).toContain("Active work")
+    expect(stdout.value).not.toContain("Home")
+    expect(stdout.value).not.toContain("Active work")
     expect(stdout.value).toContain("Context: Unavailable")
     expect(stdout.value).toContain("Sandbox: Unavailable")
   })
@@ -897,7 +896,7 @@ describe("interactive TUI", () => {
     expect(stdout.value).toContain("Review workspace")
     expect(stdout.value).toContain("Review reorder request")
     expect(stdout.value).toContain("Why it exists")
-    expect(stdout.value).toContain("Next action")
+    expect(stdout.value).toContain("Actions")
     expect(stdout.value).not.toContain("Context Packet")
     expect(stdout.value).not.toContain("Audit Events")
   })

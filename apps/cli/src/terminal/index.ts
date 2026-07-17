@@ -6,7 +6,6 @@ export {
   renderEvidenceSummary,
   renderExecutionResult,
   renderHeader,
-  renderHomeSummary,
   renderHumanResult,
   renderInbox,
   renderInboxItemOverview,
