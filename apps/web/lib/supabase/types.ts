@@ -1054,6 +1054,233 @@ export type Database = {
           },
         ]
       }
+      agent_signal_change_windows: {
+        Row: {
+          change_count: number
+          change_kinds: string[]
+          company_id: string
+          created_at: string
+          dispatched_at: string | null
+          first_changed_at: string
+          id: string
+          last_changed_at: string
+          record_type: string
+          sample_record_ids: string[]
+          sample_truncated: boolean
+          source_id: string
+          transaction_id: number
+          updated_at: string
+        }
+        Insert: {
+          change_count?: number
+          change_kinds: string[]
+          company_id: string
+          created_at?: string
+          dispatched_at?: string | null
+          first_changed_at?: string
+          id?: string
+          last_changed_at?: string
+          record_type: string
+          sample_record_ids?: string[]
+          sample_truncated?: boolean
+          source_id: string
+          transaction_id: number
+          updated_at?: string
+        }
+        Update: {
+          change_count?: number
+          change_kinds?: string[]
+          company_id?: string
+          created_at?: string
+          dispatched_at?: string | null
+          first_changed_at?: string
+          id?: string
+          last_changed_at?: string
+          record_type?: string
+          sample_record_ids?: string[]
+          sample_truncated?: boolean
+          source_id?: string
+          transaction_id?: number
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_signal_change_windows_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_signal_change_windows_source_id_company_id_fkey"
+            columns: ["source_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "external_sources"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      agent_signal_dispatch_events: {
+        Row: {
+          actor_type: string
+          company_id: string
+          created_at: string
+          details: Json
+          dispatch_id: string
+          event_sequence: number
+          event_type: string
+          id: string
+          reason: string | null
+          worker_id: string | null
+        }
+        Insert: {
+          actor_type: string
+          company_id: string
+          created_at?: string
+          details?: Json
+          dispatch_id: string
+          event_sequence?: never
+          event_type: string
+          id?: string
+          reason?: string | null
+          worker_id?: string | null
+        }
+        Update: {
+          actor_type?: string
+          company_id?: string
+          created_at?: string
+          details?: Json
+          dispatch_id?: string
+          event_sequence?: never
+          event_type?: string
+          id?: string
+          reason?: string | null
+          worker_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_signal_dispatch_events_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_signal_dispatch_events_dispatch_id_company_id_fkey"
+            columns: ["dispatch_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "agent_signal_dispatches"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      agent_signal_dispatches: {
+        Row: {
+          attempts: number
+          available_at: string
+          binding_snapshot_id: string
+          change_window_id: string | null
+          company_id: string
+          completed_at: string | null
+          created_at: string
+          dedupe_key: string
+          execution_mode: string
+          id: string
+          input: Json
+          lease_id: string | null
+          lease_owner: string | null
+          leased_until: string | null
+          max_attempts: number
+          result: Json
+          signal_kind: string
+          status: string
+          trigger_id: string
+          trigger_kind: string
+          trigger_snapshot: Json
+          updated_at: string
+          workflow_id: string
+        }
+        Insert: {
+          attempts?: number
+          available_at?: string
+          binding_snapshot_id: string
+          change_window_id?: string | null
+          company_id: string
+          completed_at?: string | null
+          created_at?: string
+          dedupe_key: string
+          execution_mode: string
+          id?: string
+          input?: Json
+          lease_id?: string | null
+          lease_owner?: string | null
+          leased_until?: string | null
+          max_attempts?: number
+          result?: Json
+          signal_kind: string
+          status?: string
+          trigger_id: string
+          trigger_kind: string
+          trigger_snapshot: Json
+          updated_at?: string
+          workflow_id: string
+        }
+        Update: {
+          attempts?: number
+          available_at?: string
+          binding_snapshot_id?: string
+          change_window_id?: string | null
+          company_id?: string
+          completed_at?: string | null
+          created_at?: string
+          dedupe_key?: string
+          execution_mode?: string
+          id?: string
+          input?: Json
+          lease_id?: string | null
+          lease_owner?: string | null
+          leased_until?: string | null
+          max_attempts?: number
+          result?: Json
+          signal_kind?: string
+          status?: string
+          trigger_id?: string
+          trigger_kind?: string
+          trigger_snapshot?: Json
+          updated_at?: string
+          workflow_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "agent_signal_dispatches_binding_snapshot_id_company_id_wor_fkey"
+            columns: ["binding_snapshot_id", "company_id", "workflow_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_binding_snapshots"
+            referencedColumns: ["id", "company_id", "workflow_id"]
+          },
+          {
+            foreignKeyName: "agent_signal_dispatches_change_window_id_company_id_fkey"
+            columns: ["change_window_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "agent_signal_change_windows"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "agent_signal_dispatches_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "agent_signal_dispatches_workflow_id_company_id_fkey"
+            columns: ["workflow_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "agent_workflows"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
       agent_tool_definitions: {
         Row: {
           access_class: string
@@ -1283,6 +1510,175 @@ export type Database = {
             columns: ["capability_version_id"]
             isOneToOne: false
             referencedRelation: "capability_definition_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cli_authorization_attempts: {
+        Row: {
+          attempt_kind: string
+          attempted_at: string
+          id: number
+          subject_hash: string
+        }
+        Insert: {
+          attempt_kind: string
+          attempted_at?: string
+          id?: never
+          subject_hash: string
+        }
+        Update: {
+          attempt_kind?: string
+          attempted_at?: string
+          id?: never
+          subject_hash?: string
+        }
+        Relationships: []
+      }
+      cli_device_authorizations: {
+        Row: {
+          approved_at: string | null
+          approved_user_id: string | null
+          client_name: string
+          client_platform: string
+          client_version: string
+          consumed_at: string | null
+          created_at: string
+          denied_at: string | null
+          device_code_hash: string
+          exchange_nonce: string | null
+          expires_at: string
+          id: string
+          last_polled_at: string | null
+          poll_attempts: number
+          poll_interval_seconds: number
+          requested_scopes: string[]
+          requester_hash: string
+          selected_company_id: string | null
+          status: string
+          updated_at: string
+          browser_token_hash: string
+        }
+        Insert: {
+          approved_at?: string | null
+          approved_user_id?: string | null
+          client_name: string
+          client_platform: string
+          client_version: string
+          consumed_at?: string | null
+          created_at?: string
+          denied_at?: string | null
+          device_code_hash: string
+          exchange_nonce?: string | null
+          expires_at: string
+          id: string
+          last_polled_at?: string | null
+          poll_attempts?: number
+          poll_interval_seconds?: number
+          requested_scopes?: string[]
+          requester_hash: string
+          selected_company_id?: string | null
+          status?: string
+          updated_at?: string
+          browser_token_hash: string
+        }
+        Update: {
+          approved_at?: string | null
+          approved_user_id?: string | null
+          client_name?: string
+          client_platform?: string
+          client_version?: string
+          consumed_at?: string | null
+          created_at?: string
+          denied_at?: string | null
+          device_code_hash?: string
+          exchange_nonce?: string | null
+          expires_at?: string
+          id?: string
+          last_polled_at?: string | null
+          poll_attempts?: number
+          poll_interval_seconds?: number
+          requested_scopes?: string[]
+          requester_hash?: string
+          selected_company_id?: string | null
+          status?: string
+          updated_at?: string
+          browser_token_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cli_device_authorizations_selected_company_id_fkey"
+            columns: ["selected_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cli_sessions: {
+        Row: {
+          access_expires_at: string
+          access_token_hash: string
+          actor_auth_session_id: string
+          actor_session_ciphertext: string
+          client_name: string
+          client_platform: string
+          client_version: string
+          created_at: string
+          id: string
+          last_used_at: string
+          refresh_expires_at: string
+          refresh_token_hash: string
+          revocation_reason: string | null
+          revoked_at: string | null
+          scopes: string[]
+          selected_company_id: string | null
+          user_id: string
+        }
+        Insert: {
+          access_expires_at: string
+          access_token_hash: string
+          actor_auth_session_id: string
+          actor_session_ciphertext: string
+          client_name: string
+          client_platform: string
+          client_version: string
+          created_at?: string
+          id?: string
+          last_used_at?: string
+          refresh_expires_at: string
+          refresh_token_hash: string
+          revocation_reason?: string | null
+          revoked_at?: string | null
+          scopes?: string[]
+          selected_company_id?: string | null
+          user_id: string
+        }
+        Update: {
+          access_expires_at?: string
+          access_token_hash?: string
+          actor_auth_session_id?: string
+          actor_session_ciphertext?: string
+          client_name?: string
+          client_platform?: string
+          client_version?: string
+          created_at?: string
+          id?: string
+          last_used_at?: string
+          refresh_expires_at?: string
+          refresh_token_hash?: string
+          revocation_reason?: string | null
+          revoked_at?: string | null
+          scopes?: string[]
+          selected_company_id?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cli_sessions_selected_company_id_fkey"
+            columns: ["selected_company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
             referencedColumns: ["id"]
           },
         ]
@@ -4526,6 +4922,253 @@ export type Database = {
           },
         ]
       }
+      workflow_workspace_mapping_bindings: {
+        Row: {
+          binding_snapshot_id: string
+          catalog_digest: string
+          company_id: string
+          created_at: string
+          freshness_snapshot: Json
+          mapping_spec_hash: string
+          mapping_version_id: string
+          policy_snapshot: Json
+          requirement_key: string
+        }
+        Insert: {
+          binding_snapshot_id: string
+          catalog_digest: string
+          company_id: string
+          created_at?: string
+          freshness_snapshot: Json
+          mapping_spec_hash: string
+          mapping_version_id: string
+          policy_snapshot: Json
+          requirement_key: string
+        }
+        Update: {
+          binding_snapshot_id?: string
+          catalog_digest?: string
+          company_id?: string
+          created_at?: string
+          freshness_snapshot?: Json
+          mapping_spec_hash?: string
+          mapping_version_id?: string
+          policy_snapshot?: Json
+          requirement_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workflow_workspace_mapping_bi_binding_snapshot_id_company__fkey"
+            columns: ["binding_snapshot_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workflow_binding_snapshots"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "workflow_workspace_mapping_bi_mapping_version_id_company_i_fkey"
+            columns: ["mapping_version_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workspace_capability_mapping_versions"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "workflow_workspace_mapping_bindings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workspace_capability_mapping_datasets: {
+        Row: {
+          company_id: string
+          created_at: string
+          dataset_alias: string
+          expected_schema_hash: string | null
+          mapping_version_id: string
+          maximum_freshness_hours: number
+          record_type: string
+          required: boolean
+          source_key: string | null
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          dataset_alias: string
+          expected_schema_hash?: string | null
+          mapping_version_id: string
+          maximum_freshness_hours?: number
+          record_type: string
+          required?: boolean
+          source_key?: string | null
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          dataset_alias?: string
+          expected_schema_hash?: string | null
+          mapping_version_id?: string
+          maximum_freshness_hours?: number
+          record_type?: string
+          required?: boolean
+          source_key?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workspace_capability_mapping__mapping_version_id_company_i_fkey"
+            columns: ["mapping_version_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "workspace_capability_mapping_versions"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "workspace_capability_mapping_datasets_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workspace_capability_mapping_versions: {
+        Row: {
+          capability_version_id: string
+          company_id: string
+          confidence: number
+          confirmed_at: string | null
+          confirmed_by: string | null
+          created_at: string
+          created_by: string
+          id: string
+          mapping_key: string
+          provenance: Json
+          spec: Json
+          spec_hash: string
+          status: string
+          version: number
+        }
+        Insert: {
+          capability_version_id: string
+          company_id: string
+          confidence: number
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          created_at?: string
+          created_by: string
+          id?: string
+          mapping_key: string
+          provenance?: Json
+          spec: Json
+          spec_hash: string
+          status: string
+          version: number
+        }
+        Update: {
+          capability_version_id?: string
+          company_id?: string
+          confidence?: number
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          created_at?: string
+          created_by?: string
+          id?: string
+          mapping_key?: string
+          provenance?: Json
+          spec?: Json
+          spec_hash?: string
+          status?: string
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workspace_capability_mapping_version_capability_version_id_fkey"
+            columns: ["capability_version_id"]
+            isOneToOne: false
+            referencedRelation: "capability_definition_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workspace_capability_mapping_versions_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      workspace_data_catalogs: {
+        Row: {
+          catalog_version: number
+          company_id: string
+          created_at: string
+          field_profile: Json
+          first_observed_at: string | null
+          freshest_observed_at: string | null
+          id: string
+          profile_status: string
+          profiled_at: string | null
+          record_count: number
+          record_type: string
+          relationship_profile: Json
+          schema_hash: string | null
+          source_id: string
+          source_key: string
+          updated_at: string
+        }
+        Insert: {
+          catalog_version?: number
+          company_id: string
+          created_at?: string
+          field_profile?: Json
+          first_observed_at?: string | null
+          freshest_observed_at?: string | null
+          id?: string
+          profile_status?: string
+          profiled_at?: string | null
+          record_count?: number
+          record_type: string
+          relationship_profile?: Json
+          schema_hash?: string | null
+          source_id: string
+          source_key: string
+          updated_at?: string
+        }
+        Update: {
+          catalog_version?: number
+          company_id?: string
+          created_at?: string
+          field_profile?: Json
+          first_observed_at?: string | null
+          freshest_observed_at?: string | null
+          id?: string
+          profile_status?: string
+          profiled_at?: string | null
+          record_count?: number
+          record_type?: string
+          relationship_profile?: Json
+          schema_hash?: string | null
+          source_id?: string
+          source_key?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "workspace_data_catalogs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "workspace_data_catalogs_source_id_company_id_fkey"
+            columns: ["source_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "external_sources"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
     }
     Views: {
       email_delivery_owner_status: {
@@ -4622,9 +5265,21 @@ export type Database = {
         }
         Returns: Json
       }
+      bind_workspace_mappings_v1: {
+        Args: {
+          p_binding_snapshot_id: string
+          p_company_id: string
+          p_mappings: Json
+        }
+        Returns: Json
+      }
       bootstrap_company_owner: {
         Args: { p_company_id: string; p_owner_user_id: string }
         Returns: boolean
+      }
+      claim_cli_device_authorization_v1: {
+        Args: { p_device_code_hash: string }
+        Returns: Json
       }
       claim_due_email_deliveries: {
         Args: { p_lease_seconds?: number; p_limit?: number }
@@ -4641,6 +5296,19 @@ export type Database = {
         }[]
       }
       company_role_rank: { Args: { role: string }; Returns: number }
+      complete_cli_device_authorization_v1: {
+        Args: {
+          p_access_expires_at: string
+          p_access_token_hash: string
+          p_actor_auth_session_id: string
+          p_actor_session_ciphertext: string
+          p_authorization_id: string
+          p_exchange_nonce: string
+          p_refresh_expires_at: string
+          p_refresh_token_hash: string
+        }
+        Returns: Json
+      }
       complete_registered_agent_execution_v1: {
         Args: {
           p_company_id: string
@@ -4667,6 +5335,20 @@ export type Database = {
         Args: { p_actor_id: string; p_company_id: string; p_payload: Json }
         Returns: Json
       }
+      create_cli_device_authorization_v1: {
+        Args: {
+          p_client_name: string
+          p_client_platform: string
+          p_client_version: string
+          p_device_code_hash: string
+          p_expires_at?: string
+          p_id: string
+          p_requested_scopes?: string[]
+          p_requester_hash: string
+          p_browser_token_hash: string
+        }
+        Returns: Json
+      }
       create_company_with_owner: { Args: { p_name: string }; Returns: Json }
       create_workflow_binding_snapshot: {
         Args: { p_bindings: Json; p_company_id: string; p_workflow_id: string }
@@ -4677,6 +5359,16 @@ export type Database = {
           p_company_id: string
           p_expected_current_workflow_id: string
           p_workflow_key: string
+        }
+        Returns: Json
+      }
+      decide_cli_device_authorization_v1: {
+        Args: {
+          p_actor_user_id: string
+          p_company_id: string | null
+          p_decision: string
+          p_subject_hash: string
+          p_browser_token_hash: string
         }
         Returns: Json
       }
@@ -4797,6 +5489,10 @@ export type Database = {
         }
         Returns: Json
       }
+      get_sandbox_workspace_snapshot_v1: {
+        Args: { p_candidate_limit?: number; p_company_id: string }
+        Returns: Json
+      }
       get_workflow_review_v1: {
         Args: {
           p_activity_before_created_at?: string
@@ -4810,6 +5506,18 @@ export type Database = {
       has_company_role: {
         Args: { minimum_role: string; target_company_id: string }
         Returns: boolean
+      }
+      inspect_cli_device_authorization_v1: {
+        Args: {
+          p_actor_user_id: string
+          p_browser_token_hash: string
+          p_subject_hash: string
+        }
+        Returns: Json
+      }
+      inspect_cli_session_refresh_v1: {
+        Args: { p_refresh_token_hash: string }
+        Returns: Json
       }
       inspect_company_invitation: {
         Args: { p_token_digest: string }
@@ -4898,6 +5606,33 @@ export type Database = {
         Returns: Json
       }
       preflight_account_deletion: { Args: never; Returns: Json }
+      publish_provider_model_rate_v1: {
+        Args: {
+          p_created_by?: string
+          p_currency: string
+          p_effective_from: string
+          p_metric_name: string
+          p_model: string
+          p_price_per_unit: number
+          p_provider: string
+          p_quantity_per_unit: number
+          p_rate_version: string
+          p_source_reference: string
+        }
+        Returns: string
+      }
+      publish_workspace_capability_mapping_v1: {
+        Args: {
+          p_capability_version_id: string
+          p_company_id: string
+          p_confidence: number
+          p_confirmed?: boolean
+          p_mapping_key: string
+          p_provenance?: Json
+          p_spec: Json
+        }
+        Returns: Json
+      }
       purge_company_invitation_pii: {
         Args: { p_before?: string }
         Returns: number
@@ -5098,9 +5833,17 @@ export type Database = {
         }
         Returns: boolean
       }
+      refresh_workspace_data_catalog_v1: {
+        Args: { p_company_id: string }
+        Returns: Json
+      }
       reissue_workflow_execution_token: {
         Args: { p_action_draft_id: string; p_company_id: string }
         Returns: Json
+      }
+      release_cli_device_authorization_v1: {
+        Args: { p_authorization_id: string; p_exchange_nonce: string }
+        Returns: undefined
       }
       release_workflow_control_parser_lease: {
         Args: { p_company_id: string; p_lease_id: string }
@@ -5139,6 +5882,26 @@ export type Database = {
       revoke_account_memberships_for_deletion: {
         Args: { p_user_id: string }
         Returns: number
+      }
+      revoke_all_cli_sessions_v1: {
+        Args: { p_actor_user_id: string }
+        Returns: Json
+      }
+      revoke_cli_session_v1: {
+        Args: { p_actor_user_id: string; p_cli_session_id: string }
+        Returns: Json
+      }
+      rotate_cli_session_credentials_v1: {
+        Args: {
+          p_access_expires_at: string
+          p_actor_auth_session_id: string
+          p_actor_session_ciphertext: string
+          p_next_access_token_hash: string
+          p_next_refresh_token_hash: string
+          p_refresh_expires_at: string
+          p_refresh_token_hash: string
+        }
+        Returns: Json
       }
       revoke_company_invitation: {
         Args: { p_invitation_id: string }
@@ -5267,6 +6030,10 @@ export type Database = {
           p_theme_accent: string
           p_theme_mode: string
         }
+        Returns: Json
+      }
+      validate_cli_session_v1: {
+        Args: { p_access_token_hash: string }
         Returns: Json
       }
     }
@@ -5404,4 +6171,3 @@ export const Constants = {
     Enums: {},
   },
 } as const
-

@@ -63,6 +63,37 @@ const ruleBase = z.object({
     .optional(),
 })
 
+const triggerBase = {
+  id: keySchema,
+  description: z.string().min(1).max(300),
+}
+
+const workflowTriggerSchema = z.discriminatedUnion("kind", [
+  z.object({ ...triggerBase, kind: z.literal("manual") }).strict(),
+  z.object({ ...triggerBase, kind: z.literal("fixture") }).strict(),
+  z
+    .object({
+      ...triggerBase,
+      kind: z.literal("schedule"),
+      every_minutes: z.number().int().min(1).max(10_080),
+    })
+    .strict(),
+  z
+    .object({
+      ...triggerBase,
+      kind: z.literal("webhook"),
+      source_kinds: z.array(keySchema).max(20).default([]),
+      record_types: z.array(keySchema).min(1).max(50),
+      changes: z
+        .array(z.enum(["insert", "update", "delete"]))
+        .min(1)
+        .max(3)
+        .default(["insert", "update"]),
+      reconcile_every_minutes: z.number().int().min(5).max(10_080).default(60),
+    })
+    .strict(),
+])
+
 export const skillRuleSchema = z.discriminatedUnion("operation", [
   ruleBase
     .extend({
@@ -205,17 +236,7 @@ export const agentSkillSchema = z
         type: keySchema,
         status: z.enum(["draft", "active", "archived"]).default("draft"),
         default_mode: z.enum(["mock", "dry_run", "shadow"]).default("mock"),
-        triggers: z
-          .array(
-            z
-              .object({
-                id: keySchema,
-                kind: z.enum(["manual", "fixture", "schedule", "webhook"]),
-                description: z.string().min(1).max(300),
-              })
-              .strict()
-          )
-          .min(1),
+        triggers: z.array(workflowTriggerSchema).min(1).max(50),
       })
       .strict(),
     capabilities: z
@@ -310,6 +331,18 @@ export const agentSkillSchema = z
   })
   .strict()
   .superRefine((skill, context) => {
+    const triggerIds = new Set<string>()
+    for (const [index, trigger] of skill.workflow.triggers.entries()) {
+      if (triggerIds.has(trigger.id)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["workflow", "triggers", index, "id"],
+          message: `Trigger ${trigger.id} is duplicated.`,
+        })
+      }
+      triggerIds.add(trigger.id)
+    }
+
     const aliases = new Set<string>()
     const capabilityIds = new Set<string>()
     for (const [index, capability] of skill.capabilities.entries()) {

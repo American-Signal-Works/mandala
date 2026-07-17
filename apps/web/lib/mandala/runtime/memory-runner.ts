@@ -25,6 +25,7 @@ import {
 import type {
   RuntimeCheckpointCorrelation,
   RuntimeReviewProjection,
+  RuntimeOperatingMode,
   RuntimeSourceRef,
   RuntimeState,
   RuntimeTrigger,
@@ -43,6 +44,7 @@ export type CompiledMemoryRunInput = {
   checkpointer?: BaseCheckpointSaver
   skillMarkdown?: string
   now?: Date
+  operatingMode?: RuntimeOperatingMode
   trace?: {
     langSmithTraceId?: string | null
     langSmithRunId?: string | null
@@ -94,6 +96,14 @@ export async function runCompiledWorkflowInMemory(
           disposition: reviewRecords.duplicate ? "suppressed" : "created",
         }
       },
+      ...(input.operatingMode === "sandbox"
+        ? {
+            mutationBoundary: {
+              persistence: "ephemeral" as const,
+              externalActions: "simulate" as const,
+            },
+          }
+        : {}),
     },
   })
 
@@ -104,6 +114,7 @@ export async function runCompiledWorkflowInMemory(
     workflowRunId: run.id,
     manifestDigest: input.manifest.manifestDigest,
     mode: input.manifest.workflow.default_mode,
+    operatingMode: input.operatingMode ?? "live",
     trigger: input.trigger,
   })
   const state = invocation.output

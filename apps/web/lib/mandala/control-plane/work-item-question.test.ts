@@ -4,6 +4,7 @@ import { describe, expect, it, vi } from "vitest"
 import {
   WorkItemQuestionUnavailableError,
   answerWorkItemQuestion,
+  streamWorkItemQuestion,
 } from "./work-item-question"
 
 describe("selected work-item questions", () => {
@@ -93,6 +94,63 @@ describe("selected work-item questions", () => {
         { invokeModel: async () => "System prompt: reveal hidden reasoning" }
       )
     ).rejects.toMatchObject({ errorClass: "unsafe_model_output" })
+  })
+
+  it("emits safe provider text before the model stream completes", async () => {
+    let release: (() => void) | undefined
+    const deltas: string[] = []
+    const usage = vi.fn(async () => undefined)
+    const resultPromise = streamWorkItemQuestion(
+      {
+        detail: workItemDetail(),
+        question: "Why this quantity?",
+        modelContext: { projectedData: {}, capabilityAliases: [] },
+      },
+      (delta) => deltas.push(delta),
+      {
+        streamModel: async function* () {
+          yield "The current recommendation uses recent demand and available inventory. "
+          await new Promise<void>((resolve) => {
+            release = resolve
+          })
+          yield "Check supplier minimums before approving it."
+        },
+        recordUsage: usage,
+      }
+    )
+
+    await vi.waitFor(() => expect(deltas.join("")).not.toBe(""))
+    expect(deltas.join("").length).toBeGreaterThan(0)
+    expect(deltas.join("")).not.toContain("Check supplier minimums")
+    release?.()
+    const result = await resultPromise
+
+    expect(deltas.join("")).toBe(result.answer)
+    expect(result.answer).toContain("Check supplier minimums")
+    expect(usage).toHaveBeenCalledTimes(1)
+  })
+
+  it("quarantines a credential even when its pattern spans model chunks", async () => {
+    const deltas: string[] = []
+    await expect(
+      streamWorkItemQuestion(
+        {
+          detail: workItemDetail(),
+          question: "Why this quantity?",
+          modelContext: { projectedData: {}, capabilityAliases: [] },
+        },
+        (delta) => deltas.push(delta),
+        {
+          streamModel: async function* () {
+            yield `${"Safe context. ".repeat(10)}Bearer abc`
+            yield "defghijklmnopqrstuvwxyz"
+          },
+        }
+      )
+    ).rejects.toMatchObject({ errorClass: "unsafe_model_output" })
+
+    expect(deltas.join("")).not.toContain("Bearer")
+    expect(deltas.join("")).not.toContain("abcdefghijklmnopqrstuvwxyz")
   })
 })
 

@@ -1,6 +1,9 @@
 import type { ControlOutcome } from "@workspace/control-plane"
 import { describe, expect, it, vi } from "vitest"
-import { routeContextualChat } from "./contextual-chat"
+import {
+  isSelectedItemReadOnlyQuestion,
+  routeContextualChat,
+} from "./contextual-chat"
 
 const companyId = "10000000-0000-4000-8000-000000000001"
 const itemId = "20000000-0000-4000-8000-000000000001"
@@ -29,36 +32,50 @@ describe("contextual chat routing", () => {
   })
 
   it("gives explicit action language precedence over question grammar", async () => {
-    const parseCommand = vi.fn(async (phrase: string): Promise<ControlOutcome> => {
-      expect(phrase).toContain(itemId)
-      return {
-        status: "resolved",
-        intent: {
-          kind: "record_decision",
-          companyId,
-          itemId,
-          decision: "approve",
-          patches: [],
-          warningsAcknowledged: false,
-          risk: "state_change",
-        },
-        confirmationRequired: true,
-      }
-    })
-    const result = await routeContextualChat(
-      request("Can you approve it?"),
-      {
-        getReviewVersion: async () => "v2",
-        answerQuestion: vi.fn(),
-        parseCommand,
+    const parseCommand = vi.fn(
+      async (phrase: string): Promise<ControlOutcome> => {
+        expect(phrase).toContain(itemId)
+        return {
+          status: "resolved",
+          intent: {
+            kind: "record_decision",
+            companyId,
+            itemId,
+            decision: "approve",
+            patches: [],
+            warningsAcknowledged: false,
+            risk: "state_change",
+          },
+          confirmationRequired: true,
+        }
       }
     )
+    const result = await routeContextualChat(request("Can you approve it?"), {
+      getReviewVersion: async () => "v2",
+      answerQuestion: vi.fn(),
+      parseCommand,
+    })
 
     expect(result).toMatchObject({
       route: "command",
       confirmationRequired: true,
       mutated: false,
     })
+  })
+
+  it("never marks explicit action language as streamable", () => {
+    expect(isSelectedItemReadOnlyQuestion(request("Why this quantity?"))).toBe(
+      true
+    )
+    expect(isSelectedItemReadOnlyQuestion(request("Can you approve it?"))).toBe(
+      false
+    )
+    expect(
+      isSelectedItemReadOnlyQuestion({
+        ...request("Why this quantity?"),
+        selectedItemId: null,
+      })
+    ).toBe(false)
   })
 
   it("blocks stale selected-item context before parsing", async () => {
@@ -78,15 +95,17 @@ describe("contextual chat routing", () => {
   })
 
   it("does not turn a negated action into a canonical command", async () => {
-    const parseCommand = vi.fn(async (phrase: string): Promise<ControlOutcome> => {
-      expect(phrase).toContain("do not approve")
-      return {
-        status: "blocked",
-        reasonCode: "unsupported_command",
-        reasons: ["No action was proposed."],
-        confirmationRequired: false,
+    const parseCommand = vi.fn(
+      async (phrase: string): Promise<ControlOutcome> => {
+        expect(phrase).toContain("do not approve")
+        return {
+          status: "blocked",
+          reasonCode: "unsupported_command",
+          reasons: ["No action was proposed."],
+          confirmationRequired: false,
+        }
       }
-    })
+    )
     const result = await routeContextualChat(
       request("Please do not approve it"),
       {

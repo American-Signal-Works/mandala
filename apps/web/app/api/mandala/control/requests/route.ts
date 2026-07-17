@@ -12,10 +12,10 @@ import {
   classifyWorkflowRpcError,
   recordWorkflowControlRequestRpc,
 } from "@/lib/mandala/workflows"
-import { authenticateRequest } from "@/lib/supabase/request"
+import { allowsCliWorkspace, authenticateRequest } from "@/lib/supabase/request"
 
 export async function POST(request: Request) {
-  const auth = await authenticateRequest(request)
+  const auth = await authenticateRequest(request, { allowManagedCli: true })
   if (!auth)
     return NextResponse.json({ error: "unauthorized" }, { status: 401 })
 
@@ -27,6 +27,9 @@ export async function POST(request: Request) {
       { error: "invalid_request", issues: parsed.error.flatten().fieldErrors },
       { status: 400 }
     )
+  }
+  if (!allowsCliWorkspace(auth, parsed.data.companyId)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 })
   }
   if (
     parsed.data.resolutionStatus === "executed" &&

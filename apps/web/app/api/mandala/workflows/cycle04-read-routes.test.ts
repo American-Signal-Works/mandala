@@ -11,7 +11,10 @@ import { GET as listItems } from "./items/route"
 import { GET as reviewItem } from "./items/[itemId]/review/route"
 import { GET as listActivity } from "./items/[itemId]/activity/route"
 
-vi.mock("@/lib/supabase/request", () => ({ authenticateRequest: vi.fn() }))
+vi.mock("@/lib/supabase/request", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/supabase/request")>()),
+  authenticateRequest: vi.fn(),
+}))
 vi.mock("@/lib/mandala/control-plane/queries", async (importOriginal) => {
   const original =
     await importOriginal<typeof import("@/lib/mandala/control-plane/queries")>()

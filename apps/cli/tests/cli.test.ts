@@ -121,6 +121,58 @@ describe("CLI commands", () => {
     expect(stdout.value).toContain('"editPolicy":{}')
   })
 
+  it("opens a bounded real-data Sandbox for the selected workspace", async () => {
+    const createSandboxSession = vi.fn(async () => sandboxSession())
+    const api = fakeApi({ createSandboxSession })
+
+    expect(
+      await command(["sandbox", "open", "--limit", "10", "--json"], api)
+    ).toBe(0)
+    expect(createSandboxSession).toHaveBeenCalledWith({
+      companyId,
+      candidateLimit: 10,
+    })
+    expect(JSON.parse(stdout.value)).toMatchObject({
+      ok: true,
+      data: { mode: "sandbox", ephemeral: true, recordCount: 82_166 },
+    })
+  })
+
+  it("runs the installed skill golden path only after mapping confirmation", async () => {
+    const runWorkspaceSandbox = vi.fn(async () => workspaceSandboxRun())
+    const api = fakeApi({ runWorkspaceSandbox })
+    const skillPath = new URL(
+      "../../../skills/procurement-reorder/SKILL.md",
+      import.meta.url
+    ).pathname
+
+    expect(
+      await command(
+        [
+          "sandbox",
+          "run",
+          "--skill",
+          skillPath,
+          "--confirm-mappings",
+          "--json",
+        ],
+        api
+      )
+    ).toBe(0)
+    expect(runWorkspaceSandbox).toHaveBeenCalledWith({
+      companyId,
+      skillMarkdown: expect.stringContaining("id: procurement-reorder"),
+      confirmMappings: true,
+    })
+    expect(JSON.parse(stdout.value)).toMatchObject({
+      ok: true,
+      data: {
+        harness: { status: "waiting_for_approval" },
+        proof: { unchanged: true, persistenceWrites: 0, externalWriteAttempts: 0 },
+      },
+    })
+  })
+
   it("renders complete one-shot work details as human tables", async () => {
     const api = fakeApi()
 
@@ -778,6 +830,8 @@ async function command(
 
 function fakeApi(overrides: Partial<ControlApi> = {}) {
   return {
+    runWorkspaceSandbox: vi.fn(async () => workspaceSandboxRun()),
+    createSandboxSession: vi.fn(async () => sandboxSession()),
     listAgents: vi.fn(async () => ({ agents: [] })),
     installAgent: vi.fn(async () => {
       throw new Error("Agent installation is not used by this test.")
@@ -860,6 +914,69 @@ function fakeApi(overrides: Partial<ControlApi> = {}) {
       request: { id: controlId },
     })),
     ...overrides,
+  }
+}
+
+function sandboxSession() {
+  return {
+    schemaVersion: 1 as const,
+    mode: "sandbox" as const,
+    ephemeral: true as const,
+    companyId,
+    sessionId: "a5000000-0000-4000-8000-000000000001",
+    createdAt: "2026-07-16T04:00:00.000Z",
+    dataAnchorAt: "2026-07-15",
+    recordCount: 82_166,
+    candidateCount: 0,
+    sources: [],
+    candidates: [],
+  }
+}
+
+function workspaceSandboxRun() {
+  return {
+    schemaVersion: 1 as const,
+    mode: "sandbox" as const,
+    ephemeral: true as const,
+    companyId,
+    sessionId: "b1000000-0000-4000-8000-000000000001",
+    catalog: {
+      datasets: 8,
+      records: 83_155,
+      freshestObservedAt: "2026-07-16T20:00:00.000Z",
+    },
+    mappings: [],
+    agent: {
+      id: "b2000000-0000-4000-8000-000000000001",
+      name: "Procurement Reorder Review",
+      version: "1.0.0",
+      active: false as const,
+      manifestDigest: "a".repeat(64),
+      bindingSnapshotId: "b3000000-0000-4000-8000-000000000001",
+    },
+    signal: {
+      id: "inventory-threshold-crossed",
+      entityKey: "sku",
+      entityValue: "SKU-1",
+      detectedAt: "2026-07-16T20:00:00.000Z",
+      evidence: {},
+    },
+    harness: {
+      workflowRunId: "b4000000-0000-4000-8000-000000000001",
+      status: "waiting_for_approval" as const,
+      graphNodes: [],
+    },
+    deliverable: null,
+    proof: {
+      scope: "sandbox_execution" as const,
+      beforeDigest: "b".repeat(64),
+      afterDigest: "b".repeat(64),
+      unchanged: true,
+      persistenceWrites: 0 as const,
+      externalWriteAttempts: 0 as const,
+      monitoredTables: [],
+      setupCompletedBeforeBaseline: true as const,
+    },
   }
 }
 

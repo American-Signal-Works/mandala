@@ -7,7 +7,10 @@ import { authenticateRequest } from "@/lib/supabase/request"
 import { authorizeCompanyPermission } from "@/lib/mandala/authorization"
 import { POST } from "./route"
 
-vi.mock("@/lib/supabase/request", () => ({ authenticateRequest: vi.fn() }))
+vi.mock("@/lib/supabase/request", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/supabase/request")>()),
+  authenticateRequest: vi.fn(),
+}))
 vi.mock("@/lib/mandala/authorization", async (importOriginal) => {
   const original =
     await importOriginal<typeof import("@/lib/mandala/authorization")>()

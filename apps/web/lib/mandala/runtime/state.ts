@@ -1,6 +1,7 @@
 import { Annotation } from "@langchain/langgraph"
 
 export type RuntimeMode = "mock" | "dry_run" | "shadow"
+export type RuntimeOperatingMode = "sandbox" | "live"
 
 export type RuntimeStatus =
   | "created"
@@ -136,6 +137,7 @@ export const RuntimeStateAnnotation = Annotation.Root({
   workflowRunId: Annotation<string>,
   manifestDigest: Annotation<string>,
   mode: Annotation<RuntimeMode>,
+  operatingMode: Annotation<RuntimeOperatingMode>,
   trigger: Annotation<RuntimeTrigger>,
   status: Annotation<RuntimeStatus>,
   data: Annotation<Record<string, unknown>>({
@@ -196,13 +198,14 @@ export type RuntimeStartInput = Pick<
   | "manifestDigest"
   | "mode"
   | "trigger"
->
+> & { operatingMode?: RuntimeOperatingMode }
 
 export function createRuntimeStartState(
   input: RuntimeStartInput
 ): RuntimeStateUpdate {
   return {
     ...input,
+    operatingMode: input.operatingMode ?? "live",
     status: "created",
     data: {},
     sourceRefs: [],

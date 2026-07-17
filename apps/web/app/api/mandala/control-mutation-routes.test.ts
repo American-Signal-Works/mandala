@@ -9,7 +9,10 @@ import {
 import { POST as recordControlRequest } from "./control/requests/route"
 import { POST as reissueExecutionToken } from "./workflows/execution-tokens/route"
 
-vi.mock("@/lib/supabase/request", () => ({ authenticateRequest: vi.fn() }))
+vi.mock("@/lib/supabase/request", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/supabase/request")>()),
+  authenticateRequest: vi.fn(),
+}))
 vi.mock("@/lib/mandala/authorization", async (importOriginal) => {
   const original =
     await importOriginal<typeof import("@/lib/mandala/authorization")>()

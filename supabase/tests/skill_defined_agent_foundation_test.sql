@@ -67,8 +67,8 @@ VALUES
 
 SELECT is(
   (SELECT count(*) FROM public.capability_definitions),
-  8::BIGINT,
-  'the synthetic commerce connector seeds eight versioned capabilities'
+  9::BIGINT,
+  'the platform catalog includes eight synthetic capabilities and one generic workspace read capability'
 );
 SELECT ok(
   NOT EXISTS (

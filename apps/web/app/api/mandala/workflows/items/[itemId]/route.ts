@@ -2,7 +2,7 @@ import { workItemDetailResponseSchema } from "@workspace/control-plane"
 import { z } from "zod"
 import { getWorkflowItemDetail } from "@/lib/mandala/control-plane/queries"
 import { sanitizeLegacyItemDetail } from "@/lib/mandala/control-plane/public-projection"
-import { authenticateRequest } from "@/lib/supabase/request"
+import { allowsCliWorkspace, authenticateRequest } from "@/lib/supabase/request"
 import {
   controlPlaneErrorResponse,
   privateJson,
@@ -17,7 +17,7 @@ export async function GET(
   request: Request,
   context: { params: Promise<{ itemId: string }> }
 ) {
-  const auth = await authenticateRequest(request)
+  const auth = await authenticateRequest(request, { allowManagedCli: true })
   if (!auth) return privateJson({ error: "unauthorized" }, 401)
 
   const url = new URL(request.url)
@@ -30,6 +30,9 @@ export async function GET(
       { error: "invalid_request", issues: parsed.error.flatten().fieldErrors },
       400
     )
+  }
+  if (!allowsCliWorkspace(auth, parsed.data.companyId)) {
+    return privateJson({ error: "forbidden" }, 403)
   }
 
   try {

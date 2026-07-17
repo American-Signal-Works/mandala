@@ -2,6 +2,7 @@ import type { AuthCallbackMethod } from "@/lib/auth/callback"
 
 export const AUTH_SUCCESS_PATH = "/login?auth=success"
 export const INVITATION_COMPLETE_PATH = "/invitation/complete"
+export const CLI_AUTHORIZE_PATH = "/cli/authorize"
 export const AUTH_CONTINUATION_COOKIE = "mandala-auth-continuation"
 export const AUTH_CONTINUATION_COOKIE_PATH = "/callback"
 export const AUTH_CONTINUATION_MAX_AGE_SECONDS = 10 * 60
@@ -9,6 +10,7 @@ export const AUTH_CONTINUATION_MAX_AGE_SECONDS = 10 * 60
 const SAFE_POST_AUTH_PATHS = new Set([
   AUTH_SUCCESS_PATH,
   INVITATION_COMPLETE_PATH,
+  CLI_AUTHORIZE_PATH,
 ])
 
 export function getAuthCallbackUrl(

@@ -5,13 +5,13 @@ import {
 import { getCompanyMembership } from "@/lib/mandala/workflows"
 import { resolveCompanyCompilerCapabilities } from "@/lib/mandala/skills/capabilities"
 import { compileAgentSkill } from "@/lib/mandala/skills/compiler"
-import { authenticateRequest } from "@/lib/supabase/request"
+import { allowsCliWorkspace, authenticateRequest } from "@/lib/supabase/request"
 import { agentJson, parseAgentJson } from "../http"
 
 export const runtime = "nodejs"
 
 export async function POST(request: Request) {
-  const auth = await authenticateRequest(request)
+  const auth = await authenticateRequest(request, { allowManagedCli: true })
   if (!auth) return agentJson({ error: "unauthorized" }, 401)
 
   const body = await parseAgentJson(request)
@@ -21,6 +21,9 @@ export async function POST(request: Request) {
       { error: "invalid_request", issues: parsed.error.flatten().fieldErrors },
       400
     )
+  }
+  if (!allowsCliWorkspace(auth, parsed.data.companyId)) {
+    return agentJson({ error: "forbidden" }, 403)
   }
 
   let membership: Awaited<ReturnType<typeof getCompanyMembership>>

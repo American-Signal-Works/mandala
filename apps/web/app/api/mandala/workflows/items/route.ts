@@ -12,17 +12,20 @@ import {
   parseQueueSearchParams,
   queueCursorBinding,
 } from "@/lib/mandala/control-plane/queue-query"
-import { authenticateRequest } from "@/lib/supabase/request"
+import { allowsCliWorkspace, authenticateRequest } from "@/lib/supabase/request"
 import { controlPlaneErrorResponse, privateJson } from "../control-plane-http"
 
 export async function GET(request: Request) {
-  const auth = await authenticateRequest(request)
+  const auth = await authenticateRequest(request, { allowManagedCli: true })
   if (!auth) return privateJson({ error: "unauthorized" }, 401)
 
   const url = new URL(request.url)
   const parsed = parseQueueSearchParams(url.searchParams)
   if (!parsed.success) {
     return privateJson({ error: "invalid_request", issues: parsed.issues }, 400)
+  }
+  if (!allowsCliWorkspace(auth, parsed.data.companyId)) {
+    return privateJson({ error: "forbidden" }, 403)
   }
 
   try {

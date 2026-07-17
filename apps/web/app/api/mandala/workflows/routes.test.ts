@@ -2,10 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 import { executeAgentActionFromServer } from "@/actions/admin/execute-agent-action"
 import { authenticateRequest } from "@/lib/supabase/request"
 import { authorizeCompanyPermission } from "@/lib/mandala/authorization"
-import {
-  WorkflowRpcError,
-  persistFixtureRun,
-} from "@/lib/mandala/workflows"
+import { WorkflowRpcError, persistFixtureRun } from "@/lib/mandala/workflows"
 import {
   ControlPlaneQueryError,
   recordWorkflowDecisionV2,
@@ -14,7 +11,10 @@ import { POST as runFixture } from "./fixtures/route"
 import { POST as recordDecision } from "./decisions/route"
 import { POST as executeAction } from "./executions/route"
 
-vi.mock("@/lib/supabase/request", () => ({ authenticateRequest: vi.fn() }))
+vi.mock("@/lib/supabase/request", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/supabase/request")>()),
+  authenticateRequest: vi.fn(),
+}))
 vi.mock("@/actions/admin/execute-agent-action", () => ({
   executeAgentActionFromServer: vi.fn(),
 }))

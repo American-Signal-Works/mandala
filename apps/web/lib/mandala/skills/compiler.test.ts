@@ -150,4 +150,71 @@ describe("Skill v1 compiler", () => {
       ])
     )
   })
+
+  it("compiles bounded scheduled and connector-change triggers", async () => {
+    const source = await readFile(skillPath("sales-spike-investigator"), "utf8")
+    const withSignals = source.replace(
+      "    - id: synthetic-test\n      kind: fixture\n      description: Test against Mandala Bean Co. synthetic sales and business events.",
+      `    - id: synthetic-test
+      kind: fixture
+      description: Test against Mandala Bean Co. synthetic sales and business events.
+    - id: sales-changed
+      kind: webhook
+      description: Inspect normalized sales changes.
+      source_kinds: [shopify, shiphero]
+      record_types: [sales_order]
+      changes: [insert, update]
+      reconcile_every_minutes: 30
+    - id: hourly-reconciliation
+      kind: schedule
+      description: Reconcile missed demand signals.
+      every_minutes: 60`
+    )
+    const result = compileAgentSkill({
+      source: withSignals,
+      capabilities: availableCapabilities(),
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.manifest.workflow.triggers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: "sales-changed",
+          kind: "webhook",
+          record_types: ["sales_order"],
+          reconcile_every_minutes: 30,
+        }),
+        expect.objectContaining({
+          id: "hourly-reconciliation",
+          kind: "schedule",
+          every_minutes: 60,
+        }),
+      ])
+    )
+  })
+
+  it("rejects unbounded signal triggers", async () => {
+    const source = await readFile(skillPath("sales-spike-investigator"), "utf8")
+    const withUnboundedWebhook = source.replace(
+      "    - id: synthetic-test\n      kind: fixture\n      description: Test against Mandala Bean Co. synthetic sales and business events.",
+      `    - id: synthetic-test
+      kind: fixture
+      description: Test against Mandala Bean Co. synthetic sales and business events.
+    - id: all-records
+      kind: webhook
+      description: Unsafe unbounded change listener.`
+    )
+    const result = parseAgentSkillMarkdown(withUnboundedWebhook)
+
+    expect(result.ok).toBe(false)
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "skill.schema_invalid",
+          path: "workflow.triggers.2.record_types",
+        }),
+      ])
+    )
+  })
 })

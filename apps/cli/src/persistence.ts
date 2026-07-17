@@ -1,4 +1,4 @@
-import { randomBytes } from "node:crypto"
+import { createHash, randomBytes } from "node:crypto"
 import { execFile } from "node:child_process"
 import {
   open,
@@ -25,7 +25,7 @@ const selectedCompanySchema = z
 export const storedConfigSchema = z
   .object({
     schemaVersion: z.literal(1),
-    mode: z.literal("mock"),
+    mode: z.enum(["sandbox", "mock"]),
     selectedCompany: selectedCompanySchema.nullable(),
   })
   .strict()
@@ -33,6 +33,8 @@ export const storedConfigSchema = z
 export const storedSessionSchema = z
   .object({
     schemaVersion: z.literal(1),
+    refreshMode: z.enum(["hosted", "supabase"]).optional(),
+    cliSessionId: z.string().uuid().optional(),
     accessToken: z.string().min(1),
     refreshToken: z.string().min(1),
     expiresAt: z.number().int().positive(),
@@ -61,9 +63,16 @@ type SessionProtector = {
   unprotect(value: string): Promise<string>
 }
 
+export type SystemCredentialStore = {
+  read(): Promise<string | null>
+  write(value: string): Promise<void>
+  delete(): Promise<void>
+}
+
 type SecureStoreOptions = {
   platform?: NodeJS.Platform
   sessionProtector?: SessionProtector
+  credentialStore?: SystemCredentialStore
 }
 
 type RuntimePathContext = {
@@ -102,6 +111,7 @@ export class SecureStore {
   readonly sessionPath: string
   private readonly runtimePlatform: NodeJS.Platform
   private readonly sessionProtector: SessionProtector
+  private readonly credentialStore?: SystemCredentialStore
 
   constructor(
     readonly directory: string,
@@ -109,15 +119,15 @@ export class SecureStore {
   ) {
     this.runtimePlatform = options.platform ?? platform()
     this.sessionProtector = options.sessionProtector ?? windowsSessionProtector
+    this.credentialStore = options.credentialStore
     this.configPath = join(directory, "config.json")
     this.sessionPath = join(directory, "session.json")
   }
 
   async readConfig(): Promise<StoredConfig> {
-    return (
-      (await readPrivateJson(this.configPath, storedConfigSchema)) ??
-      defaultConfig()
-    )
+    const config = await readPrivateJson(this.configPath, storedConfigSchema)
+    if (!config) return defaultConfig()
+    return config.mode === "mock" ? { ...config, mode: "sandbox" } : config
   }
 
   async writeConfig(config: StoredConfig): Promise<void> {
@@ -129,6 +139,20 @@ export class SecureStore {
   }
 
   async readSession(): Promise<StoredSession | null> {
+    if (this.credentialStore) {
+      try {
+        const source = await this.credentialStore.read()
+        return source
+          ? storedSessionSchema.parse(JSON.parse(source) as unknown)
+          : null
+      } catch (error) {
+        if (error instanceof CliError) throw error
+        throw new CliError(
+          "invalid_local_state",
+          "The saved Mandala credential could not be read from the operating system's secure storage."
+        )
+      }
+    }
     if (this.runtimePlatform !== "win32")
       return readPrivateJson(this.sessionPath, storedSessionSchema)
 
@@ -150,6 +174,18 @@ export class SecureStore {
 
   async writeSession(session: StoredSession): Promise<void> {
     const validated = storedSessionSchema.parse(session)
+    if (this.credentialStore) {
+      try {
+        await this.credentialStore.write(JSON.stringify(validated))
+        return
+      } catch (error) {
+        if (error instanceof CliError) throw error
+        throw new CliError(
+          "local_state_write_failed",
+          "The Mandala session could not be saved in the operating system's secure credential storage."
+        )
+      }
+    }
     if (this.runtimePlatform === "win32") {
       let payload: string
       try {
@@ -171,6 +207,18 @@ export class SecureStore {
   }
 
   async deleteSession(): Promise<void> {
+    if (this.credentialStore) {
+      try {
+        await this.credentialStore.delete()
+        return
+      } catch (error) {
+        if (error instanceof CliError) throw error
+        throw new CliError(
+          "local_state_write_failed",
+          "The Mandala session could not be removed from secure credential storage."
+        )
+      }
+    }
     await rm(this.sessionPath, { force: true })
   }
 
@@ -178,6 +226,163 @@ export class SecureStore {
     const config = await this.readConfig()
     await this.writeConfig({ ...config, selectedCompany: null })
   }
+}
+
+export function createRuntimeSecureStore(
+  environment: RuntimeEnvironment
+): SecureStore {
+  const directory = resolveConfigDirectory(environment)
+  const runtimePlatform = platform()
+  if (runtimePlatform === "darwin") {
+    return new SecureStore(directory, {
+      platform: runtimePlatform,
+      credentialStore: createMacOsCredentialStore(directory),
+    })
+  }
+  if (runtimePlatform === "linux") {
+    return new SecureStore(directory, {
+      platform: runtimePlatform,
+      credentialStore: createLinuxCredentialStore(directory),
+    })
+  }
+  return new SecureStore(directory, { platform: runtimePlatform })
+}
+
+type CredentialCommandRunner = (
+  file: string,
+  args: string[],
+  input?: string
+) => Promise<string>
+
+export function createMacOsCredentialStore(
+  directory: string,
+  runCommand: CredentialCommandRunner = runCredentialCommand
+): SystemCredentialStore {
+  const account = credentialAccount(directory)
+  const attributes = ["-a", account, "-s", "md.mandala.cli"]
+  return {
+    async read() {
+      try {
+        return (
+          await runCommand("security", [
+            "find-generic-password",
+            ...attributes,
+            "-w",
+          ])
+        ).trim()
+      } catch (error) {
+        if (commandExitCode(error) === 44) return null
+        throw error
+      }
+    },
+    async write(value) {
+      // `security add-generic-password -w` reads from the controlling terminal,
+      // not the child process stdin. Run security's interactive command mode so
+      // the credential stays off the process argument list while still being
+      // supplied non-interactively by the CLI.
+      const encodedValue = Buffer.from(value, "utf8").toString("hex")
+      await runCommand(
+        "security",
+        ["-i"],
+        `add-generic-password -a ${account} -s md.mandala.cli -U -X ${encodedValue}\n`
+      )
+    },
+    async delete() {
+      try {
+        await runCommand("security", [
+          "delete-generic-password",
+          ...attributes,
+        ])
+      } catch (error) {
+        if (commandExitCode(error) !== 44) throw error
+      }
+    },
+  }
+}
+
+function createLinuxCredentialStore(directory: string): SystemCredentialStore {
+  const attributes = [
+    "service",
+    "md.mandala.cli",
+    "account",
+    credentialAccount(directory),
+  ]
+  return {
+    async read() {
+      const value = await runCredentialCommand("secret-tool", [
+        "lookup",
+        ...attributes,
+      ])
+      return value.trim() || null
+    },
+    async write(value) {
+      await runCredentialCommand(
+        "secret-tool",
+        ["store", "--label", "Mandala CLI session", ...attributes],
+        value
+      )
+    },
+    async delete() {
+      try {
+        await runCredentialCommand("secret-tool", ["clear", ...attributes])
+      } catch (error) {
+        if (commandExitCode(error) !== 1) throw error
+      }
+    },
+  }
+}
+
+function credentialAccount(directory: string) {
+  return `mandala-cli-${createHash("sha256").update(directory).digest("hex").slice(0, 16)}`
+}
+
+async function runCredentialCommand(
+  file: string,
+  args: string[],
+  input?: string
+): Promise<string> {
+  try {
+    return await new Promise((resolve, reject) => {
+      const child = execFile(
+        file,
+        args,
+        {
+          encoding: "utf8",
+          maxBuffer: 1024 * 1024,
+          timeout: 10_000,
+          windowsHide: true,
+        },
+        (error, stdout) => {
+          if (error) reject(error)
+          else resolve(stdout)
+        }
+      )
+      child.stdin?.on("error", () => undefined)
+      child.stdin?.end(input, "utf8")
+    })
+  } catch (error) {
+    if (isMissingCommand(error)) {
+      throw new CliError(
+        "credential_store_unavailable",
+        `${file} is required to protect the Mandala session on this computer.`
+      )
+    }
+    throw error
+  }
+}
+
+function isMissingCommand(error: unknown) {
+  return Boolean(
+    error &&
+    typeof error === "object" &&
+    "code" in error &&
+    error.code === "ENOENT"
+  )
+}
+
+function commandExitCode(error: unknown) {
+  if (!error || typeof error !== "object" || !("code" in error)) return null
+  return typeof error.code === "number" ? error.code : null
 }
 
 const windowsSessionProtector: SessionProtector = {
@@ -231,7 +436,7 @@ async function executePowerShell(
 }
 
 function defaultConfig(): StoredConfig {
-  return { schemaVersion: 1, mode: "mock", selectedCompany: null }
+  return { schemaVersion: 1, mode: "sandbox", selectedCompany: null }
 }
 
 async function readPrivateJson<T>(

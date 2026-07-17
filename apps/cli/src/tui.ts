@@ -5,11 +5,18 @@ import type {
   AgentSummary,
   AgentValidateResponse,
   ControlIntent,
+  ContextualChatResponse,
+  WorkItemAction,
   WorkItemDetail,
+  WorkItemReviewData,
 } from "@workspace/control-plane"
 import { controlIntentSchema } from "@workspace/control-plane"
 import { ApiClient, type ControlApi } from "./api-client.js"
-import { loginWithMagicLink, SessionManager } from "./auth.js"
+import {
+  loginWithDeviceAuthorization,
+  loginWithMagicLink,
+  SessionManager,
+} from "./auth.js"
 import type { CliDependencies } from "./cli.js"
 import { executeCliCommand, type CliCommandResult } from "./cli.js"
 import {
@@ -18,8 +25,8 @@ import {
   type ConfirmMutation,
 } from "./confirmation.js"
 import { asCliError, CliError } from "./errors.js"
-import { getApiUrl } from "./environment.js"
-import { resolveConfigDirectory, SecureStore } from "./persistence.js"
+import { getApiUrl, type RuntimeEnvironment } from "./environment.js"
+import { createRuntimeSecureStore } from "./persistence.js"
 import {
   getSlashCommand,
   isSlashCommandAvailable,
@@ -39,8 +46,9 @@ import {
   renderHomeSummary,
   renderHumanResult,
   renderInbox,
-  renderInboxItemOverview,
   renderProcurementReview,
+  renderReviewWorkspace,
+  renderReviewWorkspaceTabs,
   sanitizeTerminalText,
   type TerminalHeaderContext,
 } from "./terminal/index.js"
@@ -50,6 +58,7 @@ import {
   runInkTui,
   type CreateTuiSession,
   type TuiChoice,
+  type TuiItemWorkspace,
   type TuiSelectedItem,
   type TuiSessionIo,
 } from "./tui-app.js"
@@ -89,13 +98,25 @@ type AgentRow = {
   name: string
 }
 
-type MutationAction = "approve" | "reject" | "rework" | "edit" | "execute"
+type MutationAction =
+  | "approve"
+  | "reject"
+  | "resolve"
+  | "rework"
+  | "edit"
+  | "execute"
 
 type MutationArguments = {
   acknowledgeWarnings: boolean
   assignments: string[]
   reason?: string
   target?: string
+}
+
+type ContextualConversationResult = {
+  handled: boolean
+  rendered?: boolean
+  result?: ContextualChatResponse
 }
 
 const uuidPattern =
@@ -217,7 +238,9 @@ class TuiSession {
   private currentEnvironment?: string
   private currentUserEmail?: string
   private authAbort?: AbortController
+  private operationAbort?: AbortController
   private agentApi?: ControlApi
+  private currentReview?: WorkItemReviewData
   private selectedItem?: TuiSelectedItem
   private readonly cliDependencies: CliDependencies
   private readonly commandStderr: Writable
@@ -234,11 +257,24 @@ class TuiSession {
     execute: ExecuteCliCommand
     io: TuiSessionIo
   }) {
-    const login = input.cliDependencies.login ?? loginWithMagicLink
+    const login = input.cliDependencies.login ?? loginWithDeviceAuthorization
+    const localLogin = input.cliDependencies.localLogin ?? loginWithMagicLink
     this.cliDependencies = {
       ...input.cliDependencies,
       login: (options) =>
         login({
+          ...options,
+          onAuthorizationRequested: (request) =>
+            input.io.append(
+              renderAssistantMessage(
+                deviceAuthorizationWaitingMessage(request),
+                input.io.renderOptions
+              )
+            ),
+          signal: this.authAbort?.signal,
+        }),
+      localLogin: (options) =>
+        localLogin({
           ...options,
           onMagicLinkSent: () =>
             input.io.append(
@@ -315,12 +351,14 @@ class TuiSession {
 
   requestExit(): void {
     this.authAbort?.abort()
+    this.operationAbort?.abort()
     this.exitRequested = true
   }
 
   cancelCurrentOperation(): boolean {
-    if (!this.authAbort) return false
-    this.authAbort.abort()
+    const operation = this.operationAbort ?? this.authAbort
+    if (!operation) return false
+    operation.abort()
     return true
   }
 
@@ -347,15 +385,18 @@ class TuiSession {
     }
 
     const contextual = await this.contextualConversation(input)
-    if (contextual) {
-      if (contextual.route === "command") {
+    if (contextual.handled) {
+      if (!contextual.result) return
+      if (contextual.result.route === "command") {
         this.writeConversationResult(
-          await this.runCommand(contextualCommandArgs(contextual.command)),
+          await this.runCommand(
+            contextualCommandArgs(contextual.result.command)
+          ),
           input
         )
-      } else if (contextual.message) {
+      } else if (contextual.result.message && !contextual.rendered) {
         this.write(
-          renderAssistantMessage(contextual.message, this.renderOptions)
+          renderAssistantMessage(contextual.result.message, this.renderOptions)
         )
       }
       return
@@ -378,33 +419,75 @@ class TuiSession {
     this.writeConversationResult(await this.runCommand(["chat", input]), input)
   }
 
-  private async contextualConversation(input: string) {
-    if (!this.currentCompanyId) return undefined
+  private async contextualConversation(
+    input: string
+  ): Promise<ContextualConversationResult> {
+    if (!this.currentCompanyId) return { handled: false }
     const api = this.getAgentApi()
-    if (!api.contextualChat) return undefined
-    try {
-      const contextual = await api.contextualChat({
-        companyId: this.currentCompanyId,
-        input,
-        selectedItemId: this.selectedItem?.id ?? null,
-        expectedReviewVersion: this.selectedItem?.reviewVersion ?? null,
-        conversationId: this.conversationId,
-      })
-      if (this.selectedItem && contextual.reviewVersion) {
-        this.selectedItem = {
-          ...this.selectedItem,
-          reviewVersion: contextual.reviewVersion,
-        }
-        this.notifySnapshot()
-      }
-      return contextual
-    } catch {
-      return undefined
+    const request = {
+      companyId: this.currentCompanyId,
+      input,
+      selectedItemId: this.selectedItem?.id ?? null,
+      expectedReviewVersion: this.selectedItem?.reviewVersion ?? null,
+      conversationId: this.conversationId,
     }
+    if (api.contextualChatStream && this.io.setLiveMessage) {
+      const controller = new AbortController()
+      this.operationAbort = controller
+      let streamed = false
+      try {
+        const result = await api.contextualChatStream(
+          request,
+          (cumulativeText) => {
+            streamed = true
+            this.io.setLiveMessage?.(
+              renderAssistantMessage(cumulativeText, this.renderOptions)
+            )
+          },
+          controller.signal
+        )
+        this.io.setLiveMessage(null)
+        this.updateReviewVersion(result.reviewVersion)
+        if (streamed && result.route === "question") {
+          this.write(renderAssistantMessage(result.message, this.renderOptions))
+          return { handled: true, rendered: true, result }
+        }
+        return { handled: true, result }
+      } catch (error) {
+        this.io.setLiveMessage(null)
+        const parsed = asCliError(error)
+        if (parsed.code === "command_cancelled") {
+          this.write(
+            renderAssistantMessage("Answer stopped.", this.renderOptions)
+          )
+        } else {
+          this.writeError(parsed)
+        }
+        return { handled: true }
+      } finally {
+        if (this.operationAbort === controller) this.operationAbort = undefined
+      }
+    }
+    if (!api.contextualChat) return { handled: false }
+    try {
+      const result = await api.contextualChat(request)
+      this.updateReviewVersion(result.reviewVersion)
+      return { handled: true, result }
+    } catch {
+      return { handled: false }
+    }
+  }
+
+  private updateReviewVersion(reviewVersion: string | null): void {
+    if (!this.selectedItem || !reviewVersion) return
+    this.selectedItem = { ...this.selectedItem, reviewVersion }
+    this.notifySnapshot()
   }
 
   clearState(): void {
     this.authAbort?.abort()
+    this.operationAbort?.abort()
+    this.io.setLiveMessage?.(null)
     this.clearCompanyBoundState()
     this.currentCompanyId = undefined
     this.currentCompanyName = undefined
@@ -495,6 +578,10 @@ class TuiSession {
       case "/agent-rollback":
         await this.rollbackAgentCommand(args, definition.usage)
         return
+      case "/sandbox":
+        requireNoArguments(args, definition.usage)
+        await this.showSandbox()
+        return
       case "/fixtures":
         requireNoArguments(args, definition.usage)
         await this.showFixtures()
@@ -520,6 +607,7 @@ class TuiSession {
       case "/approve":
       case "/reject":
       case "/deny":
+      case "/resolve":
       case "/rework":
       case "/edit":
       case "/execute":
@@ -532,10 +620,13 @@ class TuiSession {
       case "/unselect":
         requireNoArguments(args, definition.usage)
         this.selectedItem = undefined
+        this.currentReview = undefined
+        this.io.setItemWorkspace?.(null)
         this.notifySnapshot()
-        this.write(
-          renderHumanResult({ selectedItem: null }, this.renderOptions)
-        )
+        if (!this.io.setItemWorkspace)
+          this.write(
+            renderHumanResult({ selectedItem: null }, this.renderOptions)
+          )
         return
       case "/context":
         requireNoArguments(args, definition.usage)
@@ -559,8 +650,13 @@ class TuiSession {
   }
 
   private async login(args: string[]): Promise<void> {
-    if (args.length > 1)
-      throw new CliError("invalid_arguments", "Use: /login [email].")
+    const local = args[0] === "--local"
+    if ((local && args.length !== 2) || (!local && args.length !== 0)) {
+      throw new CliError(
+        "invalid_arguments",
+        "Use /login for hosted sign-in, or /login --local <email> for local engineering."
+      )
+    }
     if (this.currentUserEmail) {
       this.write(
         renderAssistantMessage(
@@ -570,23 +666,12 @@ class TuiSession {
       )
       return
     }
-    const email = args[0] ?? (await this.io.ask("Email: "))
-    if (email === null) {
-      return
-    }
-    if (!email.trim())
-      throw new CliError(
-        "clarification_required",
-        "Enter the email address to use for sign in."
-      )
     const controller = new AbortController()
     this.authAbort = controller
-    const result = await this.runCommand([
-      "auth",
-      "login",
-      "--email",
-      email.trim(),
-    ]).finally(() => {
+    const command = local
+      ? ["auth", "login", "--local", "--email", args[1] ?? ""]
+      : ["auth", "login"]
+    const result = await this.runCommand(command).finally(() => {
       if (this.authAbort === controller) this.authAbort = undefined
     })
     if (!result.ok) {
@@ -670,6 +755,144 @@ class TuiSession {
           ].join("\n")
         : "No workspaces are available for this account."
     )
+  }
+
+  private async showSandbox(): Promise<void> {
+    const result = await this.runCommand(["sandbox", "open"])
+    if (!result.ok) {
+      this.writeError(result.error)
+      return
+    }
+    this.writeResult(result)
+
+    const candidates = arrayFrom(result.data, "candidates")
+      .map(asRecord)
+      .filter((candidate): candidate is Record<string, unknown> =>
+        Boolean(candidate)
+      )
+    if (!this.io.choose || candidates.length === 0) return
+    const decisions = new Map<
+      string,
+      {
+        action: "approved" | "edited" | "rejected" | "rework" | "executed"
+        quantity?: number
+      }
+    >()
+
+    while (true) {
+      const selected = await this.io.choose("Choose from Sandbox Inbox", [
+        ...candidates.flatMap<TuiChoice>((candidate) => {
+          const sku = stringValue(candidate.sku)
+          if (!sku) return []
+          const recommendation = asRecord(candidate.recommendation)
+          const status = stringValue(recommendation?.status)?.replaceAll(
+            "_",
+            " "
+          )
+          const quantity = recommendation?.quantity
+          const temporary = decisions.get(sku)?.action
+          return [
+            {
+              value: sku,
+              label: stringValue(candidate.productName) ?? sku,
+              description: [
+                sku,
+                typeof quantity === "number"
+                  ? `recommend ${quantity}`
+                  : undefined,
+                temporary ? `temporary ${temporary}` : status,
+              ]
+                .filter(Boolean)
+                .join(" · "),
+            },
+          ]
+        }),
+        {
+          value: "done",
+          label: "End Sandbox session",
+          description: "Discard every temporary decision",
+        },
+      ])
+      if (!selected || selected === "done") return
+      const candidate = candidates.find(
+        (entry) => stringValue(entry.sku) === selected
+      )
+      if (!candidate) continue
+      const previous = decisions.get(selected)
+      const availableActions = sandboxAvailableActions(candidate, previous)
+      this.write(
+        renderReviewWorkspace(
+          sandboxReviewProjection(candidate, availableActions, previous),
+          this.renderOptions
+        )
+      )
+      const action = await this.io.choose("Choose next action", [
+        ...availableActions.map(workItemActionChoice),
+        {
+          value: "back",
+          label: "Back to Sandbox Inbox",
+          description: "Leave this candidate unchanged",
+        },
+      ])
+      if (!action || action === "back") continue
+
+      let quantity: number | undefined
+      if (action === "edit") {
+        const answer = await this.io.ask("Temporary order quantity: ")
+        quantity = answer?.trim() ? Number(answer.trim()) : Number.NaN
+        if (!Number.isFinite(quantity) || quantity <= 0) {
+          this.writeError(
+            new CliError(
+              "invalid_arguments",
+              "Enter a quantity greater than zero. Nothing was changed."
+            )
+          )
+          continue
+        }
+      }
+
+      const confirmed = await this.io.choose(
+        "Confirm temporary Sandbox action",
+        [
+          {
+            value: "confirm",
+            label: "Simulate only",
+            description: "Keep this result only until the Sandbox session ends",
+          },
+          {
+            value: "cancel",
+            label: "Cancel",
+            description: "Make no temporary change",
+          },
+        ]
+      )
+      if (confirmed !== "confirm") continue
+
+      const temporaryAction =
+        action === "approve"
+          ? "approved"
+          : action === "edit"
+            ? "edited"
+            : action === "reject"
+              ? "rejected"
+              : action === "execute"
+                ? "executed"
+                : "rework"
+      decisions.set(selected, { action: temporaryAction, quantity })
+      this.write(
+        renderReviewWorkspace(
+          sandboxReviewProjection(
+            candidate,
+            sandboxAvailableActions(candidate, {
+              action: temporaryAction,
+              quantity,
+            }),
+            { action: temporaryAction, quantity }
+          ),
+          this.renderOptions
+        )
+      )
+    }
   }
 
   private async switchCompany(args: string[], usage: string): Promise<void> {
@@ -998,8 +1221,7 @@ class TuiSession {
         selected === "resume" ||
         selected === "disable"
       ) {
-        agent =
-          (await this.runAgentLifecycleAction(agent, selected)) ?? agent
+        agent = (await this.runAgentLifecycleAction(agent, selected)) ?? agent
       }
     }
   }
@@ -1133,8 +1355,7 @@ class TuiSession {
     }
     const environment = this.cliDependencies.environment ?? process.env
     const store =
-      this.cliDependencies.store ??
-      new SecureStore(resolveConfigDirectory(environment))
+      this.cliDependencies.store ?? createRuntimeSecureStore(environment)
     const session =
       this.cliDependencies.session ?? new SessionManager(store, environment)
     this.agentApi = new ApiClient(getApiUrl(environment), session)
@@ -1189,6 +1410,7 @@ class TuiSession {
       const detail = await this.fetchCanonicalItem(selected)
       if (!detail) return
       this.writeItemOverview(detail)
+      if (this.io.setItemWorkspace) return
       const returnToList = await this.showItemMenu(detail, true)
       if (!returnToList) return
     }
@@ -1366,7 +1588,8 @@ class TuiSession {
     const canonical = await this.fetchCanonicalItem(args[0])
     if (!canonical) return
     this.writeItemOverview(canonical)
-    if (this.io.choose) await this.showItemMenu(canonical, false)
+    if (this.io.choose && !this.io.setItemWorkspace)
+      await this.showItemMenu(canonical, false)
   }
 
   private async showItemMenu(
@@ -1375,56 +1598,9 @@ class TuiSession {
   ): Promise<boolean> {
     if (!this.io.choose) return false
     while (true) {
-      const status = detail.item.status
-      const choices: TuiChoice[] = []
-      if (status === "approved") {
-        choices.push({
-          value: "execute",
-          label: "Execute approved mock action",
-          description: "Preview and confirm the downstream action",
-        })
-      } else if (status === "blocked") {
-        choices.push({
-          value: "evidence",
-          label: "Inspect blocking evidence",
-          description: "See warnings, sources, and freshness",
-        })
-        choices.push({
-          value: "review",
-          label: "Review recommendation",
-          description: "Open the recommendation and available decisions",
-        })
-      } else if (status === "active") {
-        choices.push({
-          value: "review",
-          label: "Review recommendation",
-          description: "Open the recommendation and available decisions",
-        })
-      } else {
-        choices.push({
-          value: "history",
-          label: "Inspect activity and history",
-          description: "See decisions, execution, and audit events",
-        })
-      }
-      if (!choices.some(({ value }) => value === "evidence"))
-        choices.push({
-          value: "evidence",
-          label: "Evidence and freshness",
-          description: "Inspect sources, assumptions, and warnings",
-        })
-      if (detail.draft)
-        choices.push({
-          value: "draft",
-          label: "Draft action",
-          description: "Inspect the proposed downstream work",
-        })
-      if (!choices.some(({ value }) => value === "history"))
-        choices.push({
-          value: "history",
-          label: "Activity and history",
-          description: "Inspect decisions, attempts, and audit events",
-        })
+      const choices = (this.currentReview?.availableActions ?? []).map(
+        workItemActionChoice
+      )
       choices.push(
         {
           value: "detail",
@@ -1439,67 +1615,8 @@ class TuiSession {
 
       const selected = await this.io.choose("Choose next action", choices)
       if (!selected || selected === "back") return returnToList
-      if (selected === "review") {
-        await this.showSelectedSection("recommendation")
-        const decision = await this.showDecisionMenu(detail)
-        if (decision === "done") return false
-        continue
-      }
-      if (selected === "execute") {
-        const changed = await this.mutate("execute", [], "/execute [row-or-id]")
-        if (changed) return false
-        continue
-      }
-      await this.showSelectedSection(selected)
-    }
-  }
-
-  private async showDecisionMenu(
-    detail: WorkItemDetail
-  ): Promise<"item" | "done"> {
-    if (!this.io.choose) return "item"
-    while (true) {
-      const choices: TuiChoice[] = []
-      if (["active", "blocked"].includes(detail.item.status)) {
-        choices.push(
-          {
-            value: "approve",
-            label: "Approve",
-            description: "Record approval, then review mock execution",
-          },
-          {
-            value: "edit",
-            label: "Edit and approve",
-            description: "Change the draft with a recorded reason",
-          },
-          {
-            value: "rework",
-            label: "Request rework",
-            description: "Return the recommendation for revision",
-          },
-          {
-            value: "reject",
-            label: "Reject",
-            description: "Close the item with a recorded reason",
-          }
-        )
-      }
-      choices.push({
-        value: "evidence",
-        label: "Evidence and freshness",
-        description: "Inspect sources and warnings before deciding",
-      })
-      if (detail.draft)
-        choices.push({
-          value: "draft",
-          label: "Draft action",
-          description: "Inspect the exact proposed work",
-        })
-      choices.push({ value: "back", label: "Back to item" })
-      const selected = await this.io.choose("Choose a decision", choices)
-      if (!selected || selected === "back") return "item"
-      if (selected === "evidence" || selected === "draft") {
-        await this.showSelectedSection(selected)
+      if (selected === "detail") {
+        await this.showSelectedSection("detail")
         continue
       }
       const changed = await this.mutate(
@@ -1507,7 +1624,7 @@ class TuiSession {
         [],
         mutationUsage(selected as MutationAction)
       )
-      if (changed) return "done"
+      if (changed) return false
     }
   }
 
@@ -1714,31 +1831,33 @@ class TuiSession {
         "The canonical work item response is incomplete."
       )
     }
-    let reviewVersion: string | undefined
+    let review: WorkItemReviewData | undefined
     try {
-      reviewVersion = (
-        await this.getAgentApi().getWorkItemReview(
-          this.currentCompanyId,
-          id
-        )
-      ).version
+      review = await this.getAgentApi().getWorkItemReview(
+        this.currentCompanyId,
+        id
+      )
     } catch {
-      reviewVersion = undefined
+      review = undefined
     }
+    this.currentReview = review
     this.selectedItem = {
       companyId: this.currentCompanyId,
       id,
       itemType: stringValue(item?.itemType),
-      nextAction: nextActionForDetail(detail),
+      nextAction: review
+        ? nextActionForActions(review.availableActions)
+        : "Refresh to load the current review actions",
       owner: workItemOwner(item),
       priority: priorityLabel(item?.priority),
-      reviewVersion,
+      reviewVersion: review?.version,
       source: workItemSource(item, detail),
       status,
       title,
       warningCount: collectWarnings(detail).length,
     }
     this.notifySnapshot()
+    this.syncItemWorkspace(detail)
     return detail
   }
 
@@ -1837,7 +1956,7 @@ class TuiSession {
 
   private writeSignedOutState(error: CliError): void {
     this.clearState()
-    this.write(renderHeader({ mode: "mock" }, this.renderOptions))
+    this.write(renderHeader({ mode: "sandbox" }, this.renderOptions))
     this.writeError(error)
     this.write(
       renderHomeSummary(
@@ -1845,7 +1964,7 @@ class TuiSession {
           context: { authenticated: false },
           items: [],
           itemCount: 0,
-          mode: "mock",
+          mode: "sandbox",
         },
         this.renderOptions
       )
@@ -1928,7 +2047,7 @@ class TuiSession {
       this.currentCompanyId = nextCompanyId
     }
     this.currentCompanyName = stringValue(company?.name)
-    this.currentEnvironment = stringValue(source?.mode) ?? "mock"
+    this.currentEnvironment = stringValue(source?.mode) ?? "sandbox"
     this.currentUserEmail = stringValue(asRecord(source?.user)?.email)
     this.notifySnapshot()
   }
@@ -1947,6 +2066,8 @@ class TuiSession {
 
   private clearCompanyBoundState(): void {
     this.selectedItem = undefined
+    this.currentReview = undefined
+    this.io.setItemWorkspace?.(null)
     this.agentRows.clear()
     this.companyRows.clear()
     this.fixtureRows.clear()
@@ -1982,7 +2103,7 @@ class TuiSession {
       renderHomeSummary(
         {
           context,
-          mode: this.currentEnvironment ?? "mock",
+          mode: this.currentEnvironment ?? "sandbox",
           items: inbox?.items ?? [],
           itemCount: inbox?.itemCount ?? 0,
           warningCount: inbox?.warningCount ?? 0,
@@ -1994,9 +2115,42 @@ class TuiSession {
   }
 
   private writeItemOverview(detail: WorkItemDetail): void {
+    if (this.io.setItemWorkspace) return
     this.write(
-      renderInboxItemOverview(productItemDetail(detail), this.renderOptions)
+      renderReviewWorkspace(
+        {
+          detail: productItemDetail(
+            detail,
+            this.currentReview
+              ? nextActionForActions(this.currentReview.availableActions)
+              : "Refresh to load the current review actions"
+          ),
+          review: this.currentReview ?? null,
+        },
+        this.renderOptions
+      )
     )
+  }
+
+  private syncItemWorkspace(detail: WorkItemDetail): void {
+    if (!this.io.setItemWorkspace || !this.selectedItem) return
+    const reviewInput = {
+      detail: productItemDetail(
+        detail,
+        this.currentReview
+          ? nextActionForActions(this.currentReview.availableActions)
+          : "Refresh to load the current review actions"
+      ),
+      review: this.currentReview ?? null,
+    }
+    const workspace: TuiItemWorkspace = {
+      itemId: this.selectedItem.id,
+      tabs: renderReviewWorkspaceTabs(reviewInput, this.renderOptions),
+      actions: (this.currentReview?.availableActions ?? []).map(
+        workItemActionChoice
+      ),
+    }
+    this.io.setItemWorkspace(workspace)
   }
 
   private writeMutationResult(
@@ -2628,10 +2782,197 @@ function mutationUsage(action: MutationAction): string {
       return "/edit [row-or-id] [--set <pointer=value>] [--reason <reason>]"
     case "reject":
       return "/reject [row-or-id] [--reason <reason>]"
+    case "resolve":
+      return "/resolve [row-or-id]"
     case "rework":
       return "/rework [row-or-id] [--reason <reason>]"
     case "execute":
       return "/execute [row-or-id]"
+  }
+}
+
+function workItemActionChoice(action: WorkItemAction): TuiChoice {
+  switch (action) {
+    case "approve":
+      return {
+        value: "approve",
+        label: "Approve",
+        description: "Record approval, then review mock execution",
+      }
+    case "edit":
+      return {
+        value: "edit",
+        label: "Edit and approve",
+        description: "Change the draft with a recorded reason",
+      }
+    case "reject":
+      return {
+        value: "reject",
+        label: "Reject",
+        description: "Close the item with a recorded reason",
+      }
+    case "request_rework":
+      return {
+        value: "rework",
+        label: "Request rework",
+        description: "Return the recommendation for revision",
+      }
+    case "resolve":
+      return {
+        value: "resolve",
+        label: "Resolve",
+        description: "Mark this item resolved after confirmation",
+      }
+    case "execute_mock":
+      return {
+        value: "execute",
+        label: "Execute approved mock action",
+        description: "Preview and confirm the downstream action",
+      }
+  }
+}
+
+function nextActionForActions(actions: readonly WorkItemAction[]): string {
+  const first = actions[0]
+  return first ? workItemActionChoice(first).label : "Return to Inbox"
+}
+
+type SandboxTemporaryDecision = {
+  action: "approved" | "edited" | "rejected" | "rework" | "executed"
+  quantity?: number
+}
+
+function sandboxAvailableActions(
+  candidate: Record<string, unknown>,
+  decision?: SandboxTemporaryDecision
+): WorkItemAction[] {
+  if (decision?.action === "approved" || decision?.action === "edited")
+    return ["execute_mock"]
+  if (decision) return []
+  const actions = Array.isArray(candidate.availableActions)
+    ? candidate.availableActions
+    : []
+  return actions.filter(isWorkItemAction)
+}
+
+const workItemActions = new Set<WorkItemAction>([
+  "approve",
+  "edit",
+  "reject",
+  "request_rework",
+  "resolve",
+  "execute_mock",
+])
+
+function isWorkItemAction(value: unknown): value is WorkItemAction {
+  return workItemActions.has(value as WorkItemAction)
+}
+
+function sandboxReviewProjection(
+  candidate: Record<string, unknown>,
+  availableActions: readonly WorkItemAction[],
+  decision?: SandboxTemporaryDecision
+): unknown {
+  const inventory = asRecord(candidate.inventory) ?? {}
+  const recommendation = asRecord(candidate.recommendation) ?? {}
+  const vendor = asRecord(candidate.vendor) ?? {}
+  const openPurchaseOrders = asRecord(candidate.openPurchaseOrders) ?? {}
+  const sku = stringValue(candidate.sku) ?? "Unknown SKU"
+  const productName = stringValue(candidate.productName) ?? sku
+  const recommendedQuantity =
+    decision?.quantity ?? numericValue(recommendation.quantity)
+  const warnings = Array.isArray(recommendation.warnings)
+    ? recommendation.warnings
+    : []
+  const reasons = Array.isArray(recommendation.reasons)
+    ? recommendation.reasons
+    : []
+  const status =
+    decision?.action === "approved" || decision?.action === "edited"
+      ? "approved"
+      : decision?.action === "executed"
+        ? "executed"
+        : decision?.action === "rejected"
+          ? "rejected"
+          : recommendation.status === "blocked"
+            ? "blocked"
+            : "active"
+  const sources = Array.isArray(candidate.sources) ? candidate.sources : []
+  const decisionSummary = decision
+    ? `Temporary ${decision.action}${decision.quantity ? ` at quantity ${decision.quantity}` : ""}. Nothing was written or sent.`
+    : undefined
+
+  return {
+    sandbox: true,
+    availableActions,
+    item: {
+      itemType: "procurement_reorder_review",
+      title: `${productName} · ${sku}`,
+      status,
+      priority: warnings.length > 0 ? "attention" : "normal",
+      owner: "Sandbox reviewer",
+      source: sources,
+      why: reasons,
+      requiredAttention: nextActionForActions(availableActions),
+      nextAction: nextActionForActions(availableActions),
+    },
+    contextPacket: {
+      facts: {
+        availableInventory: inventory.available,
+        currentStock: inventory.onHand,
+        allocatedInventory: inventory.allocated,
+        backorder: inventory.backorder,
+        reorderPoint: inventory.reorderLevel,
+        recentSales: candidate.recentSalesUnits,
+        openPurchaseOrders,
+      },
+      sources,
+      freshnessState: inventory.pulledAt ?? "unknown",
+      warnings,
+      createdAt: inventory.pulledAt,
+    },
+    recommendation: {
+      status: recommendation.status,
+      rationaleSummary:
+        reasons.length > 0
+          ? reasons.join(" · ")
+          : "No recommendation rationale was provided.",
+      warnings,
+      output: {
+        productTitle: productName,
+        recommendedQuantity,
+        vendor: vendor.name,
+        vendorSku: vendor.vendorSku,
+        unitCost: vendor.unitCost,
+      },
+      freshnessState: inventory.pulledAt ?? "unknown",
+    },
+    evidence: {
+      sourceRefs: sources,
+      assumptions: [
+        "This review uses a temporary snapshot of real workspace data.",
+      ],
+      warnings,
+      evidence: [inventory, openPurchaseOrders, vendor],
+      createdAt: inventory.pulledAt,
+    },
+    draft: {
+      actionType: "create_purchase_order",
+      status: decision ? "temporary" : "pending_review",
+      payload: {
+        vendor: vendor.name,
+        lines: [{ sku, quantity: recommendedQuantity }],
+      },
+    },
+    activity: decisionSummary
+      ? [
+          {
+            eventType: "sandbox_decision",
+            summary: decisionSummary,
+            createdAt: inventory.pulledAt,
+          },
+        ]
+      : [],
   }
 }
 
@@ -2767,8 +3108,10 @@ function nextActionForDetail(detail: WorkItemDetail): string {
   return nextActionForStatus(detail.item.status)
 }
 
-function productItemDetail(detail: WorkItemDetail): unknown {
-  const nextAction = nextActionForDetail(detail)
+function productItemDetail(
+  detail: WorkItemDetail,
+  nextAction: string = nextActionForDetail(detail)
+): unknown {
   return {
     ...detail,
     item: {
@@ -2961,7 +3304,7 @@ function headerContext(
   return {
     companyName: stringValue(company?.name) ?? null,
     inboxCount: inbox?.itemCount ?? null,
-    mode: stringValue(source?.mode) ?? "mock",
+    mode: stringValue(source?.mode) ?? "sandbox",
     userEmail: stringValue(user?.email) ?? null,
     warningCount: inbox?.warningCount ?? null,
   }
@@ -3050,16 +3393,16 @@ function fixtureLabel(id: string): string {
 
 function actionableErrorMessage(error: CliError): string | undefined {
   if (error.code === "session_expired") {
-    return "Your saved local sign-in expired and has been cleared. Sign in again with /login seed@example.com."
+    return "Your saved sign-in expired or was revoked and has been cleared. Sign in again with /login."
   }
   if (error.code === "unknown_local_user") {
-    return "That email is not part of the local demo. Use /login seed@example.com, then open http://127.0.0.1:54324 and choose the newest message."
+    return "That email is not part of the local demo. Use /login --local seed@example.com, then open http://127.0.0.1:54324 and choose the newest message."
   }
   if (error.code === "magic_link_failed") {
-    return "Mandala could not send the sign-in link. Confirm local Supabase is running, then retry /login seed@example.com."
+    return "Mandala could not send the sign-in link. Confirm local Supabase is running, then retry /login --local seed@example.com."
   }
   if (error.code === "auth_callback_timeout") {
-    return "The sign-in link was not opened before the wait ended. Retry /login seed@example.com, then open the newest message at http://127.0.0.1:54324."
+    return "The sign-in link was not opened before the wait ended. Retry /login --local seed@example.com, then open the newest message at http://127.0.0.1:54324."
   }
   if (error.code === "auth_cancelled") {
     return "Sign in cancelled. Your previous session was not changed."
@@ -3068,7 +3411,7 @@ function actionableErrorMessage(error: CliError): string | undefined {
     return "The local Mandala API is not running. From the Backdesk repository, start it with pnpm dev, then retry /refresh."
   }
   if (error.code === "unauthorized") {
-    return "Sign in before opening the inbox. Use /login seed@example.com."
+    return "Sign in before opening the inbox. Use /login."
   }
   if (error.code === "test_agent_unavailable") {
     return "The Sandbox test agent could not complete its model run. Confirm the local API has MANDALA_TEST_AGENT_ENABLED=true plus AI Gateway and LangSmith settings, then run it again. No Inbox item was created."
@@ -3104,7 +3447,7 @@ async function readAgentSkillFile(path: string): Promise<string> {
 
 function magicLinkWaitingMessage(
   email: string,
-  environment: NodeJS.ProcessEnv
+  environment: RuntimeEnvironment
 ): string {
   const configuredUrl = environment.MANDALA_SUPABASE_URL
   const hostname = configuredUrl ? new URL(configuredUrl).hostname : "127.0.0.1"
@@ -3112,6 +3455,14 @@ function magicLinkWaitingMessage(
   return local
     ? "Magic link sent. Open http://127.0.0.1:54324 on this Mac, choose the newest message, and click its link. Mandala will continue automatically. Press Escape to cancel."
     : `Magic link sent to ${email}. Open it on this machine to continue. Press Escape to cancel.`
+}
+
+function deviceAuthorizationWaitingMessage(request: {
+  browserOpened: boolean
+}) {
+  return request.browserOpened
+    ? "A browser window was opened for Mandala sign-in. Sign in with Microsoft, Google, or your email magic link, then choose a workspace. Mandala will continue automatically. Press Escape to cancel."
+    : "Mandala could not open the browser sign-in page."
 }
 
 function isAuthenticationError(error: CliError): boolean {

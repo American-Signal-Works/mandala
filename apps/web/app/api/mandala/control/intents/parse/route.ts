@@ -24,7 +24,7 @@ import {
   releaseWorkflowControlParserLeaseRpc,
   WorkflowRpcError,
 } from "@/lib/mandala/workflows"
-import { authenticateRequest } from "@/lib/supabase/request"
+import { allowsCliWorkspace, authenticateRequest } from "@/lib/supabase/request"
 import type { Json } from "@/lib/supabase/types"
 import { createServerModelUsageRecorder } from "@/actions/admin/provider-usage"
 
@@ -39,7 +39,7 @@ const inputHashKey =
     : randomBytes(32)
 
 export async function POST(request: Request) {
-  const auth = await authenticateRequest(request)
+  const auth = await authenticateRequest(request, { allowManagedCli: true })
   if (!auth)
     return NextResponse.json({ error: "unauthorized" }, { status: 401 })
 
@@ -49,6 +49,9 @@ export async function POST(request: Request) {
       { error: "invalid_request", issues: parsed.error.flatten().fieldErrors },
       { status: 400 }
     )
+  }
+  if (!allowsCliWorkspace(auth, parsed.data.companyId)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 })
   }
 
   const permissionFailure = companyPermissionFailure(
