@@ -71,7 +71,7 @@ describe("Context index maintenance composition", () => {
       mocks.prepare.mock.invocationCallOrder[0]!
     )
     expect(mocks.runBatch).toHaveBeenCalledWith(
-      expect.objectContaining({ limit: 3, concurrency: 1 })
+      expect.objectContaining({ limit: 200, concurrency: 20 })
     )
   })
 

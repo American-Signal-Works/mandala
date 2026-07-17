@@ -5968,6 +5968,15 @@ export type Database = {
         }
         Returns: Json
       }
+      claim_context_index_add_batch_v1: {
+        Args: {
+          p_lease_seconds?: number
+          p_limit?: number
+          p_now?: string
+          p_worker_id: string
+        }
+        Returns: Json
+      }
       claim_context_index_processing_v1: {
         Args: {
           p_lease_seconds?: number

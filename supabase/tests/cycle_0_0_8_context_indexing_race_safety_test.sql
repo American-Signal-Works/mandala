@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(40);
+SELECT plan(43);
 
 CREATE TEMP TABLE context_reconcile_test_results (
   payload JSONB NOT NULL
@@ -80,8 +80,18 @@ INSERT INTO public.external_records(id, company_id, source_id, record_type, exte
   ('f4000000-0000-4000-8000-000000000011', 'f2000000-0000-4000-8000-000000000001', 'f3000000-0000-4000-8000-000000000001', 'support_ticket', 'BATCH-1', '{"ticket_id":"BATCH-1","summary":"one"}'),
   ('f4000000-0000-4000-8000-000000000012', 'f2000000-0000-4000-8000-000000000001', 'f3000000-0000-4000-8000-000000000001', 'support_ticket', 'BATCH-2', '{"ticket_id":"BATCH-2","summary":"two"}'),
   ('f4000000-0000-4000-8000-000000000013', 'f2000000-0000-4000-8000-000000000001', 'f3000000-0000-4000-8000-000000000001', 'support_ticket', 'BATCH-3', '{"ticket_id":"BATCH-3","summary":"three"}');
-SELECT is(jsonb_array_length(public.claim_context_index_work_v1('batch-worker', 10, 60, now() + interval '1 day')->'claims'), 1, 'batch claim cannot reserve beyond the cumulative company spend cap');
+SELECT is(jsonb_array_length(public.claim_context_index_add_batch_v1('batch-worker', 10, 60, now() + interval '1 day')->'claims'), 1, 'provider batch claim cannot reserve beyond the cumulative company spend cap');
 SELECT is((SELECT sum(reserved_cost_microunits)::bigint FROM public.context_index_outbox WHERE lease_owner = 'batch-worker'), 1000::bigint, 'batch reservation stays within the 1500 microunit cap');
+SELECT is((SELECT count(*)::integer FROM public.context_index_events WHERE company_id = 'f2000000-0000-4000-8000-000000000001' AND event_type = 'provider_batch_claimed'), 1, 'one provider request reservation covers the claimed document batch');
+UPDATE public.context_index_operation_controls
+SET daily_cost_cap_microunits = 10000, requests_per_minute = 2
+WHERE company_id = 'f2000000-0000-4000-8000-000000000001';
+SELECT is(jsonb_array_length(public.claim_context_index_add_batch_v1('batch-worker-2', 10, 60, now() + interval '2 days')->'claims'), 2, 'a second provider request can carry the remaining document claims');
+SELECT is(
+  (public.reserve_context_provider_health_v1(now() + interval '2 days 1 second')->>'reserved')::boolean,
+  true,
+  'provider request gating counts a multi-document batch once'
+);
 SELECT ok(
   pg_get_functiondef('public.claim_context_index_work_v1(text,integer,integer,timestamp with time zone)'::regprocedure)
     ~ 'context_index_operation_controls[[:space:]]+controls.*FOR UPDATE',

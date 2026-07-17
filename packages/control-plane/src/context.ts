@@ -5,9 +5,13 @@ export const CONTEXT_MAX_CHARACTERS = 50_000
 export const CONTEXT_MAX_TOKENS = 16_000
 export const CONTEXT_MAX_TIMEOUT_MS = 10_000
 export const CONTEXT_MAX_APPROVED_FIELDS = 100
-export const CONTEXT_INDEX_MAX_BATCH_SIZE = 100
+// Supermemory's official batch-ingest contract accepts at most 600 documents.
+// Keep the provider-neutral worker at the same hard ceiling so callers cannot
+// accidentally split one claimed lease set across multiple provider requests.
+export const CONTEXT_INDEX_MAX_BATCH_SIZE = 600
 export const CONTEXT_INDEX_MAX_CONCURRENCY = 20
 export const CONTEXT_INDEX_MAX_ATTEMPTS = 20
+export const CONTEXT_INDEX_MAX_CORPUS_SIZE = 100_000
 export const CONTEXT_INDEX_MAX_CANONICAL_PAYLOAD_BYTES = 4_194_304
 
 const sha256Schema = z.string().regex(/^[0-9a-f]{64}$/)
@@ -866,7 +870,7 @@ export const contextIndexReconciliationRequestSchema = z
   .object({
     companyId: z.string().uuid(),
     mode: contextIndexReconciliationModeSchema,
-    requestedLimit: z.number().int().min(0).max(10_000),
+    requestedLimit: z.number().int().min(0).max(CONTEXT_INDEX_MAX_CORPUS_SIZE),
     now: timestampSchema,
   })
   .strict()
@@ -1068,6 +1072,9 @@ export interface ContextRetrievalProvider {
 export interface ContextIndexProvider {
   readonly provider: ContextProvider
   add(document: ContextIndexDocument): Promise<ContextIndexOperationResult>
+  addBatch(
+    documents: readonly ContextIndexDocument[]
+  ): Promise<readonly ContextIndexOperationResult[]>
   replace(
     providerDocumentId: string,
     document: ContextIndexDocument

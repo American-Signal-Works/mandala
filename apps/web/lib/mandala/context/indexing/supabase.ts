@@ -1,5 +1,6 @@
 import { z } from "zod"
 import {
+  CONTEXT_INDEX_MAX_BATCH_SIZE,
   contextIndexCompletionOutcomeSchema,
   contextIndexFailureStateSchema,
   contextIndexLeaseSchema,
@@ -22,6 +23,7 @@ import {
 export const contextIndexRpcNames = {
   prepare: "prepare_context_index_work_v1",
   claim: "claim_context_index_work_v1",
+  claimAddBatch: "claim_context_index_add_batch_v1",
   claimCleanup: "claim_context_index_cleanup_v1",
   claimProcessing: "claim_context_index_processing_v1",
   accept: "accept_context_index_work_v1",
@@ -56,6 +58,9 @@ const claimRequestSchema = z
     now: z.string().datetime({ offset: true }),
   })
   .strict()
+const batchClaimRequestSchema = claimRequestSchema.extend({
+  limit: z.number().int().min(1).max(CONTEXT_INDEX_MAX_BATCH_SIZE),
+})
 const failureRequestSchema = z
   .object({
     workerId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/),
@@ -156,6 +161,11 @@ const claimSchema = z
 const claimEnvelopeSchema = z
   .object({ claims: z.array(claimSchema).max(100) })
   .strict()
+const batchClaimEnvelopeSchema = z
+  .object({
+    claims: z.array(claimSchema).max(CONTEXT_INDEX_MAX_BATCH_SIZE),
+  })
+  .strict()
 const preparationResultSchema = z
   .object({
     recoveredCount: z.number().int().nonnegative(),
@@ -213,6 +223,27 @@ export class SupabaseContextIndexRepository implements ContextIndexRepository {
     })
     try {
       return claimEnvelopeSchema.parse(data).claims.map(toLease)
+    } catch (error) {
+      if (error instanceof ContextIndexRepositoryError) throw error
+      throw invalidResponse(error)
+    }
+  }
+
+  async claimAddBatch(input: {
+    workerId: string
+    limit: number
+    leaseSeconds: number
+    now: string
+  }): Promise<ContextIndexLease[]> {
+    const request = batchClaimRequestSchema.parse(input)
+    const data = await this.call(contextIndexRpcNames.claimAddBatch, {
+      p_worker_id: request.workerId,
+      p_limit: request.limit,
+      p_lease_seconds: request.leaseSeconds,
+      p_now: request.now,
+    })
+    try {
+      return batchClaimEnvelopeSchema.parse(data).claims.map(toLease)
     } catch (error) {
       if (error instanceof ContextIndexRepositoryError) throw error
       throw invalidResponse(error)

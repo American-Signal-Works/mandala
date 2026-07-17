@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(43);
+SELECT plan(46);
 
 SELECT has_table('public', 'context_index_operation_audits', 'service operation audits exist');
 SELECT has_function('public', 'accept_context_index_work_v1', ARRAY['text','uuid','text','timestamp with time zone'], 'provider acceptance RPC exists');
@@ -76,10 +76,10 @@ SELECT lives_ok(
 SELECT lives_ok(
   $$SELECT public.configure_context_index_operations_v1(
     'f2000000-0000-4000-8000-000000000001', 'ready', true,
-    1, 4, 10, 10000, 'Activate exactly one provider-sync test record.',
+    100000, 4, 10, 10000, 'Allow a policy-governed full-corpus provider sync.',
     '2026-07-18 04:01:00+00'
   )$$,
-  'checked service operation enables the bounded canary'
+  'checked service operation supports a bounded full-corpus admission ceiling'
 );
 SELECT is(jsonb_array_length(public.claim_context_index_work_v1('provider-worker', 1, 60, '2026-07-18 04:01:01+00')->'claims'), 1, 'dispatch claims one bounded record');
 SELECT ok((SELECT dispatch_started_at IS NOT NULL FROM public.context_index_outbox WHERE canonical_record_id = 'f4000000-0000-4000-8000-000000000001'), 'dispatch start is durable before the provider call');
@@ -176,6 +176,35 @@ SELECT throws_ok(
     SET provider = 'off', readiness = 'disabled'
     WHERE company_id = 'f2000000-0000-4000-8000-000000000001'$$,
   '55000', 'context_index_drain_required', 'unknown provider dispatch outcomes also block provider Off'
+);
+SELECT is(
+  (public.confirm_context_provider_batch_outcomes_v1(
+    'f2000000-0000-4000-8000-000000000001',
+    jsonb_build_array(jsonb_build_object(
+      'customId', (
+        SELECT stable_custom_id
+        FROM public.context_index_outbox
+        WHERE canonical_record_id = 'f4000000-0000-4000-8000-000000000002'
+      ),
+      'providerDocumentId', 'provider-reconciled-2',
+      'status', 'done'
+    )),
+    '2026-07-18 04:04:24+00'
+  )->>'settledCount')::integer,
+  1,
+  'completed provider inventory evidence settles an outcome-unknown write'
+);
+SELECT is(
+  (SELECT delivery_state FROM public.context_index_outbox
+   WHERE canonical_record_id = 'f4000000-0000-4000-8000-000000000002'),
+  'completed',
+  'provider-confirmed reconciliation completes the durable outbox row'
+);
+SELECT is(
+  (SELECT status FROM public.context_index_ledger
+   WHERE canonical_record_id = 'f4000000-0000-4000-8000-000000000002'),
+  'indexed',
+  'provider-confirmed reconciliation restores indexed ledger state'
 );
 
 SELECT * FROM finish();

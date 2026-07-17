@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import type {
   ContextIndexLease,
+  ContextIndexDocument,
   ContextIndexOperation,
   ContextIndexProvider,
 } from "@workspace/control-plane"
@@ -16,6 +17,34 @@ import {
 const now = new Date("2026-07-17T03:00:00.000Z")
 
 describe("Context provider-neutral index worker", () => {
+  it("sends claimed additions through one provider batch request", async () => {
+    const leases = [lease("add", 1), lease("add", 2), lease("add", 3)]
+    const repository = repositoryFor([])
+    repository.claimAddBatch = vi.fn().mockResolvedValue(leases)
+    const provider = providerFor()
+
+    const summary = await runContextIndexBatch({
+      repository,
+      resolveProvider: createContextIndexProviderResolver([provider]),
+      workerId: "context-worker-1",
+      limit: 600,
+      now,
+    })
+
+    expect(summary).toMatchObject({ claimed: 3, completed: 3 })
+    expect(provider.addBatch).toHaveBeenCalledOnce()
+    expect(provider.addBatch).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ requestId: leases[0]!.event.id }),
+        expect.objectContaining({ requestId: leases[1]!.event.id }),
+        expect.objectContaining({ requestId: leases[2]!.event.id }),
+      ])
+    )
+    expect(provider.add).not.toHaveBeenCalled()
+    expect(repository.claimProcessing).not.toHaveBeenCalled()
+    expect(repository.claim).not.toHaveBeenCalled()
+  })
+
   it("dispatches add, replace, and delete and records strict completions", async () => {
     const leases = [lease("add", 1), lease("replace", 2), lease("delete", 3)]
     const repository = repositoryFor(leases)
@@ -342,6 +371,7 @@ function repositoryFor(leases: ContextIndexLease[]): ContextIndexRepository {
     reconcile: vi.fn(),
     claimProcessing: vi.fn().mockResolvedValue([]),
     claimCleanup: vi.fn().mockResolvedValue([]),
+    claimAddBatch: vi.fn().mockResolvedValue([]),
     claim: vi.fn().mockResolvedValue(leases),
     accept: vi.fn().mockResolvedValue(undefined),
     deferProcessing: vi.fn().mockResolvedValue("awaiting_provider"),
@@ -355,6 +385,11 @@ function providerFor(): ContextIndexProvider {
   return {
     provider: "supermemory",
     add: vi.fn(async (document) => completeResult(document.requestId, "add")),
+    addBatch: vi.fn(async (documents) =>
+      documents.map((document: ContextIndexDocument) =>
+        completeResult(document.requestId, "add")
+      )
+    ),
     replace: vi.fn(async (_providerDocumentId, document) =>
       completeResult(document.requestId, "replace")
     ),

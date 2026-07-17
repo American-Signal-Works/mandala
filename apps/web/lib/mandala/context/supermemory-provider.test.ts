@@ -259,6 +259,112 @@ describe("SupermemoryContextProvider retrieval", () => {
 })
 
 describe("SupermemoryContextProvider indexing", () => {
+  it("uses the official batch endpoint and preserves result order", async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = []
+    const provider = providerWith(async (url, init) => {
+      calls.push({ url, init })
+      return jsonResponse({
+        results: [
+          { id: "provider_doc_1", status: "queued" },
+          { id: "provider_doc_2", status: "done" },
+        ],
+        success: 2,
+        failed: 0,
+      })
+    })
+    const second = {
+      ...indexDocument(),
+      requestId: "30000000-0000-4000-8000-000000000002",
+      canonicalRecordId: secondCanonicalRecordId,
+      stableCustomId: `ctx_${"2".repeat(64)}`,
+      externalId: "PO-0002",
+    }
+
+    const result = await provider.addBatch([indexDocument(), second])
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.url).toBe("https://api.supermemory.ai/v3/documents/batch")
+    const body = JSON.parse(String(calls[0]!.init.body))
+    expect(body.documents).toHaveLength(2)
+    expect(body.documents[0]).toMatchObject({
+      customId: `ctx_${"1".repeat(64)}`,
+      containerTag: `company:${companyId}`,
+      taskType: "superrag",
+    })
+    expect(body.documents[1]).toMatchObject({
+      customId: `ctx_${"2".repeat(64)}`,
+      metadata: { canonical_record_id: secondCanonicalRecordId },
+    })
+    expect(result).toMatchObject([
+      {
+        requestId,
+        status: "accepted",
+        providerDocumentId: "provider_doc_1",
+      },
+      {
+        requestId: second.requestId,
+        status: "complete",
+        providerDocumentId: "provider_doc_2",
+      },
+    ])
+  })
+
+  it("splits large worker batches into bounded parallel provider requests", async () => {
+    const requestSizes: number[] = []
+    const provider = providerWith(async (_url, init) => {
+      const body = JSON.parse(String(init.body)) as {
+        documents: Array<{ customId: string }>
+      }
+      requestSizes.push(body.documents.length)
+      return jsonResponse({
+        results: body.documents.map((document) => ({
+          id: `provider_${document.customId.slice(-4)}`,
+          status: "queued",
+        })),
+        success: body.documents.length,
+        failed: 0,
+      })
+    })
+    const documents = Array.from({ length: 26 }, (_, index) => {
+      const ordinal = String(index + 1).padStart(12, "0")
+      return {
+        ...indexDocument(),
+        requestId: `30000000-0000-4000-8000-${ordinal}`,
+        canonicalRecordId: `20000000-0000-4000-8000-${ordinal}`,
+        stableCustomId: `ctx_${(index + 1).toString(16).padStart(64, "0")}`,
+        externalId: `PO-${ordinal}`,
+      }
+    })
+
+    const results = await provider.addBatch(documents)
+
+    expect(requestSizes).toEqual([25, 1])
+    expect(results).toHaveLength(26)
+    expect(results.map((result) => result.requestId)).toEqual(
+      documents.map((document) => document.requestId)
+    )
+  })
+
+  it("fails closed when a batch response cannot map one result per document", async () => {
+    const provider = providerWith(async () =>
+      jsonResponse({
+        results: [{ id: "provider_doc_1", status: "queued" }],
+        success: 1,
+        failed: 0,
+      })
+    )
+
+    await expect(
+      provider.addBatch([
+        indexDocument(),
+        {
+          ...indexDocument(),
+          requestId: "30000000-0000-4000-8000-000000000002",
+        },
+      ])
+    ).rejects.toMatchObject({ code: "provider_response_malformed" })
+  })
+
   it("pins add and full replacement to v3 with flat identity metadata", async () => {
     const calls: Array<{ url: string; init: RequestInit }> = []
     const provider = providerWith(async (url, init) => {
@@ -532,6 +638,7 @@ describe("Supermemory provider composition", () => {
     ])
     expect(Object.keys(indexing).sort()).toEqual([
       "add",
+      "addBatch",
       "delete",
       "health",
       "list",

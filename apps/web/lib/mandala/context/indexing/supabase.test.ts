@@ -10,6 +10,29 @@ import {
 const now = "2026-07-17T03:00:00.000Z"
 
 describe("Supabase Context index repository", () => {
+  it("maps a provider batch claim up to the official 600-document ceiling", async () => {
+    const rpc = vi.fn<ContextIndexRpcExecutor["rpc"]>().mockResolvedValue({
+      data: { claims: [claim()] },
+      error: null,
+    })
+    const repository = new SupabaseContextIndexRepository({ rpc })
+
+    await expect(
+      repository.claimAddBatch({
+        workerId: "worker-1",
+        limit: 600,
+        leaseSeconds: 120,
+        now,
+      })
+    ).resolves.toHaveLength(1)
+    expect(rpc).toHaveBeenCalledWith(contextIndexRpcNames.claimAddBatch, {
+      p_worker_id: "worker-1",
+      p_limit: 600,
+      p_lease_seconds: 120,
+      p_now: now,
+    })
+  })
+
   it("maps the bounded RPC lifecycle and preserves one injected clock", async () => {
     const rpc = vi
       .fn<ContextIndexRpcExecutor["rpc"]>()
