@@ -2,6 +2,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Readable, Writable } from "node:stream"
+import { fileURLToPath } from "node:url"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import type { ControlApi } from "../src/api-client.js"
 import { executeCliCommand, runCli } from "../src/cli.js"
@@ -119,6 +120,191 @@ describe("CLI commands", () => {
     )
     expect(stdout.value).toContain('"payload":{"lines":[{"quantity":12}]}')
     expect(stdout.value).toContain('"editPolicy":{}')
+  })
+
+  it("opens a bounded real-data Sandbox for the selected workspace", async () => {
+    const createSandboxSession = vi.fn(async () => sandboxSession())
+    const api = fakeApi({ createSandboxSession })
+
+    expect(
+      await command(["sandbox", "open", "--limit", "10", "--json"], api)
+    ).toBe(0)
+    expect(createSandboxSession).toHaveBeenCalledWith({
+      companyId,
+      candidateLimit: 10,
+    })
+    expect(JSON.parse(stdout.value)).toMatchObject({
+      ok: true,
+      data: { mode: "sandbox", ephemeral: true, recordCount: 82_166 },
+    })
+  })
+
+  it("reads server-authoritative Context and Sandbox status for the selected workspace", async () => {
+    const getContextWorkspaceStatus = vi.fn(async () => workspaceStatus())
+    const api = fakeApi({ getContextWorkspaceStatus })
+
+    expect(await command(["context", "status", "--json"], api)).toBe(0)
+    expect(getContextWorkspaceStatus).toHaveBeenCalledWith(companyId)
+    expect(JSON.parse(stdout.value)).toMatchObject({
+      ok: true,
+      data: {
+        provider: "off",
+        sandboxEnabled: true,
+        readiness: "disabled",
+        indexingCoverage: { status: "unavailable", percent: null },
+        synchronization: { status: "unavailable", lagSeconds: null },
+      },
+    })
+
+    stdout.value = ""
+    expect(await command(["sandbox", "status", "--json"], api)).toBe(0)
+    expect(getContextWorkspaceStatus).toHaveBeenLastCalledWith(companyId)
+  })
+
+  it("requires explicit confirmation before non-interactive safety weakening", async () => {
+    const setContextWorkspaceConfiguration = vi.fn(async () =>
+      workspaceStatus({ provider: "supermemory", readiness: "not_ready" })
+    )
+    const api = fakeApi({ setContextWorkspaceConfiguration })
+    const shared = [
+      "--expected-version",
+      "1",
+      "--reason",
+      "Approved evaluation",
+      "--json",
+    ]
+
+    expect(
+      await command(["context", "set", "supermemory", ...shared], api)
+    ).toBe(1)
+    expect(stderr.value).toContain("safety_confirmation_required")
+    expect(setContextWorkspaceConfiguration).not.toHaveBeenCalled()
+
+    stderr.value = ""
+    expect(
+      await command(
+        ["context", "set", "supermemory", ...shared, "--confirm"],
+        api
+      )
+    ).toBe(0)
+    expect(setContextWorkspaceConfiguration).toHaveBeenCalledWith({
+      companyId,
+      provider: "supermemory",
+      expectedConfigurationVersion: 1,
+      reason: "Approved evaluation",
+    })
+
+    setContextWorkspaceConfiguration.mockClear()
+    stdout.value = ""
+    expect(
+      await command(
+        [
+          "sandbox",
+          "set",
+          "off",
+          "--expected-version",
+          "2",
+          "--reason",
+          "Temporary exception",
+          "--json",
+        ],
+        api
+      )
+    ).toBe(1)
+    expect(setContextWorkspaceConfiguration).not.toHaveBeenCalled()
+  })
+
+  it("allows safety-strengthening settings without a weakening confirmation", async () => {
+    const setContextWorkspaceConfiguration = vi.fn(async () =>
+      workspaceStatus({ configurationVersion: 3 })
+    )
+    const api = fakeApi({ setContextWorkspaceConfiguration })
+
+    expect(
+      await command(
+        [
+          "sandbox",
+          "set",
+          "on",
+          "--expected-version",
+          "2",
+          "--reason",
+          "Restore write firewall",
+          "--json",
+        ],
+        api
+      )
+    ).toBe(0)
+    expect(setContextWorkspaceConfiguration).toHaveBeenCalledWith({
+      companyId,
+      sandboxEnabled: true,
+      expectedConfigurationVersion: 2,
+      reason: "Restore write firewall",
+    })
+  })
+
+  it("turns stale setting writes into refresh-and-retry guidance", async () => {
+    const api = fakeApi({
+      setContextWorkspaceConfiguration: vi.fn(async () => {
+        throw new CliError("stale_context_workspace_configuration", "Conflict")
+      }),
+    })
+
+    expect(
+      await command(
+        [
+          "context",
+          "set",
+          "off",
+          "--expected-version",
+          "1",
+          "--reason",
+          "Disable external Context",
+          "--json",
+        ],
+        api
+      )
+    ).toBe(1)
+    expect(stderr.value).toContain("Run the status command")
+    expect(stderr.value).toContain("current configuration version")
+  })
+
+  it("runs the installed skill golden path only after mapping confirmation", async () => {
+    const runWorkspaceSandbox = vi.fn(async () => workspaceSandboxRun())
+    const api = fakeApi({ runWorkspaceSandbox })
+    const skillPath = fileURLToPath(
+      new URL("../../../skills/procurement-reorder/SKILL.md", import.meta.url)
+    )
+
+    expect(
+      await command(
+        [
+          "sandbox",
+          "run",
+          "--skill",
+          skillPath,
+          "--confirm-mappings",
+          "--json",
+        ],
+        api
+      )
+    ).toBe(0)
+    expect(runWorkspaceSandbox).toHaveBeenCalledWith({
+      companyId,
+      skillMarkdown: expect.stringContaining("id: procurement-reorder"),
+      confirmMappings: true,
+    })
+    expect(JSON.parse(stdout.value)).toMatchObject({
+      ok: true,
+      data: {
+        harness: { status: "waiting_for_approval" },
+        proof: {
+          unchanged: true,
+          persistenceWrites: 0,
+          externalWriteAttempts: 0,
+        },
+      },
+    })
   })
 
   it("renders complete one-shot work details as human tables", async () => {
@@ -778,6 +964,10 @@ async function command(
 
 function fakeApi(overrides: Partial<ControlApi> = {}) {
   return {
+    getContextWorkspaceStatus: vi.fn(async () => workspaceStatus()),
+    setContextWorkspaceConfiguration: vi.fn(async () => workspaceStatus()),
+    runWorkspaceSandbox: vi.fn(async () => workspaceSandboxRun()),
+    createSandboxSession: vi.fn(async () => sandboxSession()),
     listAgents: vi.fn(async () => ({ agents: [] })),
     installAgent: vi.fn(async () => {
       throw new Error("Agent installation is not used by this test.")
@@ -860,6 +1050,111 @@ function fakeApi(overrides: Partial<ControlApi> = {}) {
       request: { id: controlId },
     })),
     ...overrides,
+  }
+}
+
+function workspaceStatus(
+  overrides: {
+    configurationVersion?: number
+    provider?: "off" | "supermemory"
+    readiness?: "disabled" | "not_ready"
+    sandboxEnabled?: boolean
+  } = {}
+) {
+  const provider = overrides.provider ?? "off"
+  const readiness =
+    overrides.readiness ?? (provider === "off" ? "disabled" : "not_ready")
+  return {
+    schemaVersion: 1 as const,
+    companyId,
+    provider,
+    sandboxEnabled: overrides.sandboxEnabled ?? true,
+    readiness,
+    configurationVersion: overrides.configurationVersion ?? 1,
+    updatedAt: "2026-07-16T20:00:00.000Z",
+    providerStatus: {
+      operational: false,
+      status: readiness,
+      detailCode:
+        provider === "off"
+          ? ("context_off" as const)
+          : ("provider_not_operational" as const),
+    },
+    indexingCoverage: {
+      status: "unavailable" as const,
+      eligibleRecordCount: null,
+      indexedRecordCount: null,
+      percent: null,
+    },
+    synchronization: {
+      status: "unavailable" as const,
+      lagSeconds: null,
+      lastSynchronizedAt: null,
+      recentErrorCount: null,
+    },
+  }
+}
+
+function sandboxSession() {
+  return {
+    schemaVersion: 1 as const,
+    mode: "sandbox" as const,
+    ephemeral: true as const,
+    companyId,
+    sessionId: "a5000000-0000-4000-8000-000000000001",
+    createdAt: "2026-07-16T04:00:00.000Z",
+    dataAnchorAt: "2026-07-15",
+    recordCount: 82_166,
+    candidateCount: 0,
+    sources: [],
+    candidates: [],
+  }
+}
+
+function workspaceSandboxRun() {
+  return {
+    schemaVersion: 1 as const,
+    mode: "sandbox" as const,
+    ephemeral: true as const,
+    companyId,
+    sessionId: "b1000000-0000-4000-8000-000000000001",
+    catalog: {
+      datasets: 8,
+      records: 83_155,
+      freshestObservedAt: "2026-07-16T20:00:00.000Z",
+    },
+    mappings: [],
+    agent: {
+      id: "b2000000-0000-4000-8000-000000000001",
+      name: "Procurement Reorder Review",
+      version: "1.0.0",
+      active: false as const,
+      manifestDigest: "a".repeat(64),
+      bindingSnapshotId: "b3000000-0000-4000-8000-000000000001",
+    },
+    signal: {
+      id: "inventory-threshold-crossed",
+      entityKey: "sku",
+      entityValue: "SKU-1",
+      detectedAt: "2026-07-16T20:00:00.000Z",
+      evidence: {},
+    },
+    harness: {
+      workflowRunId: "b4000000-0000-4000-8000-000000000001",
+      status: "waiting_for_approval" as const,
+      graphNodes: [],
+    },
+    deliverable: null,
+    proof: {
+      scope: "sandbox_execution" as const,
+      beforeDigest: "b".repeat(64),
+      afterDigest: "b".repeat(64),
+      unchanged: true,
+      persistenceWrites: 0 as const,
+      externalWriteAttempts: 0 as const,
+      monitoredTables: [],
+      setupCompletedBeforeBaseline: true as const,
+    },
   }
 }
 

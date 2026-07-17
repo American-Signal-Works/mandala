@@ -5,7 +5,7 @@ import {
   fixtureRunResponseSchema,
 } from "@workspace/control-plane"
 import { z } from "zod"
-import { authenticateRequest } from "@/lib/supabase/request"
+import { allowsCliWorkspace, authenticateRequest } from "@/lib/supabase/request"
 import {
   authorizeCompanyPermission,
   companyPermissionFailure,
@@ -37,7 +37,7 @@ const fixtureRunRequestSchema = sharedFixtureRunRequestSchema.extend({
 })
 
 export async function POST(request: Request) {
-  const auth = await authenticateRequest(request)
+  const auth = await authenticateRequest(request, { allowManagedCli: true })
   if (!auth)
     return NextResponse.json({ error: "unauthorized" }, { status: 401 })
   const { authMode, supabase, user } = auth
@@ -52,6 +52,9 @@ export async function POST(request: Request) {
       },
       { status: 400 }
     )
+  }
+  if (!allowsCliWorkspace(auth, parsed.data.companyId)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 })
   }
 
   const permissionFailure = companyPermissionFailure(

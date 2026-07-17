@@ -10,7 +10,7 @@ import {
   transitionAgentWorkflowLifecycle,
 } from "@/lib/mandala/skills/lifecycle"
 import { getCompanyMembership } from "@/lib/mandala/workflows"
-import { authenticateRequest } from "@/lib/supabase/request"
+import { allowsCliWorkspace, authenticateRequest } from "@/lib/supabase/request"
 import { agentJson, canManageAgents, parseAgentJson } from "../http"
 
 type LifecycleAction =
@@ -26,7 +26,7 @@ export async function handleAgentLifecycleAction(
   context: { params: Promise<{ agentId: string }> },
   action: LifecycleAction
 ) {
-  const auth = await authenticateRequest(request)
+  const auth = await authenticateRequest(request, { allowManagedCli: true })
   if (!auth) return agentJson({ error: "unauthorized" }, 401)
   const [{ agentId }, body] = await Promise.all([
     context.params,
@@ -36,6 +36,8 @@ export async function handleAgentLifecycleAction(
   const parsed = agentActionRequestSchema.safeParse(body)
   if (!id.success || !parsed.success)
     return agentJson({ error: "invalid_request" }, 400)
+  if (!allowsCliWorkspace(auth, parsed.data.companyId))
+    return agentJson({ error: "forbidden" }, 403)
   if (action === "rollback" && !parsed.data.version)
     return agentJson({ error: "rollback_version_required" }, 400)
 
@@ -62,19 +64,18 @@ export async function handleAgentLifecycleAction(
             clientSurface: auth.authMode === "bearer" ? "cli" : "web",
           })
         : action === "rollback"
-        ? await rollbackAgentWorkflow({
-            ...input,
-            version: parsed.data.version!,
-            expectedVersion: parsed.data.expectedVersion,
-            reason: parsed.data.reason,
-          })
-        : await transitionAgentWorkflowLifecycle({
-            ...input,
-            transition:
-              action === "deactivate" ? "pause" : action,
-            expectedVersion: parsed.data.expectedVersion,
-            reason: parsed.data.reason,
-          })
+          ? await rollbackAgentWorkflow({
+              ...input,
+              version: parsed.data.version!,
+              expectedVersion: parsed.data.expectedVersion,
+              reason: parsed.data.reason,
+            })
+          : await transitionAgentWorkflowLifecycle({
+              ...input,
+              transition: action === "deactivate" ? "pause" : action,
+              expectedVersion: parsed.data.expectedVersion,
+              reason: parsed.data.reason,
+            })
     return agentJson(agentActionResponseSchema.parse({ agent, action }))
   } catch (error) {
     return lifecycleError(error)

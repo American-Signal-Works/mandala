@@ -4,7 +4,11 @@ import { join } from "node:path"
 import { Writable } from "node:stream"
 import { afterEach, describe, expect, it } from "vitest"
 import { redactSecrets, writeFailure, writeSuccess } from "../src/output.js"
-import { SecureStore } from "../src/persistence.js"
+import {
+  createMacOsCredentialStore,
+  SecureStore,
+  storedConfigSchema,
+} from "../src/persistence.js"
 
 const directories: string[] = []
 const userId = "10000000-0000-4000-8000-000000000001"
@@ -19,6 +23,16 @@ afterEach(async () => {
 })
 
 describe("secure local persistence", () => {
+  it("fails closed when an unimplemented Live mode is injected", () => {
+    expect(
+      storedConfigSchema.safeParse({
+        schemaVersion: 1,
+        mode: "live",
+        selectedCompany: null,
+      }).success
+    ).toBe(false)
+  })
+
   it("atomically writes owner-only config and session files", async () => {
     const directory = await temporaryDirectory()
     const store = new SecureStore(directory)
@@ -65,6 +79,66 @@ describe("secure local persistence", () => {
     await store.deleteSession()
 
     await expect(store.readSession()).resolves.toBeNull()
+  })
+
+  it("uses an injected operating-system credential store without writing token files", async () => {
+    const directory = await temporaryDirectory()
+    let credential: string | null = null
+    const credentialStore = {
+      read: async () => credential,
+      write: async (value: string) => {
+        credential = value
+      },
+      delete: async () => {
+        credential = null
+      },
+    }
+    const store = new SecureStore(directory, { credentialStore })
+    await store.writeSession({
+      schemaVersion: 1,
+      refreshMode: "hosted",
+      accessToken: "access-secret",
+      refreshToken: "refresh-secret",
+      expiresAt: 2_000_000_000,
+      user: { id: userId, email: null },
+    })
+
+    expect(await readdir(directory)).toEqual([])
+    expect(credential).toContain("access-secret")
+    await expect(store.readSession()).resolves.toMatchObject({
+      refreshMode: "hosted",
+      accessToken: "access-secret",
+    })
+    await store.deleteSession()
+    expect(credential).toBeNull()
+  })
+
+  it("writes macOS credentials without prompting the controlling terminal", async () => {
+    const calls: Array<{
+      file: string
+      args: string[]
+      input?: string
+    }> = []
+    const credentialStore = createMacOsCredentialStore(
+      "/tmp/mandala-test",
+      async (file, args, input) => {
+        calls.push({ file, args, input })
+        return ""
+      }
+    )
+    const credential = '{"accessToken":"access-secret"}'
+
+    await credentialStore.write(credential)
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]?.file).toBe("security")
+    expect(calls[0]?.args).toEqual(["-i"])
+    expect(calls[0]?.args.join(" ")).not.toContain("access-secret")
+    const encodedCredential = calls[0]?.input?.match(/ -X ([0-9a-f]+)\n$/)?.[1]
+    expect(encodedCredential).toBeDefined()
+    expect(Buffer.from(encodedCredential ?? "", "hex").toString("utf8")).toBe(
+      credential
+    )
   })
 
   it("protects Windows sessions without storing plaintext tokens", async () => {

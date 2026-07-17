@@ -1,12 +1,20 @@
 import { createServer, type Server } from "node:http"
 import { randomBytes } from "node:crypto"
+import { execFile } from "node:child_process"
 import {
   createClient,
   type Session,
   type SupportedStorage,
 } from "@supabase/supabase-js"
+import {
+  cliDeviceAuthorizationCreateResponseSchema,
+  cliDeviceAuthorizationTokenResponseSchema,
+  cliSessionRevocationResponseSchema,
+  cliSessionRefreshResponseSchema,
+} from "@workspace/control-plane"
 import { z } from "zod"
 import {
+  getApiUrl,
   getSupabaseEnvironment,
   type RuntimeEnvironment,
 } from "./environment.js"
@@ -24,6 +32,18 @@ export type LoginOptions = {
   onMagicLinkSent?: () => void
   signal?: AbortSignal
   timeoutMs?: number
+}
+
+export type DeviceLoginOptions = {
+  environment: RuntimeEnvironment
+  store: SecureStore
+  clientName?: string
+  clientVersion?: string
+  clientPlatform?: string
+  fetchImplementation?: typeof fetch
+  openBrowser?: (url: string) => Promise<boolean>
+  onAuthorizationRequested?: (request: { browserOpened: boolean }) => void
+  signal?: AbortSignal
 }
 
 export type SessionAccess = {
@@ -94,7 +114,7 @@ export async function loginWithMagicLink(
       )
     }
 
-    const session = toStoredSession(data.session)
+    const session = toStoredSession(data.session, "supabase")
     await options.store.writeSession(session)
     await options.store.clearSelectedCompany()
     return {
@@ -107,10 +127,117 @@ export async function loginWithMagicLink(
   }
 }
 
+export async function loginWithDeviceAuthorization(
+  options: DeviceLoginOptions
+) {
+  if (options.signal?.aborted) throw authCancelled()
+  const fetchImplementation = options.fetchImplementation ?? fetch
+  const baseUrl = getApiUrl(options.environment)
+  const deviceResponse = await postJson(
+    fetchImplementation,
+    `${baseUrl}/api/mandala/cli/device-authorizations`,
+    {
+      clientName: options.clientName ?? "Mandala CLI",
+      clientVersion: options.clientVersion ?? "0.0.0",
+      clientPlatform: options.clientPlatform ?? process.platform,
+      requestedScopes: ["workspace:control"],
+    },
+    options.signal
+  )
+  const device = cliDeviceAuthorizationCreateResponseSchema.safeParse(
+    deviceResponse.body
+  )
+  if (!deviceResponse.ok || !device.success) {
+    throw new CliError(
+      deviceResponse.status === 429 ? "auth_rate_limited" : "auth_unavailable",
+      deviceResponse.status === 429
+        ? "Too many sign-in attempts. Wait a few minutes and try again."
+        : "Mandala could not start browser sign-in."
+    )
+  }
+
+  const browserOpened = await (options.openBrowser ?? openSystemBrowser)(
+    device.data.verificationUri
+  ).catch(() => false)
+  options.onAuthorizationRequested?.({
+    browserOpened,
+  })
+  if (!browserOpened) {
+    throw new CliError(
+      "auth_browser_open_failed",
+      "Mandala could not open the browser sign-in page. Check browser access and try again."
+    )
+  }
+
+  let intervalSeconds = device.data.intervalSeconds
+  const deadline = Date.parse(device.data.expiresAt)
+  while (Date.now() < deadline) {
+    await waitForPoll(intervalSeconds * 1_000, options.signal)
+    const tokenResponse = await postJson(
+      fetchImplementation,
+      `${baseUrl}/api/mandala/cli/device-authorizations/token`,
+      { deviceCode: device.data.deviceCode },
+      options.signal
+    )
+    const token = cliDeviceAuthorizationTokenResponseSchema.safeParse(
+      tokenResponse.body
+    )
+    if (!tokenResponse.ok || !token.success) {
+      throw new CliError(
+        "auth_unavailable",
+        "Mandala could not finish browser sign-in."
+      )
+    }
+    if (
+      token.data.status === "authorization_pending" ||
+      token.data.status === "slow_down"
+    ) {
+      intervalSeconds = token.data.intervalSeconds
+      continue
+    }
+    if (token.data.status !== "authorized") {
+      throw deviceAuthorizationError(token.data.status)
+    }
+
+    const session: StoredSession = {
+      schemaVersion: 1,
+      refreshMode: "hosted",
+      cliSessionId: token.data.sessionId,
+      accessToken: token.data.accessToken,
+      refreshToken: token.data.refreshToken,
+      expiresAt: token.data.expiresAt,
+      user: token.data.user,
+    }
+    await options.store.writeSession(session)
+    try {
+      const config = await options.store.readConfig()
+      await options.store.writeConfig({
+        ...config,
+        selectedCompany: token.data.company,
+      })
+    } catch (error) {
+      await options.store.deleteSession().catch(() => undefined)
+      throw error
+    }
+    return {
+      schemaVersion: session.schemaVersion,
+      refreshMode: session.refreshMode,
+      expiresAt: session.expiresAt,
+      user: session.user,
+      company: token.data.company,
+    }
+  }
+  throw new CliError(
+    "auth_request_expired",
+    "The browser sign-in request expired. Run 'mandala auth login' again."
+  )
+}
+
 export class SessionManager implements SessionAccess {
   constructor(
     private readonly store: SecureStore,
-    private readonly environment: RuntimeEnvironment
+    private readonly environment: RuntimeEnvironment,
+    private readonly fetchImplementation: typeof fetch = fetch
   ) {}
 
   async getAccessToken(forceRefresh = false): Promise<string> {
@@ -124,6 +251,10 @@ export class SessionManager implements SessionAccess {
     const refreshRequired =
       forceRefresh || session.expiresAt <= Math.floor(Date.now() / 1_000) + 60
     if (!refreshRequired) return session.accessToken
+
+    if (session.refreshMode === "hosted") {
+      return this.refreshHostedSession(session)
+    }
 
     const configuration = getSupabaseEnvironment(this.environment)
     const supabase = createClient(configuration.url, configuration.anonKey, {
@@ -146,9 +277,90 @@ export class SessionManager implements SessionAccess {
       )
     }
 
-    const refreshed = toStoredSession(data.session)
+    const refreshed = toStoredSession(data.session, "supabase")
     await this.store.writeSession(refreshed)
     return refreshed.accessToken
+  }
+
+  private async refreshHostedSession(session: StoredSession) {
+    let response: Awaited<ReturnType<typeof postJson>>
+    try {
+      response = await postJson(
+        this.fetchImplementation,
+        `${getApiUrl(this.environment)}/api/mandala/cli/sessions/refresh`,
+        { refreshToken: session.refreshToken }
+      )
+    } catch (error) {
+      if (error instanceof CliError) throw error
+      throw new CliError(
+        "network_error",
+        "Mandala could not refresh the saved session."
+      )
+    }
+
+    const refreshed = cliSessionRefreshResponseSchema.safeParse(response.body)
+    if (!response.ok || !refreshed.success) {
+      if (response.status === 400 || response.status === 401) {
+        await clearInvalidSession(this.store)
+        throw new CliError(
+          "session_expired",
+          "The saved Mandala session expired or was revoked. Sign in again."
+        )
+      }
+      throw new CliError(
+        "session_refresh_failed",
+        "Mandala could not refresh the saved session."
+      )
+    }
+
+    const next: StoredSession = {
+      schemaVersion: 1,
+      refreshMode: "hosted",
+      ...(session.cliSessionId ? { cliSessionId: session.cliSessionId } : {}),
+      accessToken: refreshed.data.accessToken,
+      refreshToken: refreshed.data.refreshToken,
+      expiresAt: refreshed.data.expiresAt,
+      user: refreshed.data.user,
+    }
+    await this.store.writeSession(next)
+    return next.accessToken
+  }
+}
+
+export async function revokeHostedCliSession(options: {
+  environment: RuntimeEnvironment
+  store: SecureStore
+  fetchImplementation?: typeof fetch
+}) {
+  const session = await options.store.readSession()
+  if (!session || session.refreshMode !== "hosted" || !session.cliSessionId) {
+    return true
+  }
+
+  try {
+    const accessToken = await new SessionManager(
+      options.store,
+      options.environment,
+      options.fetchImplementation
+    ).getAccessToken()
+    const response = await (options.fetchImplementation ?? fetch)(
+      `${getApiUrl(options.environment)}/api/mandala/cli/sessions`,
+      {
+        method: "DELETE",
+        headers: {
+          accept: "application/json",
+          authorization: `Bearer ${accessToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ sessionId: session.cliSessionId }),
+      }
+    )
+    const body = (await response.json().catch(() => null)) as unknown
+    return (
+      response.ok && cliSessionRevocationResponseSchema.safeParse(body).success
+    )
+  } catch {
+    return false
   }
 }
 
@@ -180,15 +392,21 @@ async function clearInvalidSession(store: SecureStore): Promise<void> {
 
 function isLocalSupabaseUrl(value: string): boolean {
   const hostname = new URL(value).hostname
-  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]"
+  return (
+    hostname === "localhost" || hostname === "127.0.0.1" || hostname === "[::1]"
+  )
 }
 
-function toStoredSession(session: Session): StoredSession {
+function toStoredSession(
+  session: Session,
+  refreshMode: "hosted" | "supabase"
+): StoredSession {
   const expiresAt =
     session.expires_at ??
     Math.floor(Date.now() / 1_000) + (session.expires_in ?? 0)
   return {
     schemaVersion: 1,
+    refreshMode,
     accessToken: session.access_token,
     refreshToken: session.refresh_token,
     expiresAt,
@@ -197,6 +415,101 @@ function toStoredSession(session: Session): StoredSession {
       email: session.user.email ?? null,
     },
   }
+}
+
+async function postJson(
+  fetchImplementation: typeof fetch,
+  url: string,
+  body: unknown,
+  signal?: AbortSignal
+) {
+  let response: Response
+  try {
+    response = await fetchImplementation(url, {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+      },
+      body: JSON.stringify(body),
+      signal,
+    })
+  } catch {
+    if (signal?.aborted) throw authCancelled()
+    throw new CliError(
+      "network_error",
+      "Mandala could not be reached for browser sign-in."
+    )
+  }
+  return {
+    ok: response.ok,
+    status: response.status,
+    body: (await response.json().catch(() => null)) as unknown,
+  }
+}
+
+function waitForPoll(milliseconds: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(authCancelled())
+      return
+    }
+    const timeout = setTimeout(() => {
+      signal?.removeEventListener("abort", abort)
+      resolve()
+    }, milliseconds)
+    const abort = () => {
+      clearTimeout(timeout)
+      reject(authCancelled())
+    }
+    signal?.addEventListener("abort", abort, { once: true })
+  })
+}
+
+async function openSystemBrowser(url: string) {
+  const parsed = new URL(url)
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") return false
+  const command =
+    process.platform === "darwin"
+      ? { file: "open", args: [parsed.toString()] }
+      : process.platform === "win32"
+        ? {
+            file: "rundll32.exe",
+            args: ["url.dll,FileProtocolHandler", parsed.toString()],
+          }
+        : { file: "xdg-open", args: [parsed.toString()] }
+  await new Promise<void>((resolve, reject) => {
+    execFile(command.file, command.args, { windowsHide: true }, (error) => {
+      if (error) reject(error)
+      else resolve()
+    })
+  })
+  return true
+}
+
+function deviceAuthorizationError(status: string) {
+  if (status === "denied") {
+    return new CliError(
+      "auth_denied",
+      "Browser sign-in was denied. No session was saved."
+    )
+  }
+  if (status === "expired") {
+    return new CliError(
+      "auth_request_expired",
+      "The browser sign-in request expired. Run 'mandala auth login' again."
+    )
+  }
+  if (status === "consumed") {
+    return new CliError(
+      "auth_request_consumed",
+      "That browser sign-in request was already used. Start sign-in again."
+    )
+  }
+  return new CliError(
+    "auth_invalid_request",
+    "The browser sign-in request is invalid."
+  )
 }
 
 class MemoryStorage implements SupportedStorage {

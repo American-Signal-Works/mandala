@@ -317,6 +317,48 @@ export const contextualChatResponseSchema = z
   })
   .strict()
 
+export const contextualChatStreamEventSchema = z.discriminatedUnion("type", [
+  z
+    .object({
+      type: z.literal("start"),
+      companyId: z.string().uuid(),
+      selectedItemId: z.string().uuid(),
+      reviewVersion: reviewVersionSchema,
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("delta"),
+      text: z.string().min(1).max(5_000),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("done"),
+      answer: z.string().trim().min(1).max(5_000),
+      model: z.string().min(1).max(200),
+      durationMs: z.number().int().min(0),
+      trace: z
+        .object({
+          traceId: z.string().uuid(),
+          runId: z.string().uuid(),
+        })
+        .strict()
+        .nullable(),
+    })
+    .strict(),
+  z
+    .object({
+      type: z.literal("error"),
+      error: z.enum([
+        "question_unavailable",
+        "sensitive_model_input",
+        "unsafe_model_output",
+      ]),
+    })
+    .strict(),
+])
+
 export type ExecutionMode = z.infer<typeof executionModeSchema>
 export type ControlledExecutionRequest = z.infer<
   typeof controlledExecutionRequestSchema
@@ -330,4 +372,7 @@ export type MemoryCandidate = z.infer<typeof memoryCandidateSchema>
 export type ContextualChatRequest = z.infer<typeof contextualChatRequestSchema>
 export type ContextualChatResponse = z.infer<
   typeof contextualChatResponseSchema
+>
+export type ContextualChatStreamEvent = z.infer<
+  typeof contextualChatStreamEventSchema
 >

@@ -10,7 +10,10 @@ import { GET as listCompanies } from "./companies/route"
 import { GET as listItems } from "./workflows/items/route"
 import { GET as inspectItem } from "./workflows/items/[itemId]/route"
 
-vi.mock("@/lib/supabase/request", () => ({ authenticateRequest: vi.fn() }))
+vi.mock("@/lib/supabase/request", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/supabase/request")>()),
+  authenticateRequest: vi.fn(),
+}))
 vi.mock("@/lib/mandala/control-plane/queries", async (importOriginal) => {
   const original =
     await importOriginal<typeof import("@/lib/mandala/control-plane/queries")>()
@@ -66,6 +69,62 @@ describe("Mandala control-plane read routes", () => {
       supabase: auth.supabase,
       userId: auth.user.id,
     })
+  })
+
+  it("projects only the browser-approved company for a managed CLI", async () => {
+    const otherCompanyId = "20000000-0000-4000-8000-000000000002"
+    vi.mocked(authenticateRequest).mockResolvedValueOnce({
+      ...auth,
+      cliSession: {
+        managed: true,
+        sessionId: "50000000-0000-4000-8000-000000000001",
+        selectedCompanyId: companyId,
+        scopes: ["workspace:control"],
+      },
+    } as never)
+    vi.mocked(listAccessibleCompanies).mockResolvedValue([
+      {
+        id: companyId,
+        name: "Approved Company",
+        role: "owner",
+        updatedAt: "2026-07-09T12:00:00Z",
+      },
+      {
+        id: otherCompanyId,
+        name: "Other Company",
+        role: "owner",
+        updatedAt: "2026-07-09T12:00:00Z",
+      },
+    ])
+
+    const response = await listCompanies(
+      new Request("http://localhost/api/mandala/companies")
+    )
+
+    await expect(response.json()).resolves.toMatchObject({
+      companies: [{ id: companyId, name: "Approved Company" }],
+    })
+  })
+
+  it("blocks a managed CLI from reading another member workspace", async () => {
+    vi.mocked(authenticateRequest).mockResolvedValueOnce({
+      ...auth,
+      cliSession: {
+        managed: true,
+        sessionId: "50000000-0000-4000-8000-000000000001",
+        selectedCompanyId: "20000000-0000-4000-8000-000000000002",
+        scopes: ["workspace:control"],
+      },
+    } as never)
+
+    const response = await listItems(
+      new Request(
+        `http://localhost/api/mandala/workflows/items?companyId=${companyId}`
+      )
+    )
+
+    expect(response.status).toBe(403)
+    expect(listWorkflowQueue).not.toHaveBeenCalled()
   })
 
   it("validates and forwards bounded item-list filters", async () => {

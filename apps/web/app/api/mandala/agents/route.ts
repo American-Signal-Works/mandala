@@ -11,19 +11,21 @@ import {
   listAgentSummaries,
 } from "@/lib/mandala/skills/lifecycle"
 import { getCompanyMembership } from "@/lib/mandala/workflows"
-import { authenticateRequest } from "@/lib/supabase/request"
+import { allowsCliWorkspace, authenticateRequest } from "@/lib/supabase/request"
 import { agentJson, canManageAgents, parseAgentJson } from "./http"
 
 export const runtime = "nodejs"
 
 export async function GET(request: Request) {
-  const auth = await authenticateRequest(request)
+  const auth = await authenticateRequest(request, { allowManagedCli: true })
   if (!auth) return agentJson({ error: "unauthorized" }, 401)
   const url = new URL(request.url)
   const parsed = agentListRequestSchema.safeParse({
     companyId: url.searchParams.get("companyId"),
   })
   if (!parsed.success) return agentJson({ error: "invalid_request" }, 400)
+  if (!allowsCliWorkspace(auth, parsed.data.companyId))
+    return agentJson({ error: "forbidden" }, 403)
 
   try {
     const membership = await getCompanyMembership({
@@ -43,7 +45,7 @@ export async function GET(request: Request) {
 }
 
 export async function POST(request: Request) {
-  const auth = await authenticateRequest(request)
+  const auth = await authenticateRequest(request, { allowManagedCli: true })
   if (!auth) return agentJson({ error: "unauthorized" }, 401)
   const parsed = agentInstallRequestSchema.safeParse(
     await parseAgentJson(request)
@@ -53,6 +55,8 @@ export async function POST(request: Request) {
       { error: "invalid_request", issues: parsed.error.flatten().fieldErrors },
       400
     )
+  if (!allowsCliWorkspace(auth, parsed.data.companyId))
+    return agentJson({ error: "forbidden" }, 403)
   if (parsed.data.activate)
     return agentJson(
       {

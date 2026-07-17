@@ -27,6 +27,8 @@ export type SlashCommandName =
   | "/agent-rollback"
   | "/inbox"
   | "/purchase-requests"
+  | "/settings"
+  | "/sandbox"
   | "/fixtures"
   | "/run-fixture"
   | "/open"
@@ -39,6 +41,7 @@ export type SlashCommandName =
   | "/approve"
   | "/reject"
   | "/deny"
+  | "/resolve"
   | "/rework"
   | "/edit"
   | "/execute"
@@ -54,6 +57,8 @@ export type SlashCommandKind =
   | "company"
   | "agent"
   | "view"
+  | "settings"
+  | "sandbox"
   | "fixture"
   | "selection"
   | "detail"
@@ -71,6 +76,7 @@ export type SlashCommandGroup =
   | "Account"
   | "Review work"
   | "Agents"
+  | "Workspace settings"
   | "Inspect selected"
   | "Decide"
   | "Sandbox"
@@ -114,6 +120,7 @@ export type SlashCommandDefinition = {
     | "agent-disable"
     | "agent-versions"
     | "agent-rollback"
+    | "sandbox"
     | "fixtures"
     | "run-fixture"
     | "open"
@@ -125,6 +132,7 @@ export type SlashCommandDefinition = {
     | "detail"
     | "approve"
     | "reject"
+    | "resolve"
     | "rework"
     | "edit"
     | "execute"
@@ -135,7 +143,7 @@ export const slashCommands = [
   command("/", "local", "Open the command palette", "/", {
     paletteVisible: false,
   }),
-  command("/login", "auth", "Sign in with a magic link", "/login [email]", {
+  command("/login", "auth", "Sign in through your browser", "/login", {
     backendAction: "login",
   }),
   command(
@@ -322,6 +330,19 @@ export const slashCommands = [
       },
     }
   ),
+  command(
+    "/settings",
+    "settings",
+    "Manage Context and Sandbox safety settings",
+    "/settings"
+  ),
+  command(
+    "/sandbox",
+    "sandbox",
+    "Open a temporary session on real workspace data",
+    "/sandbox",
+    { backendAction: "sandbox" }
+  ),
   command("/fixtures", "fixture", "List sandbox fixtures", "/fixtures", {
     backendAction: "fixtures",
   }),
@@ -411,6 +432,17 @@ export const slashCommands = [
       aliasFor: "/reject",
       availability: "decision-selection",
       backendAction: "reject",
+    }
+  ),
+  command(
+    "/resolve",
+    "mutation",
+    "Resolve the selected work item",
+    "/resolve [row-or-id]",
+    {
+      availability: "decision-selection",
+      backendAction: "resolve",
+      paletteVisible: false,
     }
   ),
   command(
@@ -611,7 +643,10 @@ function groupForKind(kind: SlashCommandKind): SlashCommandGroup {
     case "mutation":
       return "Decide"
     case "fixture":
+    case "sandbox":
       return "Sandbox"
+    case "settings":
+      return "Workspace settings"
     case "local":
       return "Session"
   }

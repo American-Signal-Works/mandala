@@ -19,7 +19,7 @@ const createWorkspaceSchema = z.object({
 })
 
 export async function GET(request: Request) {
-  const auth = await authenticateRequest(request)
+  const auth = await authenticateRequest(request, { allowManagedCli: true })
   if (!auth)
     return NextResponse.json({ error: "unauthorized" }, { status: 401 })
 
@@ -28,9 +28,16 @@ export async function GET(request: Request) {
       supabase: auth.supabase,
       userId: auth.user.id,
     })
-    return NextResponse.json(companiesResponseSchema.parse({ companies }), {
-      headers: { "cache-control": "private, no-store" },
-    })
+    const visibleCompanies =
+      auth.cliSession?.managed === true
+        ? companies.filter(
+            (company) => company.id === auth.cliSession?.selectedCompanyId
+          )
+        : companies
+    return NextResponse.json(
+      companiesResponseSchema.parse({ companies: visibleCompanies }),
+      { headers: { "cache-control": "private, no-store" } }
+    )
   } catch {
     return NextResponse.json({ error: "company_list_failed" }, { status: 500 })
   }

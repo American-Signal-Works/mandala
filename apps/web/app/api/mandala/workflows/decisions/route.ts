@@ -3,7 +3,7 @@ import {
   decisionResponseSchema,
   permissionForWorkflowDecision,
 } from "@workspace/control-plane"
-import { authenticateRequest } from "@/lib/supabase/request"
+import { allowsCliWorkspace, authenticateRequest } from "@/lib/supabase/request"
 import {
   authorizeCompanyPermission,
   companyPermissionFailure,
@@ -13,7 +13,7 @@ import { recordWorkflowDecisionV2 } from "@/lib/mandala/control-plane/queries"
 import { controlPlaneErrorResponse, privateJson } from "../control-plane-http"
 
 export async function POST(request: Request) {
-  const auth = await authenticateRequest(request)
+  const auth = await authenticateRequest(request, { allowManagedCli: true })
   if (!auth) return privateJson({ error: "unauthorized" }, 401)
   const { supabase, user } = auth
 
@@ -23,6 +23,9 @@ export async function POST(request: Request) {
       { error: "invalid_request", issues: parsed.error.flatten().fieldErrors },
       400
     )
+  }
+  if (!allowsCliWorkspace(auth, parsed.data.companyId)) {
+    return privateJson({ error: "forbidden" }, 403)
   }
 
   const permissionFailure = companyPermissionFailure(

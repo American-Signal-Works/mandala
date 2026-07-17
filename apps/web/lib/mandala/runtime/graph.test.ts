@@ -6,6 +6,49 @@ import { createGenericWorkflowRuntime } from "./graph"
 const manifest = createManifest()
 
 describe("generic workflow runtime", () => {
+  it("defaults to Sandbox and blocks a durable review persister", async () => {
+    const runtime = createGenericWorkflowRuntime({
+      manifest,
+      dependencies: {
+        capabilityProvider: {
+          load: async ({ bindings }) => ({
+            data: Object.fromEntries(
+              bindings
+                .filter(({ access }) => access === "read")
+                .map(({ alias }) => [
+                  alias,
+                  { sku: "DEMO-1", quantity: 2, target: 21, pack: 6 },
+                ])
+            ),
+            sourceRefs: [],
+          }),
+        },
+        agentJudgment: async () => ({
+          proposal: { selectedSku: "DEMO-1" },
+          rationale: "Candidate selected.",
+          confidence: 0.8,
+          warnings: [],
+          context: {},
+        }),
+        reviewPersister: async () => {
+          throw new Error("durable persister must not be called")
+        },
+      },
+    })
+
+    const result = await runtime.start({
+      companyId: "company-sandbox",
+      actorId: "actor-sandbox",
+      workflowDefinitionId: "workflow-sandbox",
+      workflowRunId: "run-sandbox-firewall",
+      manifestDigest: manifest.manifestDigest,
+      mode: "mock",
+      trigger: { id: "manual-review", kind: "manual", input: {} },
+    })
+
+    expect(result.output.status).toBe("blocked")
+    expect(result.output.errors).toContain("Sandbox blocked a durable review persistence path.")
+  })
   it("checkpoints at human approval and resumes without rerunning judgment", async () => {
     const checkpointer = new MemorySaver()
     const capabilityLoad = vi.fn(async () => ({
@@ -58,6 +101,7 @@ describe("generic workflow runtime", () => {
       workflowRunId: "run-1",
       manifestDigest: manifest.manifestDigest,
       mode: "mock",
+      sandboxEnabled: false,
       trigger: { id: "manual", kind: "manual", input: {} },
     })
 
@@ -160,6 +204,7 @@ describe("generic workflow runtime", () => {
       workflowRunId: "run-2",
       manifestDigest: manifest.manifestDigest,
       mode: "mock",
+      sandboxEnabled: false,
       trigger: { id: "manual", kind: "manual", input: {} },
     })
 

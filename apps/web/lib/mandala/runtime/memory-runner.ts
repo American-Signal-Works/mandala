@@ -25,9 +25,14 @@ import {
 import type {
   RuntimeCheckpointCorrelation,
   RuntimeReviewProjection,
+  RuntimeOperatingMode,
   RuntimeSourceRef,
   RuntimeState,
   RuntimeTrigger,
+} from "./state"
+import {
+  resolveRuntimeSandboxEnabled,
+  runtimeOperatingMode,
 } from "./state"
 
 export type CompiledMemoryRunInput = {
@@ -43,6 +48,8 @@ export type CompiledMemoryRunInput = {
   checkpointer?: BaseCheckpointSaver
   skillMarkdown?: string
   now?: Date
+  operatingMode?: RuntimeOperatingMode
+  sandboxEnabled?: boolean
   trace?: {
     langSmithTraceId?: string | null
     langSmithRunId?: string | null
@@ -61,6 +68,7 @@ type ReviewRecords = {
 export async function runCompiledWorkflowInMemory(
   input: CompiledMemoryRunInput
 ): Promise<WorkflowFixtureRunResult> {
+  const sandboxEnabled = resolveRuntimeSandboxEnabled(input)
   const createdAt = (input.now ?? new Date()).toISOString()
   const definition = upsertDefinition(input)
   const run = createRun(input, definition, createdAt)
@@ -94,6 +102,14 @@ export async function runCompiledWorkflowInMemory(
           disposition: reviewRecords.duplicate ? "suppressed" : "created",
         }
       },
+      ...(sandboxEnabled
+        ? {
+            mutationBoundary: {
+              persistence: "ephemeral" as const,
+              externalActions: "simulate" as const,
+            },
+          }
+        : {}),
     },
   })
 
@@ -104,6 +120,8 @@ export async function runCompiledWorkflowInMemory(
     workflowRunId: run.id,
     manifestDigest: input.manifest.manifestDigest,
     mode: input.manifest.workflow.default_mode,
+    sandboxEnabled,
+    operatingMode: runtimeOperatingMode(sandboxEnabled),
     trigger: input.trigger,
   })
   const state = invocation.output

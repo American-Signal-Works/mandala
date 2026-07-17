@@ -47,6 +47,8 @@ describe("slash command registry", () => {
       "/agent-rollback",
       "/inbox",
       "/purchase-requests",
+      "/settings",
+      "/sandbox",
       "/fixtures",
       "/run-fixture",
       "/open",
@@ -59,6 +61,7 @@ describe("slash command registry", () => {
       "/approve",
       "/reject",
       "/deny",
+      "/resolve",
       "/rework",
       "/edit",
       "/execute",
@@ -74,6 +77,10 @@ describe("slash command registry", () => {
       includedStatuses: ["active", "blocked", "approved"],
     })
     expect(completeSlashCommand("/pur")[0]).toEqual(["/purchase-requests"])
+    expect(getSlashCommand("/sandbox")).toMatchObject({
+      group: "Sandbox",
+      description: expect.stringContaining("real workspace data"),
+    })
     expect(parseSlashCommand("/inbxo")).toMatchObject({
       ok: false,
       message: expect.stringContaining("Did you mean /inbox?"),
@@ -92,6 +99,187 @@ describe("slash command registry", () => {
 })
 
 describe("interactive TUI", () => {
+  it("keeps decisions over real data inside the current Sandbox session", async () => {
+    const base = fakeExecute()
+    const execute = vi.fn(async (args: string[]): Promise<CliCommandResult> => {
+      if (args[0] === "sandbox" && args[1] === "open") {
+        return {
+          ok: true,
+          data: {
+            schemaVersion: 1,
+            mode: "sandbox",
+            ephemeral: true,
+            companyId,
+            sessionId: "a5000000-0000-4000-8000-000000000001",
+            createdAt: "2026-07-16T04:00:00.000Z",
+            dataAnchorAt: "2026-07-15",
+            recordCount: 82_166,
+            candidateCount: 1,
+            sources: [],
+            candidates: [
+              {
+                availableActions: [
+                  "approve",
+                  "edit",
+                  "request_rework",
+                  "reject",
+                ],
+                sku: "SKU-REAL",
+                productName: "Real Product",
+                inventory: { available: -6 },
+                vendor: { name: "Real Vendor" },
+                recommendation: {
+                  quantity: 25,
+                  status: "ready_for_review",
+                },
+              },
+            ],
+          },
+        }
+      }
+      return base(args)
+    }) as NonNullable<TuiDependencies["execute"]> & ReturnType<typeof vi.fn>
+    const stdout = new CaptureStream()
+    const stderr = new CaptureStream()
+    const selections = ["SKU-REAL", "approve", "confirm", "done"]
+    const prompts: string[] = []
+    const controller = createTuiSessionFactory(
+      { execute },
+      stdout,
+      stderr
+    )({
+      append: (value) => stdout.write(`${value}\n`),
+      ask: async () => null,
+      choose: async (prompt, choices) => {
+        prompts.push(prompt)
+        const selected = selections.shift() ?? null
+        if (selected)
+          expect(choices.map(({ value }) => value)).toContain(selected)
+        return selected
+      },
+      clearScreen: () => undefined,
+      onSnapshot: () => undefined,
+      renderOptions: { color: false, width: 100 },
+    })
+
+    await controller.start()
+    await controller.handleLine("/sandbox")
+
+    expect(prompts).toEqual([
+      "Choose from Sandbox Inbox",
+      "Choose next action",
+      "Confirm temporary Sandbox action",
+      "Choose from Sandbox Inbox",
+    ])
+    expect(commandCalls(execute)).toContainEqual(["sandbox", "open"])
+    expect(commandCalls(execute)).not.toContainEqual([
+      "work",
+      "approve",
+      expect.anything(),
+    ])
+    expect(stdout.value).toContain("Temporary approved")
+    expect(stdout.value).toContain("Nothing was written or sent")
+  })
+
+  it("guides audited workspace settings and confirms safety weakening", async () => {
+    const base = fakeExecute()
+    const status = {
+      schemaVersion: 1,
+      companyId,
+      provider: "off",
+      sandboxEnabled: true,
+      readiness: "disabled",
+      configurationVersion: 4,
+      updatedAt: "2026-07-16T20:00:00.000Z",
+      providerStatus: {
+        operational: false,
+        status: "disabled",
+        detailCode: "context_off",
+      },
+      indexingCoverage: {
+        status: "unavailable",
+        eligibleRecordCount: null,
+        indexedRecordCount: null,
+        percent: null,
+      },
+      synchronization: {
+        status: "unavailable",
+        lagSeconds: null,
+        lastSynchronizedAt: null,
+        recentErrorCount: null,
+      },
+    }
+    const execute = vi.fn(async (args: string[]): Promise<CliCommandResult> => {
+      if (args[0] === "context" && args[1] === "status")
+        return { ok: true, data: status }
+      if (args[0] === "context" && args[1] === "set")
+        return {
+          ok: true,
+          data: {
+            ...status,
+            provider: "supermemory",
+            readiness: "not_ready",
+            configurationVersion: 5,
+          },
+        }
+      return base(args)
+    }) as NonNullable<TuiDependencies["execute"]> & ReturnType<typeof vi.fn>
+    const stdout = new CaptureStream()
+    const stderr = new CaptureStream()
+    const selections = ["context", "supermemory", "continue"]
+    const prompts: string[] = []
+    const ask = vi.fn(async () => "Approved provider evaluation")
+    const controller = createTuiSessionFactory(
+      { execute },
+      stdout,
+      stderr
+    )({
+      append: (value) => stdout.write(`${value}\n`),
+      ask,
+      choose: async (prompt, choices) => {
+        prompts.push(prompt)
+        const selected = selections.shift() ?? null
+        if (selected)
+          expect(choices.map(({ value }) => value)).toContain(selected)
+        return selected
+      },
+      clearScreen: () => undefined,
+      onSnapshot: () => undefined,
+      renderOptions: { color: false, width: 100 },
+    })
+
+    await controller.start()
+    await controller.handleLine("/settings")
+
+    expect(prompts).toEqual([
+      "Choose a workspace setting",
+      "Choose Context provider",
+      "This change weakens workspace safety. Continue?",
+    ])
+    expect(ask).toHaveBeenCalledWith("Reason for this audited change: ")
+    expect(commandCalls(execute)).toContainEqual([
+      "context",
+      "set",
+      "supermemory",
+      "--confirm",
+      "--expected-version",
+      "4",
+      "--reason",
+      "Approved provider evaluation",
+    ])
+    expect(stdout.value).toContain("Supermemory (not ready)")
+    expect(stdout.value).toContain("unavailable")
+
+    selections.push("sandbox", "off", "cancel")
+    await controller.handleLine("/settings")
+    expect(
+      commandCalls(execute).some(
+        (args) => args[0] === "sandbox" && args[1] === "set"
+      )
+    ).toBe(false)
+    expect(stdout.value).toContain("Workspace settings were not changed")
+  })
+
   it("uses a safe nested fixture picker before running sandbox data", async () => {
     const base = fakeExecute()
     const execute = vi.fn(async (args: string[]): Promise<CliCommandResult> => {
@@ -520,8 +708,8 @@ describe("interactive TUI", () => {
 
     const { stderr, stdout } = await session("/exit\n", execute)
 
-    expect(stderr.value).toContain("saved local sign-in expired")
-    expect(stderr.value).toContain("/login seed@example.com")
+    expect(stderr.value).toContain("sign-in expired or was revoked")
+    expect(stderr.value).toContain("/login")
     expect(stderr.value).not.toContain("| Field")
     expect(stdout.value).toContain("Next action")
     expect(stdout.value).toContain("Sign in with /login")
@@ -540,12 +728,12 @@ describe("interactive TUI", () => {
     }) as NonNullable<TuiDependencies["execute"]> & ReturnType<typeof vi.fn>
 
     const { stderr } = await session(
-      "/login unknown@example.com\n/exit\n",
+      "/login --local unknown@example.com\n/exit\n",
       execute
     )
 
     expect(stderr.value).toContain("not part of the local demo")
-    expect(stderr.value).toContain("/login seed@example.com")
+    expect(stderr.value).toContain("/login --local seed@example.com")
     expect(stderr.value).toContain("http://127.0.0.1:54324")
     expect(stderr.value).not.toContain("| Field")
   })
@@ -553,7 +741,7 @@ describe("interactive TUI", () => {
   it("does not start another magic-link flow while already signed in", async () => {
     const execute = fakeExecute()
     const { stdout } = await session(
-      "/login seed@example.com\n/exit\n",
+      "/login --local seed@example.com\n/exit\n",
       execute
     )
 
@@ -562,6 +750,7 @@ describe("interactive TUI", () => {
     expect(commandCalls(execute)).not.toContainEqual([
       "auth",
       "login",
+      "--local",
       "--email",
       "seed@example.com",
     ])
@@ -594,10 +783,73 @@ describe("interactive TUI", () => {
     expect(stdout.value).toContain("Example Company")
     expect(stdout.value).toContain("Active work")
     expect(stdout.value).toContain("Open the inbox to review work")
+    expect(stdout.value).toContain("Context: Off")
+    expect(stdout.value).toContain("Sandbox: On")
     expect(commandCalls(execute).slice(0, 2)).toEqual([
       ["context"],
       ["work", "list"],
     ])
+    expect(commandCalls(execute)).toContainEqual(["context", "status"])
+  })
+
+  it("keeps home available when workspace settings status cannot load", async () => {
+    const base = fakeExecute()
+    const execute = vi.fn(async (args: string[]): Promise<CliCommandResult> => {
+      if (args[0] === "context" && args[1] === "status") {
+        return {
+          ok: false,
+          error: new CliError(
+            "context_workspace_settings_failed",
+            "Settings unavailable."
+          ),
+        }
+      }
+      return base(args)
+    }) as NonNullable<TuiDependencies["execute"]> & ReturnType<typeof vi.fn>
+
+    const { stdout } = await session("/exit\n", execute)
+
+    expect(stdout.value).toContain("Home")
+    expect(stdout.value).toContain("Active work")
+    expect(stdout.value).toContain("Context: Unavailable")
+    expect(stdout.value).toContain("Sandbox: Unavailable")
+  })
+
+  it("does not let legacy local mode contradict server Sandbox Off", async () => {
+    const base = fakeExecute()
+    const execute = vi.fn(async (args: string[]): Promise<CliCommandResult> => {
+      const result = await base(args)
+      if (args[0] === "context" && args[1] === "status" && result.ok) {
+        return {
+          ok: true,
+          data: {
+            ...(result.data as Record<string, unknown>),
+            sandboxEnabled: false,
+          },
+        }
+      }
+      return result
+    }) as NonNullable<TuiDependencies["execute"]> & ReturnType<typeof vi.fn>
+
+    const { stdout } = await session("/exit\n", execute)
+
+    expect(stdout.value).toContain("Example Company")
+    expect(stdout.value).toContain("Context: Off")
+    expect(stdout.value).toContain("Sandbox: Off")
+    expect(stdout.value).not.toContain("Example Company · Sandbox")
+  })
+
+  it("refreshes persistent workspace settings when the header redraws", async () => {
+    const execute = fakeExecute()
+    const { stdout } = await session("/clear\n/exit\n", execute)
+
+    expect(
+      commandCalls(execute).filter(
+        (args) => args[0] === "context" && args[1] === "status"
+      )
+    ).toHaveLength(2)
+    expect(stdout.value.match(/Context: Off/g)).toHaveLength(2)
+    expect(stdout.value.match(/Sandbox: On/g)).toHaveLength(2)
   })
 
   it("renders explicit inbox row ownership and a focused item overview", async () => {
@@ -605,7 +857,7 @@ describe("interactive TUI", () => {
     const { stdout } = await session("/inbox\n/open 1\n/exit\n", execute)
 
     expect(stdout.value).toContain("Rows belong to this inbox view")
-    expect(stdout.value).toContain("Inbox item")
+    expect(stdout.value).toContain("Review workspace")
     expect(stdout.value).toContain("Review reorder request")
     expect(stdout.value).toContain("Why it exists")
     expect(stdout.value).toContain("Next action")
@@ -619,17 +871,13 @@ describe("interactive TUI", () => {
     const stderr = new CaptureStream()
     const transcript: string[] = []
     const prompts: string[] = []
-    const selections: Array<string | null> = [
-      otherCompanyId,
-      "1",
-      "review",
-      "back",
-      "back",
-      null,
-    ]
+    const itemActionChoices: string[] = []
+    const selections: Array<string | null> = [otherCompanyId, "1", "back", null]
     const choose: NonNullable<TuiSessionIo["choose"]> = vi.fn(
       async (prompt: string, choices: readonly TuiChoice[]) => {
         prompts.push(prompt)
+        if (prompt === "Choose next action")
+          itemActionChoices.push(...choices.map(({ value }) => value))
         const selected = selections.shift() ?? null
         if (selected !== null)
           expect(choices.map(({ value }) => value)).toContain(selected)
@@ -637,7 +885,12 @@ describe("interactive TUI", () => {
       }
     )
     const controller = createTuiSessionFactory(
-      { execute },
+      {
+        execute,
+        api: agentControlApi(testAgentSummary(), {
+          getWorkItemReview: vi.fn(async () => testWorkItemReview()),
+        }),
+      },
       stdout,
       stderr
     )({
@@ -657,8 +910,6 @@ describe("interactive TUI", () => {
       "Choose workspace",
       "Choose from Inbox",
       "Choose next action",
-      "Choose a decision",
-      "Choose next action",
       "Choose from Inbox",
     ])
     expect(commandCalls(execute)).toContainEqual([
@@ -667,7 +918,71 @@ describe("interactive TUI", () => {
       otherCompanyId,
     ])
     expect(commandCalls(execute)).toContainEqual(["work", "show", itemId])
-    expect(transcript.join("\n")).toContain("Review · Review reorder request")
+    expect(itemActionChoices).toEqual([
+      "approve",
+      "edit",
+      "rework",
+      "reject",
+      "detail",
+      "back",
+    ])
+    expect(itemActionChoices).not.toContain("evidence")
+    expect(transcript.join("\n")).toContain(
+      "Review workspace · Review reorder request"
+    )
+  })
+
+  it("opens the Ink item workspace without printing review sections into chat", async () => {
+    const execute = fakeExecute()
+    const transcript: string[] = []
+    const workspaces: Array<
+      Parameters<NonNullable<TuiSessionIo["setItemWorkspace"]>>[0]
+    > = []
+    const prompts: string[] = []
+    const controller = createTuiSessionFactory(
+      {
+        execute,
+        api: agentControlApi(testAgentSummary(), {
+          getWorkItemReview: vi.fn(async () => testWorkItemReview()),
+        }),
+      },
+      new CaptureStream(),
+      new CaptureStream()
+    )({
+      append: (value) => transcript.push(value),
+      ask: async () => null,
+      choose: async (prompt, choices) => {
+        prompts.push(prompt)
+        return prompt === "Choose from Inbox"
+          ? (choices[0]?.value ?? null)
+          : null
+      },
+      clearScreen: () => undefined,
+      setItemWorkspace: (workspace) => workspaces.push(workspace),
+      onSnapshot: () => undefined,
+      renderOptions: { color: false, width: 100 },
+    })
+
+    await controller.start()
+    await controller.handleLine("/inbox")
+
+    const workspace = workspaces.at(-1)
+    expect(prompts).toEqual(["Choose from Inbox"])
+    expect(workspace?.tabs.map(({ id }) => id)).toEqual([
+      "overview",
+      "evidence",
+      "draft",
+      "activity",
+      "actions",
+    ])
+    expect(workspace?.actions.map(({ value }) => value)).toEqual([
+      "approve",
+      "edit",
+      "rework",
+      "reject",
+    ])
+    expect(transcript.join("\n")).not.toContain("Review workspace")
+    expect(transcript.join("\n")).not.toContain("Evidence & freshness")
   })
 
   it("projects recommendation, evidence, and history as product views", async () => {
@@ -753,7 +1068,8 @@ describe("interactive TUI", () => {
       execute
     )
 
-    expect(stdout.value).toContain("Other Company · Sandbox")
+    expect(stdout.value).toContain("Other Company")
+    expect(stdout.value).not.toContain("Other Company · Sandbox")
     expect(stdout.value).toContain("(none) · Sandbox")
     expect(commandCalls(execute)).toContainEqual(["auth", "logout"])
   })
@@ -1170,6 +1486,163 @@ describe("interactive TUI", () => {
     expect(stdout.value).toContain("648 units covers about 40 days")
   })
 
+  it("streams a selected-item answer into one live entry before committing it", async () => {
+    const execute = fakeExecute()
+    const answer =
+      "The recommendation uses current stock and recent demand. Check supplier minimums before deciding."
+    const contextualChatStream = vi.fn(
+      async (_request: unknown, onDelta: (value: string) => void) => {
+        onDelta("The recommendation uses current stock")
+        onDelta(answer)
+        return {
+          route: "question" as const,
+          message: answer,
+          companyId,
+          selectedItemId: itemId,
+          reviewVersion: "review-v3",
+          command: null,
+          confirmationRequired: false,
+          mutated: false,
+        }
+      }
+    )
+    const transcript: string[] = []
+    const live: Array<string | null> = []
+    const snapshots: unknown[] = []
+    const stdout = new CaptureStream()
+    const stderr = new CaptureStream()
+    const controller = createTuiSessionFactory(
+      {
+        execute,
+        api: agentControlApi(testAgentSummary(), {
+          contextualChatStream,
+          getWorkItemReview: vi.fn(async () => testWorkItemReview()),
+        }),
+      },
+      stdout,
+      stderr
+    )({
+      append: (value) => transcript.push(value),
+      ask: async () => null,
+      clearScreen: () => undefined,
+      setLiveMessage: (value) => live.push(value),
+      onSnapshot: (snapshot) => snapshots.push(snapshot),
+      renderOptions: { color: false, width: 100 },
+    })
+
+    await controller.start()
+    await controller.handleLine("/inbox")
+    await controller.handleLine("/open 1")
+    await controller.handleLine("Why this quantity?")
+
+    expect(live.some((value) => value?.includes("current stock"))).toBe(true)
+    expect(live.at(-1)).toBeNull()
+    expect(transcript.filter((value) => value.includes(answer))).toHaveLength(1)
+    expect(commandCalls(execute)).not.toContainEqual([
+      "work",
+      "ask",
+      itemId,
+      "--question",
+      "Why this quantity?",
+    ])
+    expect(commandCalls(execute)).not.toContainEqual([
+      "chat",
+      "Why this quantity?",
+    ])
+    expect(snapshots.at(-1)).toMatchObject({
+      selectedItem: { reviewVersion: "review-v3" },
+    })
+
+    contextualChatStream.mockImplementationOnce(async (_request, onDelta) => {
+      onDelta("temporary unsafe answer")
+      throw new CliError(
+        "unsafe_model_output",
+        "Mandala stopped an unsafe model response before displaying it."
+      )
+    })
+    await controller.handleLine("What else?")
+
+    expect(live.at(-1)).toBeNull()
+    expect(transcript.join("\n")).not.toContain("temporary unsafe answer")
+    expect(commandCalls(execute)).not.toContainEqual([
+      "work",
+      "ask",
+      itemId,
+      "--question",
+      "What else?",
+    ])
+    expect(commandCalls(execute)).not.toContainEqual(["chat", "What else?"])
+  })
+
+  it("cancels a live selected-item answer without starting a fallback request", async () => {
+    const execute = fakeExecute()
+    const live: Array<string | null> = []
+    const transcript: string[] = []
+    const contextualChatStream = vi.fn(
+      async (
+        _request: unknown,
+        onDelta: (value: string) => void,
+        signal?: AbortSignal
+      ): Promise<never> => {
+        onDelta("Partial answer that should be cleared")
+        await new Promise<void>((_resolve, reject) => {
+          signal?.addEventListener(
+            "abort",
+            () => reject(new CliError("command_cancelled", "Answer stopped.")),
+            { once: true }
+          )
+        })
+        throw new Error("unreachable")
+      }
+    )
+    const controller = createTuiSessionFactory(
+      {
+        execute,
+        api: agentControlApi(testAgentSummary(), {
+          contextualChatStream,
+          getWorkItemReview: vi.fn(async () => testWorkItemReview()),
+        }),
+      },
+      new CaptureStream(),
+      new CaptureStream()
+    )({
+      append: (value) => transcript.push(value),
+      ask: async () => null,
+      clearScreen: () => undefined,
+      setLiveMessage: (value) => live.push(value),
+      onSnapshot: () => undefined,
+      renderOptions: { color: false, width: 100 },
+    })
+
+    await controller.start()
+    await controller.handleLine("/inbox")
+    await controller.handleLine("/open 1")
+    const pending = controller.handleLine("Why this quantity?")
+    await vi.waitFor(() =>
+      expect(live.some((value) => value?.includes("Partial answer"))).toBe(true)
+    )
+
+    expect(controller.cancelCurrentOperation()).toBe(true)
+    await pending
+
+    expect(live.at(-1)).toBeNull()
+    expect(transcript.join("\n")).not.toContain(
+      "Partial answer that should be cleared"
+    )
+    expect(transcript.join("\n")).toContain("Answer stopped.")
+    expect(commandCalls(execute)).not.toContainEqual([
+      "work",
+      "ask",
+      itemId,
+      "--question",
+      "Why this quantity?",
+    ])
+    expect(commandCalls(execute)).not.toContainEqual([
+      "chat",
+      "Why this quantity?",
+    ])
+  })
+
   it("answers a greeting locally without invoking the workflow parser", async () => {
     const execute = fakeExecute({ authenticated: false })
     const { stdout } = await session("hello\n/exit\n", execute)
@@ -1291,9 +1764,7 @@ describe("interactive TUI", () => {
       environment: {},
       execute,
       stderr,
-      stdin: Readable.from([
-        "/inbox\n/open 1\nCan you approve it?\n/exit\n",
-      ]),
+      stdin: Readable.from(["/inbox\n/open 1\nCan you approve it?\n/exit\n"]),
       stdout,
     })
 
@@ -1350,6 +1821,9 @@ async function session(
   const stdout = new CaptureStream()
   const stderr = new CaptureStream()
   const exitCode = await runTui({
+    api: agentControlApi(testAgentSummary(), {
+      getWorkItemReview: vi.fn(async () => testWorkItemReview()),
+    }),
     ...(useRealConfirmation
       ? {}
       : { confirm: vi.fn().mockResolvedValue(true) }),
@@ -1360,6 +1834,14 @@ async function session(
     stdout,
   })
   return { exitCode, stderr, stdout }
+}
+
+function testWorkItemReview() {
+  return {
+    version: "2026-07-09T12:00:00.000Z",
+    availableActions: ["approve", "edit", "request_rework", "reject"],
+    activity: { items: [] },
+  } as never
 }
 
 function fakeExecute(
@@ -1374,6 +1856,37 @@ function fakeExecute(
   let detailState = workItemDetail(options.warning) as MutableWorkItemDetail
   let currentStatus = detailState.item.status
   return vi.fn(async (args: string[]): Promise<CliCommandResult> => {
+    if (args[0] === "context" && args[1] === "status") {
+      return {
+        ok: true,
+        data: {
+          schemaVersion: 1,
+          companyId: activeCompanyId,
+          provider: "off",
+          sandboxEnabled: true,
+          readiness: "disabled",
+          configurationVersion: 1,
+          updatedAt: "2026-07-16T20:00:00.000Z",
+          providerStatus: {
+            operational: false,
+            status: "disabled",
+            detailCode: "context_off",
+          },
+          indexingCoverage: {
+            status: "unavailable",
+            eligibleRecordCount: null,
+            indexedRecordCount: null,
+            percent: null,
+          },
+          synchronization: {
+            status: "unavailable",
+            lagSeconds: null,
+            lastSynchronizedAt: null,
+            recentErrorCount: null,
+          },
+        },
+      }
+    }
     if (args[0] === "context") {
       return {
         ok: true,
@@ -1581,6 +2094,10 @@ function agentControlApi(
     throw new Error("This API method is not used by the TUI test.")
   }
   return {
+    getContextWorkspaceStatus: unsupported,
+    setContextWorkspaceConfiguration: unsupported,
+    runWorkspaceSandbox: unsupported,
+    createSandboxSession: unsupported,
     listAgents: vi.fn(async () => ({ agents: [agent] })),
     installAgent: unsupported,
     validateAgent: vi.fn(async () => ({

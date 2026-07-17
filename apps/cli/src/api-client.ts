@@ -17,6 +17,9 @@ import {
   controlParseResponseSchema,
   contextualChatRequestSchema,
   contextualChatResponseSchema,
+  contextualChatStreamEventSchema,
+  contextWorkspaceConfigurationRequestSchema,
+  contextWorkspaceStatusSchema,
   decisionRequestSchema,
   decisionResponseSchema,
   executionRequestSchema,
@@ -25,6 +28,10 @@ import {
   executionTokenResponseSchema,
   fixtureRunRequestSchema,
   fixtureRunResponseSchema,
+  sandboxSessionRequestSchema,
+  sandboxSessionResponseSchema,
+  workspaceSandboxRunRequestSchema,
+  workspaceSandboxRunResponseSchema,
   workItemDetailResponseSchema,
   workItemQueueResponseSchema,
   workItemQuestionRequestSchema,
@@ -43,6 +50,9 @@ import {
   type ControlParseRequest,
   type ContextualChatRequest,
   type ContextualChatResponse,
+  type ContextualChatStreamEvent,
+  type ContextWorkspaceConfigurationRequest,
+  type ContextWorkspaceStatus,
   type DecisionData,
   type DecisionRequest,
   type ExecutionData,
@@ -51,6 +61,10 @@ import {
   type ExecutionTokenRequest,
   type FixtureRunData,
   type FixtureRunRequest,
+  type SandboxSessionRequest,
+  type SandboxSessionResponse,
+  type WorkspaceSandboxRunRequest,
+  type WorkspaceSandboxRunResponse,
   type WorkItemDetail,
   type WorkItemQueueData,
   type WorkItemQuestionData,
@@ -66,6 +80,16 @@ type AgentInstallData = z.infer<typeof agentInstallResponseSchema>
 type AgentTestRunData = z.infer<typeof agentTestRunResponseSchema>
 
 export interface ControlApi {
+  getContextWorkspaceStatus(companyId: string): Promise<ContextWorkspaceStatus>
+  setContextWorkspaceConfiguration(
+    request: ContextWorkspaceConfigurationRequest
+  ): Promise<ContextWorkspaceStatus>
+  runWorkspaceSandbox(
+    request: WorkspaceSandboxRunRequest
+  ): Promise<WorkspaceSandboxRunResponse>
+  createSandboxSession(
+    request: SandboxSessionRequest
+  ): Promise<SandboxSessionResponse>
   listAgents(companyId: string): Promise<{ agents: AgentSummary[] }>
   installAgent(request: AgentInstallRequest): Promise<AgentInstallData>
   validateAgent(request: AgentValidateRequest): Promise<AgentValidateResponse>
@@ -98,10 +122,7 @@ export interface ControlApi {
     request: AgentActionRequest
   ): Promise<AgentActionData>
   listCompanies(): Promise<{ companies: CompanySummary[] }>
-  listWorkItems(
-    companyId: string,
-    status?: string
-  ): Promise<WorkItemQueueData>
+  listWorkItems(companyId: string, status?: string): Promise<WorkItemQueueData>
   getWorkItem(companyId: string, itemId: string): Promise<WorkItemDetail>
   getWorkItemReview(
     companyId: string,
@@ -121,6 +142,11 @@ export interface ControlApi {
   contextualChat?(
     request: ContextualChatRequest
   ): Promise<ContextualChatResponse>
+  contextualChatStream?(
+    request: ContextualChatRequest,
+    onDelta: (cumulativeText: string) => void,
+    signal?: AbortSignal
+  ): Promise<ContextualChatResponse>
   recordControlRequest(
     request: ControlRequestCreateRequest
   ): Promise<{ request: Record<string, unknown> & { id: string } }>
@@ -138,6 +164,55 @@ export class ApiClient implements ControlApi {
     private readonly fetchImplementation: typeof fetch = fetch
   ) {
     this.baseUrl = baseUrl.replace(/\/$/, "")
+  }
+
+  getContextWorkspaceStatus(
+    companyId: string
+  ): Promise<ContextWorkspaceStatus> {
+    const query = new URLSearchParams({ companyId })
+    return this.request(
+      `/api/mandala/context/settings?${query.toString()}`,
+      contextWorkspaceStatusSchema
+    )
+  }
+
+  setContextWorkspaceConfiguration(
+    request: ContextWorkspaceConfigurationRequest
+  ): Promise<ContextWorkspaceStatus> {
+    return this.request(
+      "/api/mandala/context/settings",
+      contextWorkspaceStatusSchema,
+      {
+        method: "PATCH",
+        body: contextWorkspaceConfigurationRequestSchema.parse(request),
+      }
+    )
+  }
+
+  runWorkspaceSandbox(
+    request: WorkspaceSandboxRunRequest
+  ): Promise<WorkspaceSandboxRunResponse> {
+    return this.request(
+      "/api/mandala/sandbox/runs",
+      workspaceSandboxRunResponseSchema,
+      {
+        method: "POST",
+        body: workspaceSandboxRunRequestSchema.parse(request),
+      }
+    )
+  }
+
+  createSandboxSession(
+    request: SandboxSessionRequest
+  ): Promise<SandboxSessionResponse> {
+    return this.request(
+      "/api/mandala/sandbox/sessions",
+      sandboxSessionResponseSchema,
+      {
+        method: "POST",
+        body: sandboxSessionRequestSchema.parse(request),
+      }
+    )
   }
 
   listAgents(companyId: string): Promise<{ agents: AgentSummary[] }> {
@@ -369,6 +444,41 @@ export class ApiClient implements ControlApi {
     )
   }
 
+  async contextualChatStream(
+    request: ContextualChatRequest,
+    onDelta: (cumulativeText: string) => void,
+    signal?: AbortSignal
+  ): Promise<ContextualChatResponse> {
+    const options: RequestOptions = {
+      method: "POST",
+      body: contextualChatRequestSchema.parse(request),
+      accept: "application/x-ndjson, application/json;q=0.9",
+      signal,
+    }
+    let response = await this.send("/api/mandala/control/chat", options, false)
+    if (response.status === 401) {
+      response = await this.send("/api/mandala/control/chat", options, true)
+    }
+    if (!response.ok) {
+      const payload = await parseResponseJson(response)
+      throw responseError(response.status, payload)
+    }
+    const contentType = response.headers.get("content-type")?.toLowerCase()
+    if (!contentType?.includes("application/x-ndjson")) {
+      const payload = unwrapSuccess(await parseResponseJson(response))
+      const parsed = contextualChatResponseSchema.safeParse(payload)
+      if (!parsed.success) throw invalidStreamResponse()
+      return parsed.data
+    }
+    try {
+      return await readContextualChatStream(response, onDelta)
+    } catch (error) {
+      if (signal?.aborted || isAbortError(error))
+        throw new CliError("command_cancelled", "Answer stopped.")
+      throw error
+    }
+  }
+
   recordControlRequest(
     request: ControlRequestCreateRequest
   ): Promise<{ request: Record<string, unknown> & { id: string } }> {
@@ -411,7 +521,7 @@ export class ApiClient implements ControlApi {
   private async request<T>(
     path: string,
     schema: z.ZodType<T>,
-    options: { method?: "GET" | "POST"; body?: unknown } = {}
+    options: RequestOptions = {}
   ): Promise<T> {
     let response = await this.send(path, options, false)
     if (response.status === 401) response = await this.send(path, options, true)
@@ -431,7 +541,7 @@ export class ApiClient implements ControlApi {
 
   private async send(
     path: string,
-    options: { method?: "GET" | "POST"; body?: unknown },
+    options: RequestOptions,
     forceRefresh: boolean
   ): Promise<Response> {
     const accessToken = await this.session.getAccessToken(forceRefresh)
@@ -439,7 +549,7 @@ export class ApiClient implements ControlApi {
       return await this.fetchImplementation(`${this.baseUrl}${path}`, {
         method: options.method ?? "GET",
         headers: {
-          accept: "application/json",
+          accept: options.accept ?? "application/json",
           authorization: `Bearer ${accessToken}`,
           ...(options.body === undefined
             ? {}
@@ -447,8 +557,12 @@ export class ApiClient implements ControlApi {
         },
         body:
           options.body === undefined ? undefined : JSON.stringify(options.body),
+        signal: options.signal,
       })
     } catch (error) {
+      if (options.signal?.aborted || isAbortError(error)) {
+        throw new CliError("command_cancelled", "Answer stopped.")
+      }
       if (isDefinitelyUnavailable(error)) {
         throw new CliError(
           "api_unavailable",
@@ -461,6 +575,120 @@ export class ApiClient implements ControlApi {
       )
     }
   }
+}
+
+type RequestOptions = {
+  method?: "GET" | "PATCH" | "POST"
+  body?: unknown
+  accept?: string
+  signal?: AbortSignal
+}
+
+async function readContextualChatStream(
+  response: Response,
+  onDelta: (cumulativeText: string) => void
+): Promise<ContextualChatResponse> {
+  if (!response.body) throw invalidStreamResponse()
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffered = ""
+  let totalBytes = 0
+  let answer = ""
+  let start: Extract<ContextualChatStreamEvent, { type: "start" }> | undefined
+  let done = false
+
+  const consume = (line: string) => {
+    if (!line) return
+    if (line.length > 10_000) throw invalidStreamResponse()
+    let value: unknown
+    try {
+      value = JSON.parse(line)
+    } catch {
+      throw invalidStreamResponse()
+    }
+    const parsed = contextualChatStreamEventSchema.safeParse(value)
+    if (!parsed.success) throw invalidStreamResponse()
+    const event = parsed.data
+    if (event.type === "start") {
+      if (start || done) throw invalidStreamResponse()
+      start = event
+      return
+    }
+    if (!start || done) throw invalidStreamResponse()
+    if (event.type === "delta") {
+      answer += event.text
+      if (answer.length > 5_000) throw invalidStreamResponse()
+      onDelta(answer)
+      return
+    }
+    if (event.type === "error") {
+      done = true
+      throw new CliError(event.error, streamErrorMessage(event.error))
+    }
+    if (event.answer !== answer) throw invalidStreamResponse()
+    done = true
+  }
+
+  try {
+    while (true) {
+      const { done: readerDone, value } = await reader.read()
+      if (readerDone) break
+      totalBytes += value.byteLength
+      if (totalBytes > 20_000) throw invalidStreamResponse()
+      buffered += decoder.decode(value, { stream: true })
+      let newline = buffered.indexOf("\n")
+      while (newline >= 0) {
+        consume(buffered.slice(0, newline))
+        buffered = buffered.slice(newline + 1)
+        newline = buffered.indexOf("\n")
+      }
+    }
+    buffered += decoder.decode()
+    if (buffered.length > 0) consume(buffered)
+    if (!start || !done || !answer) throw invalidStreamResponse()
+  } catch (error) {
+    try {
+      await reader.cancel()
+    } catch {
+      // Preserve the original protocol or callback failure.
+    }
+    throw error
+  } finally {
+    reader.releaseLock()
+  }
+  return contextualChatResponseSchema.parse({
+    route: "question",
+    message: answer,
+    companyId: start.companyId,
+    selectedItemId: start.selectedItemId,
+    reviewVersion: start.reviewVersion,
+    command: null,
+    confirmationRequired: false,
+    mutated: false,
+  })
+}
+
+function invalidStreamResponse(): CliError {
+  return new CliError(
+    "invalid_api_response",
+    "The server returned an incomplete answer stream."
+  )
+}
+
+function streamErrorMessage(code: string): string {
+  if (code === "sensitive_model_input")
+    return "That question contains sensitive text and was not sent to the model."
+  if (code === "unsafe_model_output")
+    return "Mandala stopped an unsafe model response before displaying it."
+  return "Mandala could not answer that item question right now."
+}
+
+function isAbortError(error: unknown): boolean {
+  return (
+    error instanceof Error &&
+    (error.name === "AbortError" ||
+      error.message === "This operation was aborted")
+  )
 }
 
 function isDefinitelyUnavailable(error: unknown): boolean {

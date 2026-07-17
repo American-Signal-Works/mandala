@@ -15,15 +15,15 @@ export async function routeContextualChat(
   request: ContextualChatRequest,
   dependencies: ContextualChatDependencies
 ): Promise<ContextualChatResponse> {
-  const selectedItemId = request.selectedItemId
-  let reviewVersion: string | null = null
+  const selection = await selectedItemReviewContext(
+    request,
+    dependencies.getReviewVersion
+  )
+  const selectedItemId = selection.selectedItemId
+  const reviewVersion = selection.reviewVersion
 
   if (selectedItemId) {
-    reviewVersion = await dependencies.getReviewVersion(selectedItemId)
-    if (
-      request.expectedReviewVersion &&
-      request.expectedReviewVersion !== reviewVersion
-    ) {
+    if (selection.stale) {
       return response(request, {
         route: "blocked",
         message:
@@ -33,7 +33,7 @@ export async function routeContextualChat(
       })
     }
 
-    if (isReadOnlyQuestion(request.input) && !isExplicitAction(request.input)) {
+    if (isSelectedItemReadOnlyQuestion(request)) {
       return response(request, {
         route: "question",
         message: await dependencies.answerQuestion(
@@ -109,10 +109,41 @@ export function isReadOnlyQuestion(input: string): boolean {
   )
 }
 
-function isExplicitAction(input: string): boolean {
+export function isExplicitAction(input: string): boolean {
   return /\b(?:approve|reject|resolve|rework|edit|change|update|execute|perform|run|activate|pause|resume|disable|rollback)\b/i.test(
     input
   )
+}
+
+export function isSelectedItemReadOnlyQuestion(
+  request: ContextualChatRequest
+): boolean {
+  return Boolean(
+    request.selectedItemId &&
+    isReadOnlyQuestion(request.input) &&
+    !isExplicitAction(request.input)
+  )
+}
+
+export async function selectedItemReviewContext(
+  request: ContextualChatRequest,
+  getReviewVersion: (itemId: string) => Promise<string>
+): Promise<{
+  selectedItemId: string | null
+  reviewVersion: string | null
+  stale: boolean
+}> {
+  if (!request.selectedItemId)
+    return { selectedItemId: null, reviewVersion: null, stale: false }
+  const reviewVersion = await getReviewVersion(request.selectedItemId)
+  return {
+    selectedItemId: request.selectedItemId,
+    reviewVersion,
+    stale: Boolean(
+      request.expectedReviewVersion &&
+      request.expectedReviewVersion !== reviewVersion
+    ),
+  }
 }
 
 function bindSelectedItem(input: string, selectedItemId: string): string {

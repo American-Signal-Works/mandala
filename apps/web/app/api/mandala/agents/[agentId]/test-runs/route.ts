@@ -11,7 +11,7 @@ import {
   classifyWorkflowRpcError,
   getCompanyMembership,
 } from "@/lib/mandala/workflows"
-import { authenticateRequest } from "@/lib/supabase/request"
+import { allowsCliWorkspace, authenticateRequest } from "@/lib/supabase/request"
 import { createServerModelUsageRecorder } from "@/actions/admin/provider-usage"
 
 export const runtime = "nodejs"
@@ -21,7 +21,7 @@ export async function POST(
   request: Request,
   context: { params: Promise<{ agentId: string }> }
 ) {
-  const auth = await authenticateRequest(request)
+  const auth = await authenticateRequest(request, { allowManagedCli: true })
   if (!auth) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 })
   }
@@ -38,6 +38,9 @@ export async function POST(
       },
       { status: 400 }
     )
+  }
+  if (!allowsCliWorkspace(auth, parsed.data.companyId)) {
+    return NextResponse.json({ error: "forbidden" }, { status: 403 })
   }
 
   let membership

@@ -12,9 +12,15 @@ export {
   renderInboxItemOverview,
   renderInboxSummary,
   renderProcurementReview,
+  renderReviewWorkspace,
+  renderReviewWorkspaceTabs,
+  renderSandboxSession,
+  renderWorkspaceSandboxRun,
   type HumanRenderOptions,
   type HumanResultKind,
   type InboxSummaryInput,
+  type ReviewWorkspaceTab,
+  type ReviewWorkspaceTabId,
   type TerminalHeaderContext,
 } from "./human.js"
 export { sanitizeTerminalText } from "./sanitize.js"

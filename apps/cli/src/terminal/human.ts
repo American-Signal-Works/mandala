@@ -45,10 +45,25 @@ export type HumanRenderOptions = {
   kind?: HumanResultKind
 }
 
+export type ReviewWorkspaceTabId =
+  | "overview"
+  | "evidence"
+  | "draft"
+  | "activity"
+  | "actions"
+
+export type ReviewWorkspaceTab = {
+  content: string
+  id: ReviewWorkspaceTabId
+  label: string
+}
+
 export type TerminalHeaderContext = {
   companyName?: string | null
+  contextStatus?: string | null
   inboxCount?: number | null
   mode?: string | null
+  sandboxStatus?: string | null
   userEmail?: string | null
   warningCount?: number | null
 }
@@ -73,6 +88,12 @@ export function renderHumanResult(
   const safeValue = redactSecrets(value)
   const kind = resolved.kind ?? "auto"
 
+  if (kind === "auto" && isWorkspaceSandboxRun(safeValue))
+    return renderWorkspaceSandboxRun(safeValue, resolved)
+
+  if (kind === "auto" && isSandboxSession(safeValue))
+    return renderSandboxSession(safeValue, resolved)
+
   if (
     kind === "work-detail" ||
     (kind === "auto" && isWorkItemDetail(safeValue))
@@ -83,6 +104,153 @@ export function renderHumanResult(
     return renderWorkItemList(safeValue, width, resolved.title ?? "Work Items")
   }
   return renderGenericResult(safeValue, width, resolved.title ?? "Result")
+}
+
+export function renderSandboxSession(
+  value: unknown,
+  options: HumanRenderOptions | number = {}
+): string {
+  const resolved = resolveOptions(options)
+  const width = normalizeTerminalWidth(resolved.width)
+  const source = isRecord(value) ? value : {}
+  const sources = Array.isArray(source.sources)
+    ? source.sources.filter(isRecord)
+    : []
+  const candidates = Array.isArray(source.candidates)
+    ? source.candidates.filter(isRecord)
+    : []
+  const sessionId = valueText(source.sessionId, "temporary")
+  const recordCount = formatCount(source.recordCount)
+  const candidateCount = formatCount(source.candidateCount)
+  const title = resolved.color
+    ? styleText(["bold", "cyan"], "Real-data Sandbox", {
+        validateStream: false,
+      })
+    : "Real-data Sandbox"
+  const sections = [
+    [
+      title,
+      wrapTerminalText(
+        `Session ${sessionId} · ${recordCount} connected records · ${candidateCount} review candidates`,
+        width
+      ),
+      wrapTerminalText(
+        "This temporary view reads real workspace data but is read-only. It creates no workflow records and sends nothing to connected systems.",
+        width
+      ),
+    ].join("\n"),
+  ]
+
+  if (sources.length) {
+    sections.push(
+      [
+        "Connected Sources",
+        renderAsciiTable(
+          ["Source", "Records", "Freshness"],
+          sources.map((entry) => [
+            valueText(entry.name, valueText(entry.key, "Unknown")),
+            valueText(entry.recordCount, "0"),
+            entry.stale === true ? "Stale" : "Current",
+          ]),
+          width,
+          [3, 1, 1]
+        ),
+      ].join("\n")
+    )
+  }
+
+  if (candidates.length) {
+    sections.push(
+      [
+        "Procurement Candidates",
+        renderAsciiTable(
+          ["SKU", "Available", "Recommend", "Vendor", "Status"],
+          candidates.map((entry) => {
+            const inventory = recordOrEmpty(entry.inventory)
+            const recommendation = recordOrEmpty(entry.recommendation)
+            const vendor = recordOrEmpty(entry.vendor)
+            return [
+              valueText(entry.sku, "Unknown"),
+              valueText(inventory.available, "0"),
+              valueText(recommendation.quantity, "0"),
+              valueText(vendor.name, "Unmapped"),
+              valueText(recommendation.status, "Unknown").replaceAll("_", " "),
+            ]
+          }),
+          width,
+          [2, 1, 1, 2, 2]
+        ),
+      ].join("\n")
+    )
+  } else {
+    sections.push("Procurement Candidates\nNo candidates need review.")
+  }
+
+  return sections.join("\n\n")
+}
+
+export function renderWorkspaceSandboxRun(
+  value: unknown,
+  options: HumanRenderOptions | number = {}
+): string {
+  const resolved = resolveOptions(options)
+  const width = normalizeTerminalWidth(resolved.width)
+  const source = isRecord(value) ? value : {}
+  const catalog = recordOrEmpty(source.catalog)
+  const agent = recordOrEmpty(source.agent)
+  const signal = recordOrEmpty(source.signal)
+  const harness = recordOrEmpty(source.harness)
+  const proof = recordOrEmpty(source.proof)
+  const deliverable = recordOrEmpty(source.deliverable)
+  const recommendation = recordOrEmpty(deliverable.recommendation)
+  const output = recordOrEmpty(recommendation.output)
+  return [
+    [
+      "Sandbox Golden Path",
+      wrapTerminalText(
+        `${formatCount(catalog.records)} records across ${formatCount(catalog.datasets)} cataloged datasets`,
+        width
+      ),
+      wrapTerminalText(
+        `Installed ${valueText(agent.name, "agent")} v${valueText(agent.version, "unknown")} inactive and bound ${formatCount(Array.isArray(source.mappings) ? source.mappings.length : 0)} declarative mappings.`,
+        width
+      ),
+    ].join("\n"),
+    [
+      "Detected Signal",
+      wrapTerminalText(
+        `${valueText(signal.id, "Unknown")} · ${valueText(signal.entityKey, "record")} ${valueText(signal.entityValue, "Unknown")}`,
+        width
+      ),
+    ].join("\n"),
+    [
+      "Typed Deliverable",
+      wrapTerminalText(
+        `${valueText(harness.status, "Unknown").replaceAll("_", " ")} · ${valueText(recommendation.rationale, "No deliverable was produced.")}`,
+        width
+      ),
+      Object.keys(output).length
+        ? renderAsciiTable(
+            ["Field", "Value"],
+            Object.entries(output).map(([key, entry]) => [
+              key,
+              valueText(entry, ""),
+            ]),
+            width,
+            [1, 2]
+          )
+        : "No recommendation output.",
+    ].join("\n"),
+    [
+      "Zero-write Proof",
+      wrapTerminalText(
+        proof.unchanged === true
+          ? `PASS · ${formatCount(proof.persistenceWrites)} persisted writes · ${formatCount(proof.externalWriteAttempts)} external write attempts`
+          : "FAILED · monitored state changed during the Sandbox run",
+        width
+      ),
+    ].join("\n"),
+  ].join("\n\n")
 }
 
 export function renderDraftPreview(
@@ -168,8 +336,10 @@ export function renderHeader(
   const width = normalizeTerminalWidth(resolved.width)
   const safe = redactSecrets({
     companyName: context.companyName ?? null,
+    contextStatus: context.contextStatus ?? null,
     inboxCount: context.inboxCount ?? null,
-    mode: context.mode ?? "mock",
+    mode: context.mode ?? "sandbox",
+    sandboxStatus: context.sandboxStatus ?? null,
     userEmail: context.userEmail ?? null,
     warningCount: context.warningCount ?? null,
   }) as Record<string, unknown>
@@ -177,7 +347,19 @@ export function renderHeader(
   const mode = environmentLabel(displayContextValue(safe.mode))
   const user = displayContextValue(safe.userEmail)
   const inbox = inboxLabel(safe.inboxCount, safe.warningCount, user)
-  const details = ["Mandala", `${company} · ${mode}`, user, inbox]
+  const contextStatus = displayContextValue(safe.contextStatus)
+  const sandboxStatus = displayContextValue(safe.sandboxStatus)
+  const hasServerSettings =
+    context.contextStatus != null || context.sandboxStatus != null
+  const details = [
+    "Mandala",
+    hasServerSettings ? company : `${company} · ${mode}`,
+    user,
+    inbox,
+  ]
+  if (hasServerSettings) {
+    details.push(`Context: ${contextStatus}`, `Sandbox: ${sandboxStatus}`)
+  }
   const logoWidth = Math.max(...TERMINAL_LOGO.map((line) => line.length))
   const detailOffset = logoWidth + 3
   const renderDetail = (detail: string, index: number, maxWidth: number) => {
@@ -492,6 +674,483 @@ export function renderInboxItemOverview(
     ],
     width
   )
+}
+
+/** One decision-first projection for a selected item. The caller may provide a
+ * canonical detail alone or pair it with the permission-aware review payload. */
+export function renderReviewWorkspace(
+  input: unknown,
+  options: HumanRenderOptions | number = {}
+): string {
+  const { width, value } = productInput(input, options)
+  const root = recordOrEmpty(value)
+  const detail = recordOrEmpty(isRecord(root.detail) ? root.detail : root)
+  const review = recordOrEmpty(root.review)
+  const reviewItem = recordOrEmpty(review.item)
+  const detailItem = recordOrEmpty(detail.item)
+  const recordSnapshot = recordOrEmpty(review.recordSnapshot)
+  const activity = recordOrEmpty(review.activity)
+  const availableActions = Array.isArray(review.availableActions)
+    ? review.availableActions
+    : Array.isArray(root.availableActions)
+      ? root.availableActions
+      : []
+  const item = { ...detailItem, ...reviewItem }
+  const context = recordOrEmpty(
+    Object.keys(recordSnapshot).length > 0
+      ? recordSnapshot
+      : detail.contextPacket
+  )
+  const facts = recordOrEmpty(context.facts)
+  const recommendation = recordOrEmpty(
+    review.recommendation ?? detail.recommendation
+  )
+  const output = recordOrEmpty(recommendation.output)
+  const evidence = recordOrEmpty(review.evidence ?? detail.evidence)
+  const draft = recordOrEmpty(review.draft ?? detail.draft)
+  const payload = recordOrEmpty(draft.payload)
+  const reviewActivityItems = Array.isArray(activity.items)
+    ? activity.items
+    : []
+  const detailActivityItems = Array.isArray(detail.activity)
+    ? detail.activity
+    : []
+  const auditActivityItems = Array.isArray(detail.auditEvents)
+    ? detail.auditEvents
+    : []
+  const activityItems =
+    reviewActivityItems.length > 0
+      ? reviewActivityItems
+      : detailActivityItems.length > 0
+        ? detailActivityItems
+        : auditActivityItems
+  const latestActivity = latestProductActivity(activityItems)
+  const warnings = collectWarnings({
+    contextPacket: context,
+    recommendation,
+    evidence,
+  })
+  const title = valueText(read(item, ["title", "summary"]), "Selected item")
+  const mode = root.sandbox === true ? " · SANDBOX" : ""
+
+  return [
+    renderCompactProductSections(
+      `Review workspace${mode} · ${title}`,
+      [
+        ["Status", read(item, ["status", "state"])],
+        ["Type", read(item, ["itemType", "type"])],
+        ["Priority", read(item, ["priority", "urgency"])],
+        ["Owner", read(item, ["owner", "ownerRole", "assignedTo"])],
+      ],
+      width
+    ),
+    renderCompactProductSections(
+      "Recommendation",
+      [
+        [
+          "Summary",
+          read(recommendation, [
+            "rationaleSummary",
+            "summary",
+            "recommendation",
+          ]),
+        ],
+        [
+          "Current stock",
+          read(output, [
+            "currentStock",
+            "stock",
+            "onHand",
+            "inventoryOnHand",
+          ]) ?? read(facts, ["availableInventory", "currentStock", "onHand"]),
+        ],
+        [
+          "Recent sales",
+          read(output, ["recentSales", "sales30Days", "salesVelocity"]) ??
+            read(facts, ["recent30DaySales", "recentSales", "salesTrend"]),
+        ],
+        [
+          "Reorder trigger",
+          read(output, ["reorderTrigger", "reorderPoint", "trigger"]) ??
+            read(facts, ["reorderPoint", "reorderTrigger", "trigger"]),
+        ],
+        [
+          "Open POs",
+          read(output, ["openPurchaseOrders", "openPOs", "openOrders"]) ??
+            read(facts, ["openPurchaseOrders", "openPOs", "openOrders"]),
+        ],
+        [
+          "Suggested quantity",
+          read(output, [
+            "recommendedQuantity",
+            "suggestedQuantity",
+            "quantity",
+            "reorderQuantity",
+          ]) ?? read(payload, ["quantity", "lines"]),
+        ],
+        [
+          "Vendor",
+          read(output, ["vendor", "vendorName", "supplier"]) ??
+            read(payload, ["vendor", "vendorName", "supplier"]),
+        ],
+        ["Warnings", warnings.all],
+      ],
+      width
+    ),
+    renderCompactProductSections(
+      "Record context",
+      [
+        [
+          "Why it exists",
+          read(item, ["why", "reason", "trigger"]) ??
+            read(recommendation, ["rationaleSummary"]),
+        ],
+        [
+          "Sources",
+          read(context, ["sources"]) ?? read(evidence, ["sourceRefs"]),
+        ],
+        ["Captured", read(context, ["capturedAt", "createdAt"])],
+        ["Draft", read(draft, ["actionType", "status"])],
+      ],
+      width
+    ),
+    renderCompactProductSections(
+      "Evidence & freshness",
+      [
+        [
+          "Freshness",
+          firstValue(context, recommendation, [
+            "freshnessState",
+            "freshness",
+            "asOf",
+            "createdAt",
+          ]),
+        ],
+        ["Evidence", read(evidence, ["evidence"])],
+        ["Assumptions", read(evidence, ["assumptions"])],
+        [
+          "Confidence",
+          read(recommendation, ["confidenceMarker", "confidence"]),
+        ],
+        ["Memory provenance", read(context, ["memoryRefs"])],
+        ["Warning · Blocking", warnings.blocking],
+        ["Warning · Informational", warnings.informational],
+      ],
+      width
+    ),
+    renderCompactProductSections(
+      "Activity",
+      [
+        ["Entries", activityItems.length],
+        [
+          "Latest",
+          read(latestActivity, ["summary", "type", "eventType", "status"]),
+        ],
+        ["When", read(latestActivity, ["createdAt", "timestamp", "updatedAt"])],
+      ],
+      width,
+      "No activity recorded."
+    ),
+    renderCompactProductSections(
+      "Actions",
+      [
+        [
+          "Available",
+          availableActions.length > 0
+            ? availableActions.map(reviewActionLabel)
+            : "No actions are currently allowed",
+        ],
+        [
+          "Ask Mandala",
+          "Type a question about this selected item for a read-only answer",
+        ],
+        ...(root.sandbox === true
+          ? ([
+              [
+                "Persistence",
+                "Temporary only. Nothing is written or sent to a connected system.",
+              ],
+            ] as const)
+          : []),
+      ],
+      width
+    ),
+  ].join("\n\n")
+}
+
+/** Compact, independently replaceable sections for the persistent Ink item
+ * workspace. Action availability is display-only here; the caller keeps the
+ * backend-owned action values and existing mutation path. */
+export function renderReviewWorkspaceTabs(
+  input: unknown,
+  options: HumanRenderOptions | number = {}
+): ReviewWorkspaceTab[] {
+  const { width, value } = productInput(input, options)
+  const root = recordOrEmpty(value)
+  const detail = recordOrEmpty(isRecord(root.detail) ? root.detail : root)
+  const review = recordOrEmpty(root.review)
+  const item = {
+    ...recordOrEmpty(detail.item),
+    ...recordOrEmpty(review.item),
+  }
+  const recordSnapshot = recordOrEmpty(review.recordSnapshot)
+  const context = recordOrEmpty(
+    Object.keys(recordSnapshot).length > 0
+      ? recordSnapshot
+      : detail.contextPacket
+  )
+  const facts = recordOrEmpty(context.facts)
+  const recommendation = recordOrEmpty(
+    review.recommendation ?? detail.recommendation
+  )
+  const output = recordOrEmpty(recommendation.output)
+  const evidence = recordOrEmpty(review.evidence ?? detail.evidence)
+  const draft = recordOrEmpty(review.draft ?? detail.draft)
+  const payload = recordOrEmpty(draft.payload)
+  const reviewActivity = recordOrEmpty(review.activity)
+  const reviewActivityItems = Array.isArray(reviewActivity.items)
+    ? reviewActivity.items
+    : []
+  const detailActivityItems = Array.isArray(detail.activity)
+    ? detail.activity
+    : []
+  const auditActivityItems = Array.isArray(detail.auditEvents)
+    ? detail.auditEvents
+    : []
+  const activityItems =
+    reviewActivityItems.length > 0
+      ? reviewActivityItems
+      : detailActivityItems.length > 0
+        ? detailActivityItems
+        : auditActivityItems
+  const availableActions = Array.isArray(review.availableActions)
+    ? review.availableActions
+    : Array.isArray(root.availableActions)
+      ? root.availableActions
+      : []
+  const warnings = collectWarnings({
+    contextPacket: context,
+    recommendation,
+    evidence,
+  })
+  const overview = [
+    renderCompactProductSections(
+      "Overview",
+      [
+        ["Type", read(item, ["itemType", "type"])],
+        ["Priority", read(item, ["priority", "urgency"])],
+        ["Owner", read(item, ["owner", "ownerRole", "assignedTo"])],
+        [
+          "Why it exists",
+          read(item, ["why", "reason", "trigger"]) ??
+            read(recommendation, ["rationaleSummary"]),
+        ],
+      ],
+      width
+    ),
+    renderCompactProductSections(
+      "Recommendation",
+      [
+        [
+          "Summary",
+          read(recommendation, [
+            "rationaleSummary",
+            "summary",
+            "recommendation",
+          ]),
+        ],
+        [
+          "Current stock",
+          read(output, [
+            "currentStock",
+            "stock",
+            "onHand",
+            "inventoryOnHand",
+          ]) ?? read(facts, ["availableInventory", "currentStock", "onHand"]),
+        ],
+        [
+          "Recent sales",
+          read(output, ["recentSales", "sales30Days", "salesVelocity"]) ??
+            read(facts, ["recent30DaySales", "recentSales", "salesTrend"]),
+        ],
+        [
+          "Reorder trigger",
+          read(output, ["reorderTrigger", "reorderPoint", "trigger"]) ??
+            read(facts, ["reorderPoint", "reorderTrigger", "trigger"]),
+        ],
+        [
+          "Open POs",
+          read(output, ["openPurchaseOrders", "openPOs", "openOrders"]) ??
+            read(facts, ["openPurchaseOrders", "openPOs", "openOrders"]),
+        ],
+        [
+          "Suggested quantity",
+          read(output, [
+            "recommendedQuantity",
+            "suggestedQuantity",
+            "quantity",
+            "reorderQuantity",
+          ]) ?? read(payload, ["quantity", "lines"]),
+        ],
+        [
+          "Vendor",
+          read(output, ["vendor", "vendorName", "supplier"]) ??
+            read(payload, ["vendor", "vendorName", "supplier"]),
+        ],
+        ["Warnings", warnings.all],
+      ],
+      width
+    ),
+    renderCompactProductSections(
+      "Record context",
+      [
+        [
+          "Sources",
+          read(context, ["sources"]) ?? read(evidence, ["sourceRefs"]),
+        ],
+        ["Captured", read(context, ["capturedAt", "createdAt"])],
+      ],
+      width
+    ),
+  ].join("\n\n")
+  const evidenceContent = renderCompactProductSections(
+    "Evidence & freshness",
+    [
+      [
+        "Freshness",
+        firstValue(context, recommendation, [
+          "freshnessState",
+          "freshness",
+          "asOf",
+          "createdAt",
+        ]),
+      ],
+      ["Evidence", read(evidence, ["evidence", "sourceRefs"])],
+      ["Assumptions", read(evidence, ["assumptions"])],
+      ["Missing data", read(evidence, ["missingData", "missing"])],
+      ["Confidence", read(recommendation, ["confidenceMarker", "confidence"])],
+      [
+        "Memory provenance",
+        read(evidence, ["memoryProvenance"]) ?? read(context, ["memoryRefs"]),
+      ],
+      ["Warning · Blocking", warnings.blocking],
+      ["Warning · Informational", warnings.informational],
+    ],
+    width
+  )
+  const draftContent =
+    Object.keys(draft).length > 0
+      ? renderDraftPreview(draft, { width, title: "Draft" })
+      : `${wrapTerminalText("Draft", width)}\nNo draft is attached to this item.`
+  const activityRows = [...activityItems]
+    .filter(isRecord)
+    .sort((left, right) =>
+      activityTimestamp(right).localeCompare(activityTimestamp(left))
+    )
+    .slice(0, 6)
+    .map(
+      (event, index): ProductRow => [
+        String(index + 1),
+        [
+          read(event, ["createdAt", "timestamp", "updatedAt"]),
+          read(event, ["summary", "type", "eventType", "status"]),
+        ]
+          .filter(hasProductValue)
+          .map((entry) => valueText(entry))
+          .join(" · "),
+      ]
+    )
+  const activityContent = renderCompactProductSections(
+    "Activity",
+    activityRows,
+    width,
+    "No activity recorded."
+  )
+  const actionsContent = renderCompactProductSections(
+    "Actions",
+    [
+      [
+        "Next",
+        availableActions.length > 0
+          ? "Choose one of the allowed actions below."
+          : "No actions are currently allowed",
+      ],
+      [
+        "Confirmation",
+        availableActions.length > 0
+          ? "Choose below. Existing warning, reason, preview, and confirmation steps still apply."
+          : undefined,
+      ],
+    ],
+    width
+  )
+
+  return [
+    { id: "overview", label: "Overview", content: overview },
+    { id: "evidence", label: "Evidence", content: evidenceContent },
+    { id: "draft", label: "Draft", content: draftContent },
+    { id: "activity", label: "Activity", content: activityContent },
+    { id: "actions", label: "Actions", content: actionsContent },
+  ]
+}
+
+function renderCompactProductSections(
+  title: string,
+  rows: readonly ProductRow[],
+  width: number,
+  emptyMessage = "No details available."
+): string {
+  const present = rows.filter(([, value]) => hasProductValue(value))
+  return present.length > 0
+    ? renderProductSections(title, present, width)
+    : `${wrapTerminalText(title, width)}\n${wrapTerminalText(emptyMessage, width)}`
+}
+
+function hasProductValue(value: unknown): boolean {
+  if (value === undefined || value === null || value === "") return false
+  if (Array.isArray(value)) return value.length > 0
+  if (isRecord(value)) return Object.keys(value).length > 0
+  return true
+}
+
+function latestProductActivity(
+  items: readonly unknown[]
+): Record<string, unknown> {
+  let latest: Record<string, unknown> = {}
+  let latestTime = Number.NEGATIVE_INFINITY
+  for (const value of items) {
+    const item = recordOrEmpty(value)
+    if (Object.keys(item).length === 0) continue
+    const timestamp = valueText(
+      read(item, ["createdAt", "timestamp", "updatedAt"]),
+      ""
+    )
+    const time = Date.parse(timestamp)
+    if (Object.keys(latest).length === 0 || time > latestTime) {
+      latest = item
+      latestTime = Number.isFinite(time) ? time : latestTime
+    }
+  }
+  return latest
+}
+
+function reviewActionLabel(value: unknown): string {
+  switch (valueText(value)) {
+    case "approve":
+      return "Approve"
+    case "edit":
+      return "Edit and approve"
+    case "reject":
+      return "Reject"
+    case "request_rework":
+      return "Request rework"
+    case "resolve":
+      return "Resolve"
+    case "execute_mock":
+      return "Execute approved mock action"
+    default:
+      return valueText(value, "Unknown action")
+  }
 }
 
 export function renderProcurementReview(
@@ -1151,6 +1810,12 @@ function valueText(value: unknown, fallback = ""): string {
   return sanitizeTerminalText(String(value)) || fallback
 }
 
+function formatCount(value: unknown): string {
+  return typeof value === "number" && Number.isFinite(value)
+    ? Math.max(0, Math.floor(value)).toLocaleString("en-US")
+    : "0"
+}
+
 function countMatching(
   items: readonly unknown[],
   predicate: (item: unknown) => boolean
@@ -1455,6 +2120,28 @@ function isWorkItemDetail(value: unknown): value is Record<string, unknown> {
   )
 }
 
+function isSandboxSession(value: unknown): value is Record<string, unknown> {
+  return (
+    isRecord(value) &&
+    value.mode === "sandbox" &&
+    value.ephemeral === true &&
+    Array.isArray(value.sources) &&
+    Array.isArray(value.candidates)
+  )
+}
+
+function isWorkspaceSandboxRun(
+  value: unknown
+): value is Record<string, unknown> {
+  return (
+    isRecord(value) &&
+    value.mode === "sandbox" &&
+    value.ephemeral === true &&
+    isRecord(value.proof) &&
+    value.proof.scope === "sandbox_execution"
+  )
+}
+
 function isWorkItemList(value: unknown): value is Record<string, unknown> {
   return isRecord(value) && Array.isArray(value.items)
 }
@@ -1479,7 +2166,7 @@ function displayContextValue(value: unknown): string {
 }
 
 function environmentLabel(mode: string): string {
-  if (mode.toLowerCase() === "mock") return "Sandbox"
+  if (new Set(["mock", "sandbox"]).has(mode.toLowerCase())) return "Sandbox"
   if (mode.toLowerCase() === "live") return "Live"
   return mode
 }

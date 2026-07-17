@@ -18,6 +18,8 @@ import {
   RuntimeStateAnnotation,
   checkpointCorrelation,
   createRuntimeStartState,
+  resolveRuntimeSandboxEnabled,
+  runtimeOperatingMode,
   runtimeThreadConfig,
   type RuntimeActionResult,
   type RuntimeAgentJudgment,
@@ -52,6 +54,8 @@ export type RuntimeAgentJudgmentHandler = (input: {
     | "workflowDefinitionId"
     | "workflowRunId"
     | "mode"
+    | "sandboxEnabled"
+    | "operatingMode"
     | "trigger"
     | "warnings"
   >
@@ -83,6 +87,10 @@ export type RuntimeDependencies = {
   reviewPersister: RuntimeReviewPersister
   actionHandler?: RuntimeActionHandler
   auditHandler?: RuntimeAuditHandler
+  mutationBoundary?: {
+    persistence: "persistent" | "ephemeral"
+    externalActions: "live" | "simulate" | "disabled"
+  }
 }
 
 export type RuntimeNodeHandler = (
@@ -166,6 +174,10 @@ export function createRuntimeHandlerRegistry(input: {
           workflowDefinitionId: state.workflowDefinitionId,
           workflowRunId: state.workflowRunId,
           mode: state.mode,
+          sandboxEnabled: resolveRuntimeSandboxEnabled(state),
+          operatingMode: runtimeOperatingMode(
+            resolveRuntimeSandboxEnabled(state)
+          ),
           trigger: state.trigger,
           warnings: state.warnings,
         },
@@ -228,6 +240,15 @@ export function createRuntimeHandlerRegistry(input: {
         return {
           status: "blocked",
           errors: ["Review projection is missing."],
+        }
+      }
+      if (
+        resolveRuntimeSandboxEnabled(state) &&
+        dependencies.mutationBoundary?.persistence !== "ephemeral"
+      ) {
+        return {
+          status: "blocked",
+          errors: ["Sandbox blocked a durable review persistence path."],
         }
       }
       const persistedReview = await dependencies.reviewPersister({
@@ -314,6 +335,15 @@ export function createRuntimeHandlerRegistry(input: {
         return {
           status: "blocked",
           errors: ["No action handler is configured."],
+        }
+      }
+      if (
+        resolveRuntimeSandboxEnabled(state) &&
+        dependencies.mutationBoundary?.externalActions !== "simulate"
+      ) {
+        return {
+          status: "blocked",
+          errors: ["Sandbox blocked a live or unclassified action path."],
         }
       }
       const actionResult = await dependencies.actionHandler({
@@ -494,6 +524,8 @@ function runtimeRuleContext(state: RuntimeState): Record<string, unknown> {
       companyId: state.companyId,
       workflowRunId: state.workflowRunId,
       mode: state.mode,
+      sandboxEnabled: resolveRuntimeSandboxEnabled(state),
+      operatingMode: runtimeOperatingMode(resolveRuntimeSandboxEnabled(state)),
       warnings: state.warnings,
       sourceRefs: state.sourceRefs,
     },

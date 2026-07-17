@@ -22,7 +22,10 @@ import { POST as rollbackAgent } from "./[agentId]/rollback/route"
 import { GET as listAgents, POST as installAgent } from "./route"
 import { POST as validateAgent } from "./validate/route"
 
-vi.mock("@/lib/supabase/request", () => ({ authenticateRequest: vi.fn() }))
+vi.mock("@/lib/supabase/request", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@/lib/supabase/request")>()),
+  authenticateRequest: vi.fn(),
+}))
 vi.mock("@/lib/mandala/workflows", async (importOriginal) => {
   const original =
     await importOriginal<typeof import("@/lib/mandala/workflows")>()

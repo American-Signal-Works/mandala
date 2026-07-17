@@ -18,7 +18,11 @@ import {
   suggestSlashCommands,
   type SlashCommandDefinition,
 } from "./slash-commands.js"
-import { sanitizeTerminalText } from "./terminal/index.js"
+import {
+  sanitizeTerminalText,
+  type ReviewWorkspaceTab,
+} from "./terminal/index.js"
+import { wrapTerminalText } from "./terminal/table.js"
 
 export type TuiRenderOptions = {
   color: boolean
@@ -60,6 +64,12 @@ export type TuiChoice = {
   description?: string
 }
 
+export type TuiItemWorkspace = {
+  actions: readonly TuiChoice[]
+  itemId: string
+  tabs: readonly ReviewWorkspaceTab[]
+}
+
 export type TuiSessionIo = {
   append: (value: string, kind?: TuiAppendKind) => void
   ask: (prompt: string) => Promise<string | null>
@@ -68,6 +78,8 @@ export type TuiSessionIo = {
     choices: readonly TuiChoice[]
   ) => Promise<string | null>
   clearScreen: () => void
+  setItemWorkspace?: (value: TuiItemWorkspace | null) => void
+  setLiveMessage?: (value: string | null) => void
   onSnapshot: (snapshot: TuiSessionSnapshot) => void
   renderOptions: TuiRenderOptions
 }
@@ -259,6 +271,7 @@ export function MandalaTui(input: {
   const mounted = useRef(true)
   const nextEntryId = useRef(0)
   const choiceRef = useRef<ChoiceRequest | undefined>(undefined)
+  const itemWorkspaceIdRef = useRef<string | undefined>(undefined)
   const promptRef = useRef<PromptRequest | undefined>(undefined)
   const started = useRef(false)
   const [activeIndex, setActiveIndex] = useState(0)
@@ -271,6 +284,12 @@ export function MandalaTui(input: {
   const [historyDraft, setHistoryDraft] = useState("")
   const [inputRevision, setInputRevision] = useState(0)
   const [inputValue, setInputValue] = useState("")
+  const [itemWorkspace, setItemWorkspaceState] =
+    useState<TuiItemWorkspace | null>(null)
+  const [itemTabIndex, setItemTabIndex] = useState(0)
+  const [itemActionIndex, setItemActionIndex] = useState(0)
+  const [itemScrollOffset, setItemScrollOffset] = useState(0)
+  const [liveMessage, setLiveMessageState] = useState<string | null>(null)
   const [paletteDismissed, setPaletteDismissed] = useState(false)
   const [prompt, setPrompt] = useState<PromptRequest | undefined>(undefined)
   const [snapshot, setSnapshot] = useState<TuiSessionSnapshot>({})
@@ -320,8 +339,50 @@ export function MandalaTui(input: {
   const clearScreen = useCallback(() => {
     if (!mounted.current) return
     setTranscript([])
+    setLiveMessageState(null)
     clearTerminal?.()
   }, [clearTerminal])
+
+  const setLiveMessage = useCallback((value: string | null) => {
+    if (!mounted.current) return
+    setLiveMessageState(value ? sanitizeTerminalText(value) : null)
+  }, [])
+
+  const setItemWorkspace = useCallback((value: TuiItemWorkspace | null) => {
+    if (!mounted.current) return
+    const sameItem = Boolean(
+      value && itemWorkspaceIdRef.current === value.itemId
+    )
+    itemWorkspaceIdRef.current = value?.itemId
+    setItemWorkspaceState(
+      value
+        ? {
+            itemId: value.itemId,
+            tabs: value.tabs.map((tab) => ({
+              ...tab,
+              content: sanitizeItemWorkspaceContent(tab.content),
+              label: sanitizeTerminalText(tab.label),
+            })),
+            actions: value.actions.map((action) => ({
+              ...action,
+              label: sanitizeTerminalText(action.label),
+              description: action.description
+                ? sanitizeTerminalText(action.description)
+                : undefined,
+            })),
+          }
+        : null
+    )
+    if (!sameItem) {
+      setItemTabIndex(0)
+      setItemActionIndex(0)
+      setItemScrollOffset(0)
+    } else if (value) {
+      setItemActionIndex((current) =>
+        Math.max(0, Math.min(current, value.actions.length - 1))
+      )
+    }
+  }, [])
 
   const snapshotChanged = useCallback((next: TuiSessionSnapshot) => {
     if (mounted.current) setSnapshot(next)
@@ -334,6 +395,8 @@ export function MandalaTui(input: {
         ask,
         choose,
         clearScreen,
+        setItemWorkspace,
+        setLiveMessage,
         onSnapshot: snapshotChanged,
         renderOptions: { color, width },
       }),
@@ -344,6 +407,8 @@ export function MandalaTui(input: {
       clearScreen,
       color,
       createSession,
+      setItemWorkspace,
+      setLiveMessage,
       snapshotChanged,
       width,
     ]
@@ -379,6 +444,16 @@ export function MandalaTui(input: {
   const paletteOpen = commandPaletteActive && palette.length > 0
   const paletteEmpty = commandPaletteActive && palette.length === 0
   const selectedCommand = palette[activeIndex] ?? palette[0]
+  const activeItemTab = itemWorkspace?.tabs[itemTabIndex]
+  const itemWorkspaceShortcutsActive = Boolean(
+    itemWorkspace &&
+    snapshot.selectedItem &&
+    !prompt &&
+    !choice &&
+    !working &&
+    !commandPaletteActive &&
+    inputValue.length === 0
+  )
 
   useEffect(() => setActiveIndex(0), [inputValue, palette.length])
 
@@ -400,9 +475,8 @@ export function MandalaTui(input: {
     setChoice(undefined)
     setChoiceIndex(0)
     setPaletteDismissed(false)
-    append(`${sanitizeTerminalText(request.label)} cancelled.`)
     request.resolve(null)
-  }, [append])
+  }, [])
 
   const submitChoice = useCallback(
     (selectedIndex = choiceIndex) => {
@@ -413,10 +487,9 @@ export function MandalaTui(input: {
       setChoice(undefined)
       setChoiceIndex(0)
       setPaletteDismissed(false)
-      append(`Selected: ${sanitizeTerminalText(selected.label)}`, "prompt")
       request.resolve(selected.value)
     },
-    [append, choiceIndex]
+    [choiceIndex]
   )
 
   const cancelPrompt = useCallback(() => {
@@ -472,6 +545,32 @@ export function MandalaTui(input: {
     []
   )
 
+  const runWorkspaceCommand = useCallback(
+    async (line: string, label: string) => {
+      if (working) return
+      setWorkingLabel(label)
+      setWorking(true)
+      try {
+        await session.handleLine(line)
+      } finally {
+        if (mounted.current) setWorking(false)
+      }
+    },
+    [session, working]
+  )
+
+  const returnToInbox = useCallback(async () => {
+    if (working) return
+    setWorkingLabel("Returning to Inbox")
+    setWorking(true)
+    try {
+      await session.handleLine("/unselect")
+      await session.handleLine("/inbox")
+    } finally {
+      if (mounted.current) setWorking(false)
+    }
+  }, [session, working])
+
   useInput(
     (character, key) => {
       if (key.ctrl && character === "c") {
@@ -521,6 +620,94 @@ export function MandalaTui(input: {
       if (key.escape && working && session.cancelCurrentOperation()) {
         return
       }
+      if (
+        key.escape &&
+        itemWorkspace &&
+        snapshot.selectedItem &&
+        !prompt &&
+        !choice &&
+        !working &&
+        !commandPaletteActive
+      ) {
+        if (inputValue.length > 0) {
+          setInputValue("")
+          setInputRevision((current) => current + 1)
+          setHistoryIndex(undefined)
+          setHistoryDraft("")
+        } else {
+          void returnToInbox()
+        }
+        return
+      }
+      if (itemWorkspaceShortcutsActive && itemWorkspace && activeItemTab) {
+        if (key.leftArrow || key.rightArrow || key.tab) {
+          const direction = key.leftArrow || (key.tab && key.shift) ? -1 : 1
+          setItemTabIndex(
+            (current) =>
+              (current + direction + itemWorkspace.tabs.length) %
+              itemWorkspace.tabs.length
+          )
+          setItemActionIndex(0)
+          setItemScrollOffset(0)
+          return
+        }
+        if (activeItemTab.id === "actions") {
+          if (key.upArrow && itemWorkspace.actions.length > 0) {
+            setItemActionIndex((current) =>
+              current <= 0 ? itemWorkspace.actions.length - 1 : current - 1
+            )
+            return
+          }
+          if (key.downArrow && itemWorkspace.actions.length > 0) {
+            setItemActionIndex(
+              (current) => (current + 1) % itemWorkspace.actions.length
+            )
+            return
+          }
+          if (key.return) {
+            const action = itemWorkspace.actions[itemActionIndex]
+            const command = action
+              ? workspaceActionCommand(action.value)
+              : undefined
+            if (command)
+              void runWorkspaceCommand(command, operationLabelForLine(command))
+            return
+          }
+        } else {
+          const pageSize = itemWorkspaceContentLines(currentHeight, 0)
+          const lineCount = wrapItemWorkspaceContent(
+            activeItemTab.content,
+            currentWidth
+          ).split("\n").length
+          const maxOffset = Math.max(0, lineCount - pageSize)
+          if (key.upArrow) {
+            setItemScrollOffset((current) => Math.max(0, current - 1))
+            return
+          }
+          if (key.downArrow) {
+            setItemScrollOffset((current) => Math.min(maxOffset, current + 1))
+            return
+          }
+          if (key.pageUp) {
+            setItemScrollOffset((current) => Math.max(0, current - pageSize))
+            return
+          }
+          if (key.pageDown) {
+            setItemScrollOffset((current) =>
+              Math.min(maxOffset, current + pageSize)
+            )
+            return
+          }
+          if (key.home) {
+            setItemScrollOffset(0)
+            return
+          }
+          if (key.end) {
+            setItemScrollOffset(maxOffset)
+            return
+          }
+        }
+      }
       if (paletteOpen && key.upArrow) {
         setActiveIndex((current) =>
           current <= 0 ? palette.length - 1 : current - 1
@@ -540,11 +727,15 @@ export function MandalaTui(input: {
         return
       }
       if (paletteOpen && key.pageUp) {
-        setActiveIndex((current) => Math.max(0, current - 5))
+        setActiveIndex((current) =>
+          Math.max(0, current - palettePageSize(currentHeight))
+        )
         return
       }
       if (paletteOpen && key.pageDown) {
-        setActiveIndex((current) => Math.min(palette.length - 1, current + 5))
+        setActiveIndex((current) =>
+          Math.min(palette.length - 1, current + palettePageSize(currentHeight))
+        )
         return
       }
       if (paletteOpen && key.tab && selectedCommand) {
@@ -654,7 +845,29 @@ export function MandalaTui(input: {
         )}
       </Static>
 
-      <SessionContext snapshot={snapshot} width={currentWidth} />
+      <SessionContext
+        compact={Boolean(itemWorkspace)}
+        snapshot={snapshot}
+        width={currentWidth}
+      />
+
+      {itemWorkspace && snapshot.selectedItem ? (
+        <ItemWorkspace
+          actionIndex={itemActionIndex}
+          activeTabIndex={itemTabIndex}
+          height={currentHeight}
+          item={snapshot.selectedItem}
+          scrollOffset={itemScrollOffset}
+          width={currentWidth}
+          workspace={itemWorkspace}
+        />
+      ) : null}
+
+      {liveMessage ? (
+        <Box marginBottom={1} marginTop={itemWorkspace ? 1 : 0}>
+          <Text>{liveMessage}</Text>
+        </Box>
+      ) : null}
 
       <Box>
         <Text dimColor>{"-".repeat(Math.max(1, currentWidth))}</Text>
@@ -692,7 +905,11 @@ export function MandalaTui(input: {
       </Box>
 
       {paletteOpen ? (
-        <CommandPalette commands={palette} selectedIndex={activeIndex} />
+        <CommandPalette
+          commands={palette}
+          height={currentHeight}
+          selectedIndex={activeIndex}
+        />
       ) : paletteEmpty ? (
         <Box marginTop={1} flexDirection="column">
           <Text bold>No command matches.</Text>
@@ -748,26 +965,26 @@ function ChoiceMenu(input: {
         )
       })}
       {below > 0 ? <Text dimColor>{`  ↓ ${below} more`}</Text> : null}
-      <Text dimColor>Up/Down move Home/End jump PgUp/PgDn page</Text>
       <Text dimColor>
-        {`${numbered ? "1-9 select  " : ""}Left/Esc back  Right/Enter select`}
+        {`${numbered ? "1-9 select · " : ""}↑↓ move · Enter select · Esc back${above > 0 || below > 0 ? " · PgUp/PgDn page" : ""}`}
       </Text>
     </Box>
   )
 }
 
 function SessionContext(input: {
+  compact?: boolean
   snapshot: TuiSessionSnapshot
   width: number
 }) {
-  const { snapshot, width } = input
+  const { compact, snapshot, width } = input
   const item = snapshot.selectedItem
   if (!item && !snapshot.workspace && !snapshot.environment) return null
   const workspace = snapshot.workspace?.name ?? "Not selected"
   const environment = snapshot.environment
     ? sanitizeTerminalText(snapshot.environment)
     : undefined
-  if (!item) {
+  if (!item || compact) {
     return (
       <Box marginBottom={1}>
         <Text>
@@ -814,6 +1031,170 @@ function SessionContext(input: {
   )
 }
 
+function ItemWorkspace(input: {
+  actionIndex: number
+  activeTabIndex: number
+  height: number
+  item: TuiSelectedItem
+  scrollOffset: number
+  width: number
+  workspace: TuiItemWorkspace
+}) {
+  const {
+    actionIndex,
+    activeTabIndex,
+    height,
+    item,
+    scrollOffset,
+    width,
+    workspace,
+  } = input
+  const activeTab = workspace.tabs[activeTabIndex] ?? workspace.tabs[0]
+  if (!activeTab) return null
+  const actions = activeTab.id === "actions" ? workspace.actions : []
+  const maxActionLines = Math.max(1, Math.min(5, height - 15))
+  const actionWindow = windowItemActions(actions, actionIndex, maxActionLines)
+  const visibleActions = actionWindow.items
+  const clipped = clipItemWorkspaceContent(
+    wrapItemWorkspaceContent(activeTab.content, width),
+    itemWorkspaceContentLines(height, visibleActions.length),
+    scrollOffset
+  )
+  return (
+    <Box flexDirection="column" marginBottom={1}>
+      <Text>
+        <Text bold>Item</Text>
+        {`  ${fitText(item.title, Math.max(8, width - 24))}  `}
+        <Text color={item.status === "approved" ? "yellow" : "cyan"}>
+          {sanitizeTerminalText(item.status)}
+        </Text>
+      </Text>
+      <Box flexWrap="wrap">
+        {workspace.tabs.map((tab, index) => {
+          const selected = index === activeTabIndex
+          return (
+            <React.Fragment key={tab.id}>
+              <Text bold={selected} color={selected ? "cyan" : undefined}>
+                {selected ? `[${tab.label}]` : ` ${tab.label} `}
+              </Text>
+              <Text> </Text>
+            </React.Fragment>
+          )
+        })}
+      </Box>
+      {clipped.above > 0 ? (
+        <Text dimColor>{`↑ ${clipped.above} more lines`}</Text>
+      ) : null}
+      <Text>{clipped.text}</Text>
+      {clipped.below > 0 ? (
+        <Text dimColor>{`↓ ${clipped.below} more lines`}</Text>
+      ) : null}
+      {actionWindow.above > 0 ? (
+        <Text dimColor>{`  ↑ ${actionWindow.above} more actions`}</Text>
+      ) : null}
+      {visibleActions.map((action, index) => {
+        const selected = actionWindow.start + index === actionIndex
+        const description = action.description ? ` · ${action.description}` : ""
+        return (
+          <Text
+            bold={selected}
+            color={selected ? "cyan" : undefined}
+            dimColor={!selected}
+            key={action.value}
+          >
+            {fitText(
+              `${selected ? ">" : " "} ${action.label}${description}`,
+              width
+            )}
+          </Text>
+        )
+      })}
+      {actionWindow.below > 0 ? (
+        <Text dimColor>{`  ↓ ${actionWindow.below} more actions`}</Text>
+      ) : null}
+      <Text dimColor>
+        {activeTab.id === "actions" && actions.length > 0
+          ? "←→/Tab tabs · ↑↓ action · Enter select · Esc Inbox"
+          : activeTab.id === "actions"
+            ? "←→/Tab tabs · Esc Inbox · type to ask"
+            : "←→/Tab tabs · ↑↓ scroll · Esc Inbox · type to ask"}
+      </Text>
+    </Box>
+  )
+}
+
+export function workspaceActionCommand(value: string): string | undefined {
+  return workspaceActionCommands.get(value)
+}
+
+const workspaceActionCommands = new Map([
+  ["approve", "/approve"],
+  ["edit", "/edit"],
+  ["reject", "/reject"],
+  ["rework", "/rework"],
+  ["resolve", "/resolve"],
+  ["execute", "/execute"],
+])
+
+export function sanitizeItemWorkspaceContent(value: string): string {
+  return value
+    .split("\n")
+    .map((line) => sanitizeTerminalText(line))
+    .join("\n")
+}
+
+export function wrapItemWorkspaceContent(value: string, width: number): string {
+  const safeWidth = Math.max(1, width)
+  return value
+    .split("\n")
+    .flatMap((line) => wrapTerminalText(line, safeWidth).split("\n"))
+    .join("\n")
+}
+
+export function windowItemActions<T>(
+  actions: readonly T[],
+  selectedIndex: number,
+  visibleCount: number
+): { above: number; below: number; items: readonly T[]; start: number } {
+  const safeVisibleCount = Math.max(1, visibleCount)
+  const maxStart = Math.max(0, actions.length - safeVisibleCount)
+  const start = Math.min(
+    maxStart,
+    Math.max(0, selectedIndex - Math.floor(safeVisibleCount / 2))
+  )
+  const items = actions.slice(start, start + safeVisibleCount)
+  return {
+    above: start,
+    below: Math.max(0, actions.length - start - items.length),
+    items,
+    start,
+  }
+}
+
+export function itemWorkspaceContentLines(
+  height: number,
+  actionLines: number
+): number {
+  return Math.max(3, Math.min(10, height - 11 - actionLines))
+}
+
+export function clipItemWorkspaceContent(
+  value: string,
+  limit: number,
+  requestedOffset = 0
+): { above: number; below: number; text: string } {
+  const lines = value.split("\n")
+  const safeLimit = Math.max(1, limit)
+  const maxOffset = Math.max(0, lines.length - safeLimit)
+  const offset = Math.max(0, Math.min(maxOffset, requestedOffset))
+  const visible = lines.slice(offset, offset + safeLimit)
+  return {
+    above: offset,
+    below: Math.max(0, lines.length - offset - visible.length),
+    text: visible.join("\n"),
+  }
+}
+
 function WorkingStatus(input: { animated: boolean; label: string }) {
   const [frame, setFrame] = useState(0)
   useEffect(() => {
@@ -830,15 +1211,25 @@ function WorkingStatus(input: { animated: boolean; label: string }) {
 
 function CommandPalette(input: {
   commands: readonly SlashCommandDefinition[]
+  height: number
   selectedIndex: number
 }) {
+  const visibleCount = palettePageSize(input.height)
+  const maxStart = Math.max(0, input.commands.length - visibleCount)
+  const start = Math.min(
+    maxStart,
+    Math.max(0, input.selectedIndex - Math.floor(visibleCount / 2))
+  )
+  const visible = input.commands.slice(start, start + visibleCount)
   const commandWidth = Math.min(
     24,
     Math.max(...input.commands.map(({ command }) => command.length)) + 2
   )
   return (
     <Box flexDirection="column" marginTop={1}>
-      {input.commands.map((definition, index) => {
+      {start > 0 ? <Text dimColor>{`↑ ${start} more`}</Text> : null}
+      {visible.map((definition, visibleIndex) => {
+        const index = start + visibleIndex
         const selected = index === input.selectedIndex
         const command = definition.command.padEnd(commandWidth)
         return (
@@ -857,8 +1248,15 @@ function CommandPalette(input: {
           </React.Fragment>
         )
       })}
-      <Text dimColor>Up/Down move Home/End jump PgUp/PgDn page</Text>
-      <Text dimColor>Tab complete Enter run Esc close</Text>
+      {start + visible.length < input.commands.length ? (
+        <Text
+          dimColor
+        >{`↓ ${input.commands.length - start - visible.length} more`}</Text>
+      ) : null}
+      <Text dimColor>
+        ↑↓ move · Tab complete · Enter run · Esc close
+        {input.commands.length > visibleCount ? " · PgUp/PgDn page" : ""}
+      </Text>
     </Box>
   )
 }
@@ -905,6 +1303,10 @@ export function matchingCommands(
 
 function choicePageSize(height: number): number {
   return Math.max(3, Math.min(10, height - 10))
+}
+
+function palettePageSize(height: number): number {
+  return Math.max(3, Math.min(12, height - 11))
 }
 
 function matchRank(definition: SlashCommandDefinition, query: string): number {

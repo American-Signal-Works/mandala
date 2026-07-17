@@ -13,6 +13,8 @@ import {
   renderInboxItemOverview,
   renderInboxSummary,
   renderProcurementReview,
+  renderReviewWorkspace,
+  renderReviewWorkspaceTabs,
   sanitizeTerminalText,
 } from "../src/terminal/index.js"
 import { terminalTextWidth, wrapTerminalText } from "../src/terminal/table.js"
@@ -200,8 +202,10 @@ describe("terminal renderer", () => {
     const header = renderHeader(
       {
         companyName: "Mandala Local Demo",
+        contextStatus: "Supermemory (not ready)",
         inboxCount: 3,
         mode: "mock",
+        sandboxStatus: "On",
         userEmail: "seed@example.com",
         warningCount: 2,
       },
@@ -212,6 +216,8 @@ describe("terminal renderer", () => {
     expect(header).toContain("Mandala")
     expect(header).toContain("Mandala Local Demo")
     expect(header).toContain("Sandbox")
+    expect(header).toContain("Context: Supermemory (not ready)")
+    expect(header).toContain("Sandbox: On")
     expect(header).toContain("3 items need review · 2 with warnings")
     expect(
       renderHeader({}, { color: false, width: 40 }).split("\n").slice(0, 7)
@@ -231,6 +237,56 @@ describe("terminal renderer", () => {
         80
       )
     ).toBe("3 items need your review - 2 have warnings.  /inbox")
+  })
+
+  it("does not present legacy local mode as server Sandbox status", () => {
+    const header = renderHeader(
+      {
+        companyName: "Acme",
+        contextStatus: "Off",
+        mode: "mock",
+        sandboxStatus: "Off",
+        userEmail: "operator@example.com",
+      },
+      { color: false, width: 80 }
+    )
+
+    expect(header).toContain("Acme")
+    expect(header).toContain("Context: Off")
+    expect(header).toContain("Sandbox: Off")
+    expect(header).not.toContain("Acme · Sandbox")
+  })
+
+  it("renders a clear real-data Sandbox boundary and candidate summary", () => {
+    const output = renderHumanResult(
+      {
+        ...sandboxSession(),
+        sources: [
+          {
+            name: "ShipHero",
+            key: "shiphero",
+            recordCount: 66_682,
+            stale: false,
+          },
+        ],
+        candidates: [
+          {
+            sku: "SKU-REAL",
+            inventory: { available: 10 },
+            vendor: { name: "Real Vendor" },
+            recommendation: { quantity: 25, status: "ready_for_review" },
+          },
+        ],
+      },
+      { color: false, width: 100 }
+    )
+
+    expect(output).toContain("Real-data Sandbox")
+    expect(output).toContain("82,166 connected records")
+    expect(output).toContain("temporary")
+    expect(output).toContain("ShipHero")
+    expect(output).toContain("SKU-REAL")
+    expect(output).toContain("Real Vendor")
   })
 
   it("uses optional semantic header color without making it required", () => {
@@ -343,6 +399,111 @@ describe("terminal renderer", () => {
     expect(review).toContain("Warning · Informational")
     expect(review).toContain("Sales increased 42%")
     expect(evidence).toContain("Current as of 10:42 AM")
+  })
+
+  it("keeps recommendation, evidence, freshness, activity, and actions in one review workspace", () => {
+    const output = renderReviewWorkspace(
+      {
+        detail: productDetail(),
+        review: {
+          availableActions: ["approve", "edit", "request_rework", "reject"],
+          activity: { items: [] },
+        },
+      },
+      { width: 100 }
+    )
+
+    expect(output).toContain("Review workspace")
+    expect(output).toContain("Recommendation")
+    expect(output).toContain("Evidence & freshness")
+    expect(output).toContain("Activity")
+    expect(output).toContain("Actions")
+    expect(output).toContain(
+      "Approve · Edit and approve · Request rework · Reject"
+    )
+  })
+
+  it("projects five independently replaceable item tabs", () => {
+    const tabs = renderReviewWorkspaceTabs(
+      {
+        detail: productDetail(),
+        review: {
+          availableActions: ["approve", "edit", "request_rework", "reject"],
+          activity: {
+            items: [
+              {
+                type: "reviewed",
+                summary: "Evidence refreshed",
+                createdAt: "2026-07-16T18:00:00.000Z",
+              },
+            ],
+          },
+        },
+      },
+      { width: 80 }
+    )
+
+    expect(tabs.map(({ id }) => id)).toEqual([
+      "overview",
+      "evidence",
+      "draft",
+      "activity",
+      "actions",
+    ])
+    expect(tabs.find(({ id }) => id === "overview")?.content).toContain(
+      "Suggested quantity"
+    )
+    expect(tabs.find(({ id }) => id === "evidence")?.content).toContain(
+      "Current as of 10:42 AM"
+    )
+    expect(tabs.find(({ id }) => id === "draft")?.content).toContain("SKU-1042")
+    expect(tabs.find(({ id }) => id === "activity")?.content).toContain(
+      "Evidence refreshed"
+    )
+    expect(tabs.find(({ id }) => id === "actions")?.content).toContain(
+      "Existing warning, reason, preview, and"
+    )
+  })
+
+  it("uses review activity once and identifies the newest event", () => {
+    const newest = {
+      type: "reviewed",
+      summary: "Newest activity",
+      createdAt: "2026-07-16T18:00:00.000Z",
+    }
+    const oldest = {
+      type: "created",
+      summary: "Oldest activity",
+      createdAt: "2026-07-16T16:00:00.000Z",
+    }
+    const output = renderReviewWorkspace(
+      {
+        detail: { ...productDetail(), auditEvents: [newest, oldest] },
+        review: {
+          availableActions: [],
+          activity: { items: [newest, oldest] },
+        },
+      },
+      { width: 100 }
+    )
+
+    expect(output).toMatch(/Entries\s+2/)
+    expect(output).toMatch(/Latest\s+Newest activity/)
+    expect(output).not.toContain("Oldest activity")
+  })
+
+  it("falls back to canonical activity when review activity is empty", () => {
+    const tabs = renderReviewWorkspaceTabs(
+      {
+        detail: productDetail(),
+        review: { availableActions: [], activity: { items: [] } },
+      },
+      { width: 100 }
+    )
+
+    expect(tabs.find(({ id }) => id === "activity")?.content).toContain(
+      "Mock execution completed"
+    )
   })
 
   it("makes mock execution unmistakable and supports confirmation previews", () => {
@@ -570,6 +731,22 @@ function productDetail() {
         auditReference: "audit-marker",
       },
     ],
+  }
+}
+
+function sandboxSession() {
+  return {
+    schemaVersion: 1,
+    mode: "sandbox",
+    ephemeral: true,
+    companyId: "20000000-0000-4000-8000-000000000001",
+    sessionId: "a5000000-0000-4000-8000-000000000001",
+    createdAt: "2026-07-16T04:00:00.000Z",
+    dataAnchorAt: "2026-07-15",
+    recordCount: 82_166,
+    candidateCount: 1,
+    sources: [],
+    candidates: [],
   }
 }
 

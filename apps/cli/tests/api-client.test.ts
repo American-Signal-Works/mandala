@@ -2,6 +2,77 @@ import { describe, expect, it, vi } from "vitest"
 import { ApiClient } from "../src/api-client.js"
 
 describe("API client", () => {
+  it("reads and updates bounded workspace Context settings", async () => {
+    const status = {
+      schemaVersion: 1,
+      companyId: "20000000-0000-4000-8000-000000000001",
+      provider: "supermemory",
+      sandboxEnabled: true,
+      readiness: "not_ready",
+      configurationVersion: 2,
+      updatedAt: "2026-07-16T20:00:00.000Z",
+      providerStatus: {
+        operational: false,
+        status: "not_ready",
+        detailCode: "provider_not_operational",
+      },
+      indexingCoverage: {
+        status: "unavailable",
+        eligibleRecordCount: null,
+        indexedRecordCount: null,
+        percent: null,
+      },
+      synchronization: {
+        status: "unavailable",
+        lagSeconds: null,
+        lastSynchronizedAt: null,
+        recentErrorCount: null,
+      },
+    }
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(status))
+      .mockResolvedValueOnce(
+        Response.json({ ...status, sandboxEnabled: false })
+      )
+    const client = new ApiClient(
+      "http://127.0.0.1:3000",
+      { getAccessToken: vi.fn().mockResolvedValue("access") },
+      request
+    )
+
+    await expect(
+      client.getContextWorkspaceStatus(status.companyId)
+    ).resolves.toMatchObject({
+      provider: "supermemory",
+      readiness: "not_ready",
+      indexingCoverage: { status: "unavailable", percent: null },
+      synchronization: { status: "unavailable", lagSeconds: null },
+    })
+    await client.setContextWorkspaceConfiguration({
+      companyId: status.companyId,
+      sandboxEnabled: false,
+      expectedConfigurationVersion: 2,
+      reason: "Approved temporary exception",
+    })
+
+    expect(request.mock.calls[0]?.[0]).toBe(
+      `http://127.0.0.1:3000/api/mandala/context/settings?companyId=${status.companyId}`
+    )
+    expect(request.mock.calls[1]?.[0]).toBe(
+      "http://127.0.0.1:3000/api/mandala/context/settings"
+    )
+    expect(request.mock.calls[1]?.[1]?.method).toBe("PATCH")
+    expect(JSON.parse(String(request.mock.calls[1]?.[1]?.body))).toEqual({
+      companyId: status.companyId,
+      sandboxEnabled: false,
+      expectedConfigurationVersion: 2,
+      reason: "Approved temporary exception",
+    })
+    expect(String(request.mock.calls[1]?.[1]?.body)).not.toContain("credential")
+    expect(String(request.mock.calls[1]?.[1]?.body)).not.toContain("readiness")
+  })
+
   it("posts explicit contextual chat state without granting mutation authority", async () => {
     const request = vi.fn<typeof fetch>().mockResolvedValue(
       Response.json({
@@ -36,6 +107,148 @@ describe("API client", () => {
       selectedItemId: "30000000-0000-4000-8000-000000000001",
       expectedReviewVersion: "v2",
     })
+  })
+
+  it("streams UTF-8 contextual answer chunks and validates the final answer", async () => {
+    const companyId = "20000000-0000-4000-8000-000000000001"
+    const itemId = "30000000-0000-4000-8000-000000000001"
+    const answer = "Café stock is low ☕"
+    const events = [
+      {
+        type: "start",
+        companyId,
+        selectedItemId: itemId,
+        reviewVersion: "v2",
+      },
+      { type: "delta", text: "Café stock " },
+      { type: "delta", text: "is low ☕" },
+      {
+        type: "done",
+        answer,
+        model: "openai/gpt-5.4-mini",
+        durationMs: 25,
+        trace: null,
+      },
+    ]
+    const bytes = new TextEncoder().encode(
+      events.map((event) => JSON.stringify(event)).join("\n") + "\n"
+    )
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        for (const byte of bytes) controller.enqueue(Uint8Array.of(byte))
+        controller.close()
+      },
+    })
+    const request = vi.fn<typeof fetch>().mockResolvedValue(
+      new Response(body, {
+        headers: { "content-type": "application/x-ndjson; charset=utf-8" },
+      })
+    )
+    const client = new ApiClient(
+      "http://127.0.0.1:3000",
+      { getAccessToken: vi.fn().mockResolvedValue("access") },
+      request
+    )
+    const updates: string[] = []
+
+    const result = await client.contextualChatStream!(
+      {
+        companyId,
+        input: "Why is stock low?",
+        selectedItemId: itemId,
+        expectedReviewVersion: "v2",
+        conversationId: "40000000-0000-4000-8000-000000000001",
+      },
+      (value) => updates.push(value)
+    )
+
+    expect(updates).toEqual(["Café stock ", answer])
+    expect(result).toMatchObject({
+      route: "question",
+      message: answer,
+      reviewVersion: "v2",
+    })
+    expect(request.mock.calls[0]?.[1]?.headers).toMatchObject({
+      accept: "application/x-ndjson, application/json;q=0.9",
+    })
+  })
+
+  it("keeps action-like contextual input on the JSON command path", async () => {
+    const request = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        route: "command",
+        message: "Review and confirm this action.",
+        companyId: "20000000-0000-4000-8000-000000000001",
+        selectedItemId: "30000000-0000-4000-8000-000000000001",
+        reviewVersion: "v2",
+        command: { kind: "record_decision", decision: "approve" },
+        confirmationRequired: true,
+        mutated: false,
+      })
+    )
+    const client = new ApiClient(
+      "http://127.0.0.1:3000",
+      { getAccessToken: vi.fn().mockResolvedValue("access") },
+      request
+    )
+    const onDelta = vi.fn()
+
+    const result = await client.contextualChatStream!(
+      {
+        companyId: "20000000-0000-4000-8000-000000000001",
+        input: "Can you approve it?",
+        selectedItemId: "30000000-0000-4000-8000-000000000001",
+        expectedReviewVersion: "v2",
+        conversationId: "40000000-0000-4000-8000-000000000001",
+      },
+      onDelta
+    )
+
+    expect(result.route).toBe("command")
+    expect(onDelta).not.toHaveBeenCalled()
+  })
+
+  it("rejects a stream whose final answer does not match its deltas", async () => {
+    const lines = [
+      {
+        type: "start",
+        companyId: "20000000-0000-4000-8000-000000000001",
+        selectedItemId: "30000000-0000-4000-8000-000000000001",
+        reviewVersion: "v2",
+      },
+      { type: "delta", text: "Safe partial answer." },
+      {
+        type: "done",
+        answer: "Different final answer.",
+        model: "openai/gpt-5.4-mini",
+        durationMs: 25,
+        trace: null,
+      },
+    ]
+      .map((event) => JSON.stringify(event))
+      .join("\n")
+    const client = new ApiClient(
+      "http://127.0.0.1:3000",
+      { getAccessToken: vi.fn().mockResolvedValue("access") },
+      vi.fn<typeof fetch>().mockResolvedValue(
+        new Response(`${lines}\n`, {
+          headers: { "content-type": "application/x-ndjson" },
+        })
+      )
+    )
+
+    await expect(
+      client.contextualChatStream!(
+        {
+          companyId: "20000000-0000-4000-8000-000000000001",
+          input: "Why?",
+          selectedItemId: "30000000-0000-4000-8000-000000000001",
+          expectedReviewVersion: "v2",
+          conversationId: "40000000-0000-4000-8000-000000000001",
+        },
+        vi.fn()
+      )
+    ).rejects.toMatchObject({ code: "invalid_api_response" })
   })
 
   it("classifies a refused connection as definitely unavailable", async () => {
@@ -297,7 +510,9 @@ describe("API client", () => {
     const idempotencyKey = "cli:00000000-0000-4000-8000-000000000001"
     const request = vi
       .fn<typeof fetch>()
-      .mockResolvedValueOnce(Response.json(reviewResponse(itemId, draftId, version)))
+      .mockResolvedValueOnce(
+        Response.json(reviewResponse(itemId, draftId, version))
+      )
       .mockResolvedValueOnce(
         Response.json({
           decision: {

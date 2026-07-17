@@ -1,4 +1,5 @@
 import { createHash, randomUUID } from "node:crypto"
+import { readFile } from "node:fs/promises"
 import { createInterface } from "node:readline/promises"
 import { parseArgs } from "node:util"
 import type { Readable, Writable } from "node:stream"
@@ -25,7 +26,9 @@ import {
 import { z } from "zod"
 import { ApiClient, type ControlApi } from "./api-client.js"
 import {
+  loginWithDeviceAuthorization,
   loginWithMagicLink,
+  revokeHostedCliSession,
   SessionManager,
   type SessionAccess,
 } from "./auth.js"
@@ -37,10 +40,11 @@ import { getApiUrl, type RuntimeEnvironment } from "./environment.js"
 import { CliError, asCliError } from "./errors.js"
 import { registeredFixtureScenarios } from "./fixtures.js"
 import { writeFailure, writeSuccess } from "./output.js"
-import { resolveConfigDirectory, SecureStore } from "./persistence.js"
+import { createRuntimeSecureStore, SecureStore } from "./persistence.js"
 import { renderHumanResult } from "./terminal/index.js"
 
-type LoginFunction = typeof loginWithMagicLink
+type LoginFunction = typeof loginWithDeviceAuthorization
+type LocalLoginFunction = typeof loginWithMagicLink
 
 export type CliDependencies = {
   environment?: RuntimeEnvironment
@@ -52,6 +56,7 @@ export type CliDependencies = {
   api?: ControlApi
   confirm?: ConfirmMutation
   login?: LoginFunction
+  localLogin?: LocalLoginFunction
 }
 
 export type CliCommandResult =
@@ -131,8 +136,7 @@ export async function executeCliCommand(
   const stdin = dependencies.stdin ?? process.stdin
   const stderr = dependencies.stderr ?? process.stderr
   const args = argv.filter((argument) => argument !== "--json")
-  const store =
-    dependencies.store ?? new SecureStore(resolveConfigDirectory(environment))
+  const store = dependencies.store ?? createRuntimeSecureStore(environment)
   const session = dependencies.session ?? new SessionManager(store, environment)
   let api: ControlApi | undefined = dependencies.api
   const getApi = (): ControlApi => {
@@ -141,7 +145,8 @@ export async function executeCliCommand(
   }
   const confirm =
     dependencies.confirm ?? createInteractiveConfirmation(stdin, stderr)
-  const login = dependencies.login ?? loginWithMagicLink
+  const login = dependencies.login ?? loginWithDeviceAuthorization
+  const localLogin = dependencies.localLogin ?? loginWithMagicLink
   const audit: AuditState = {
     eligible: new Set(["parse", "chat", "work", "workflow"]).has(args[0] ?? ""),
     inputHash: createHash("sha256").update(args.join("\u0000")).digest("hex"),
@@ -178,6 +183,7 @@ export async function executeCliCommand(
       getApi,
       confirm,
       login,
+      localLogin,
       audit,
       stdin,
       stderr,
@@ -212,6 +218,7 @@ async function executeCommand(input: {
   getApi: () => ControlApi
   confirm: ConfirmMutation
   login: LoginFunction
+  localLogin: LocalLoginFunction
   audit: AuditState
   stdin: Readable
   stderr: Writable
@@ -220,7 +227,11 @@ async function executeCommand(input: {
 
   if (group === "auth") return handleAuth(action, rest, input)
   if (group === "company") return handleCompany(action, rest, input)
-  if (group === "context") return showContext(input.store)
+  if (group === "context") {
+    if (action === undefined) return showContext(input.store)
+    return handleContextSettings(action, rest, input)
+  }
+  if (group === "sandbox") return handleSandbox(action, rest, input)
   if (group === "workflow") return handleWorkflow(action, rest, input)
   if (group === "work") return handleWork(action, rest, input)
   if (group === "parse")
@@ -246,21 +257,38 @@ async function handleAuth(
   input: Parameters<typeof executeCommand>[0]
 ): Promise<unknown> {
   if (action === "login") {
-    const parsed = parseOptions(args, { email: { type: "string" } })
+    const parsed = parseOptions(args, {
+      email: { type: "string" },
+      local: { type: "boolean" },
+    })
     const email = stringOption(parsed.values.email)
-    if (!email || parsed.positionals.length)
+    const local = parsed.values.local === true
+    if (parsed.positionals.length || (local ? !email : Boolean(email)))
       throw new CliError(
         "invalid_arguments",
-        "Use: mandala auth login --email <address>."
+        "Use 'mandala auth login' for hosted sign-in, or 'mandala auth login --local --email <address>' for local engineering."
       )
+    if (local) {
+      return input.localLogin({
+        email: email!,
+        environment: input.environment,
+        store: input.store,
+        onMagicLinkSent: () =>
+          inputMessage(
+            input,
+            "Local magic link sent. Open it on this machine to finish authentication."
+          ),
+      })
+    }
     return input.login({
-      email,
       environment: input.environment,
       store: input.store,
-      onMagicLinkSent: () =>
+      onAuthorizationRequested: ({ browserOpened }) =>
         inputMessage(
           input,
-          "Magic link sent. Open it on this machine to finish authentication."
+          browserOpened
+            ? "A browser window was opened for Mandala sign-in. Complete sign-in and choose a workspace there; this terminal will continue automatically."
+            : "Mandala could not open the browser sign-in page."
         ),
     })
   }
@@ -278,9 +306,13 @@ async function handleAuth(
   }
   if (action === "logout") {
     requireNoArguments(args, "mandala auth logout")
+    const remoteRevoked = await revokeHostedCliSession({
+      environment: input.environment,
+      store: input.store,
+    })
     await input.store.deleteSession()
     await input.store.clearSelectedCompany()
-    return { authenticated: false }
+    return { authenticated: false, remoteRevoked }
   }
   throw new CliError(
     "unknown_command",
@@ -318,12 +350,12 @@ async function handleCompany(
     const config = await input.store.readConfig()
     await input.store.writeConfig({
       ...config,
-      mode: "mock",
+      mode: "sandbox",
       selectedCompany: { id: company.id, name: company.name },
     })
     return {
       company: { id: company.id, name: company.name, role: company.role },
-      mode: "mock",
+      mode: "sandbox",
     }
   }
   if (action === "current") {
@@ -355,6 +387,199 @@ async function showContext(store: SecureStore): Promise<unknown> {
       : null,
     company: config.selectedCompany,
     mode: config.mode,
+  }
+}
+
+async function handleContextSettings(
+  action: string | undefined,
+  args: string[],
+  input: Parameters<typeof executeCommand>[0]
+): Promise<unknown> {
+  const config = await requireCompany(input.store, input.audit)
+  if (action === "status") {
+    requireNoArguments(args, "mandala context status")
+    return input.getApi().getContextWorkspaceStatus(config.selectedCompany.id)
+  }
+  if (action === "set") {
+    const parsed = parseSettingsMutation(args, "context")
+    const provider = parsed.value
+    if (provider !== "off" && provider !== "supermemory")
+      throw new CliError(
+        "invalid_arguments",
+        "Context provider must be 'off' or 'supermemory'."
+      )
+    if (provider === "supermemory" && !parsed.confirmed)
+      throw new CliError(
+        "safety_confirmation_required",
+        "Selecting Supermemory weakens the current safety posture. Review the change, then rerun with --confirm."
+      )
+    return setWorkspaceConfiguration(input, {
+      companyId: config.selectedCompany.id,
+      provider,
+      expectedConfigurationVersion: parsed.expectedConfigurationVersion,
+      reason: parsed.reason,
+    })
+  }
+  throw new CliError(
+    "unknown_command",
+    "Use: mandala context, mandala context status, or mandala context set <off|supermemory> --expected-version <n> --reason <text>."
+  )
+}
+
+async function handleSandbox(
+  action: string | undefined,
+  args: string[],
+  input: Parameters<typeof executeCommand>[0]
+): Promise<unknown> {
+  if (action === "status") {
+    requireNoArguments(args, "mandala sandbox status")
+    const config = await requireCompany(input.store, input.audit)
+    return input.getApi().getContextWorkspaceStatus(config.selectedCompany.id)
+  }
+  if (action === "set") {
+    const config = await requireCompany(input.store, input.audit)
+    const parsed = parseSettingsMutation(args, "sandbox")
+    if (parsed.value !== "on" && parsed.value !== "off")
+      throw new CliError(
+        "invalid_arguments",
+        "Sandbox setting must be 'on' or 'off'."
+      )
+    if (parsed.value === "off" && !parsed.confirmed)
+      throw new CliError(
+        "safety_confirmation_required",
+        "Turning Sandbox safety Off weakens the workspace safety posture. Review the change, then rerun with --confirm."
+      )
+    return setWorkspaceConfiguration(input, {
+      companyId: config.selectedCompany.id,
+      sandboxEnabled: parsed.value === "on",
+      expectedConfigurationVersion: parsed.expectedConfigurationVersion,
+      reason: parsed.reason,
+    })
+  }
+  if (action === "run") {
+    const parsed = parseOptions(args, {
+      skill: { type: "string" },
+      "confirm-mappings": { type: "boolean" },
+    })
+    const skillPath = stringOption(parsed.values.skill)
+    if (!skillPath || parsed.positionals.length) {
+      throw new CliError(
+        "invalid_arguments",
+        "Use: mandala sandbox run --skill <SKILL.md> --confirm-mappings."
+      )
+    }
+    if (parsed.values["confirm-mappings"] !== true) {
+      throw new CliError(
+        "mapping_confirmation_required",
+        "Review the declarative mapping defaults, then rerun with --confirm-mappings."
+      )
+    }
+    let skillMarkdown: string
+    try {
+      skillMarkdown = await readFile(skillPath, "utf8")
+    } catch {
+      throw new CliError(
+        "skill_file_unreadable",
+        "The SKILL.md file could not be read."
+      )
+    }
+    const config = await requireCompany(input.store, input.audit)
+    return input.getApi().runWorkspaceSandbox({
+      companyId: config.selectedCompany.id,
+      skillMarkdown,
+      confirmMappings: true,
+    })
+  }
+  if (action !== "open")
+    throw new CliError(
+      "unknown_command",
+      "Use: mandala sandbox open [--limit <1-100>], mandala sandbox run --skill <SKILL.md> --confirm-mappings, mandala sandbox status, or mandala sandbox set <on|off> --expected-version <n> --reason <text>."
+    )
+  const parsed = parseOptions(args, { limit: { type: "string" } })
+  if (parsed.positionals.length)
+    throw new CliError(
+      "invalid_arguments",
+      "Use: mandala sandbox open [--limit <1-100>]."
+    )
+  const limit = stringOption(parsed.values.limit)
+  const candidateLimit = limit ? Number.parseInt(limit, 10) : 25
+  if (
+    !Number.isInteger(candidateLimit) ||
+    candidateLimit < 1 ||
+    candidateLimit > 100
+  )
+    throw new CliError(
+      "invalid_arguments",
+      "Sandbox limit must be a whole number from 1 to 100."
+    )
+  const config = await requireCompany(input.store, input.audit)
+  return input.getApi().createSandboxSession({
+    companyId: config.selectedCompany.id,
+    candidateLimit,
+  })
+}
+
+function parseSettingsMutation(
+  args: string[],
+  setting: "context" | "sandbox"
+): {
+  confirmed: boolean
+  expectedConfigurationVersion: number
+  reason: string
+  value: string
+} {
+  const parsed = parseOptions(args, {
+    confirm: { type: "boolean" },
+    "expected-version": { type: "string" },
+    reason: { type: "string" },
+  })
+  const usage =
+    setting === "context"
+      ? "mandala context set <off|supermemory> --expected-version <n> --reason <text> [--confirm]"
+      : "mandala sandbox set <on|off> --expected-version <n> --reason <text> [--confirm]"
+  const [value] = parsed.positionals
+  const expectedVersion = stringOption(parsed.values["expected-version"])
+  const reason = stringOption(parsed.values.reason)?.trim()
+  const expectedConfigurationVersion = expectedVersion
+    ? Number(expectedVersion)
+    : Number.NaN
+  if (
+    parsed.positionals.length !== 1 ||
+    !value ||
+    !Number.isInteger(expectedConfigurationVersion) ||
+    expectedConfigurationVersion < 1 ||
+    !reason ||
+    reason.length > 1_000
+  ) {
+    throw new CliError("invalid_arguments", `Use: ${usage}.`)
+  }
+  return {
+    confirmed: parsed.values.confirm === true,
+    expectedConfigurationVersion,
+    reason,
+    value,
+  }
+}
+
+async function setWorkspaceConfiguration(
+  input: Parameters<typeof executeCommand>[0],
+  request: Parameters<ControlApi["setContextWorkspaceConfiguration"]>[0]
+): Promise<unknown> {
+  try {
+    return await input.getApi().setContextWorkspaceConfiguration(request)
+  } catch (error) {
+    const parsed = asCliError(error)
+    if (
+      parsed.code === "stale_context_workspace_configuration" ||
+      parsed.code === "stale_configuration_version" ||
+      parsed.code === "configuration_version_conflict"
+    ) {
+      throw new CliError(
+        parsed.code,
+        "Workspace settings changed since you last viewed them. Run the status command, then retry with its current configuration version."
+      )
+    }
+    throw error
   }
 }
 
@@ -1343,15 +1568,24 @@ Interactive session
   Use /help after launch to see session commands.
 
 Authentication
-  mandala auth login --email <address>
+  mandala auth login
+  mandala auth login --local --email <address>
   mandala auth status
   mandala auth logout
 
 Context
   mandala context
+  mandala context status
+  mandala context set <off|supermemory> --expected-version <n> --reason <text> [--confirm]
   mandala company list
   mandala company use <company-id>
   mandala company current
+
+Real-data Sandbox
+  mandala sandbox status
+  mandala sandbox set <on|off> --expected-version <n> --reason <text> [--confirm]
+  mandala sandbox open [--limit <1-100>]
+  mandala sandbox run --skill <SKILL.md> --confirm-mappings
 
 Workflows
   mandala workflow fixture list

@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import { createClient } from "@supabase/supabase-js"
 import {
   authCallbackUrl,
+  loginWithDeviceAuthorization,
   loginWithMagicLink,
   SessionManager,
 } from "../src/auth.js"
@@ -180,6 +181,106 @@ describe.sequential("PKCE magic-link authentication", () => {
   })
 })
 
+describe("hosted device authorization", () => {
+  it("opens the browser, polls once, and saves the approved workspace", async () => {
+    vi.useFakeTimers()
+    const onAuthorizationRequested = vi.fn()
+    const openBrowser = vi.fn().mockResolvedValue(true)
+    const fetchImplementation = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            deviceCode: "d".repeat(43),
+            verificationUri:
+              "https://mandala.md/cli/authorize#request=" + "b".repeat(43),
+            expiresAt: "2030-01-01T00:10:00.000Z",
+            intervalSeconds: 5,
+          },
+          201
+        )
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "authorized",
+          sessionId: "30000000-0000-4000-8000-000000000001",
+          accessToken: "hosted-access",
+          refreshToken: "hosted-refresh",
+          expiresAt: 2_000_000_000,
+          user: { id: userId, email: "user@example.com" },
+          company: {
+            id: "20000000-0000-4000-8000-000000000001",
+            name: "Example Company",
+          },
+        })
+      ) as unknown as typeof fetch
+
+    const login = loginWithDeviceAuthorization({
+      environment: { MANDALA_API_URL: "https://mandala.md" },
+      fetchImplementation,
+      onAuthorizationRequested,
+      openBrowser,
+      store,
+    })
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    await expect(login).resolves.toMatchObject({
+      refreshMode: "hosted",
+      company: { name: "Example Company" },
+    })
+    expect(openBrowser).toHaveBeenCalledWith(
+      "https://mandala.md/cli/authorize#request=" + "b".repeat(43)
+    )
+    expect(onAuthorizationRequested).toHaveBeenCalledWith({
+      browserOpened: true,
+    })
+    await expect(store.readSession()).resolves.toMatchObject({
+      refreshMode: "hosted",
+      cliSessionId: "30000000-0000-4000-8000-000000000001",
+      accessToken: "hosted-access",
+    })
+    await expect(store.readConfig()).resolves.toMatchObject({
+      selectedCompany: { name: "Example Company" },
+    })
+    vi.useRealTimers()
+  })
+
+  it("does not save credentials when browser approval is denied", async () => {
+    vi.useFakeTimers()
+    const fetchImplementation = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            deviceCode: "d".repeat(43),
+            verificationUri:
+              "https://mandala.md/cli/authorize#request=" + "b".repeat(43),
+            expiresAt: "2030-01-01T00:10:00.000Z",
+            intervalSeconds: 5,
+          },
+          201
+        )
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({ status: "denied" })
+      ) as unknown as typeof fetch
+    const login = loginWithDeviceAuthorization({
+      environment: {},
+      fetchImplementation,
+      openBrowser: vi.fn().mockResolvedValue(true),
+      store,
+    })
+    const rejection = expect(login).rejects.toMatchObject({
+      code: "auth_denied",
+    })
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    await rejection
+    await expect(store.readSession()).resolves.toBeNull()
+    vi.useRealTimers()
+  })
+})
+
 it("refreshes an expired session and atomically replaces its tokens", async () => {
   await store.writeSession({
     schemaVersion: 1,
@@ -238,6 +339,41 @@ it("clears an invalid saved session and selected company", async () => {
   })
 })
 
+it("refreshes a hosted session through Mandala instead of direct Supabase", async () => {
+  await store.writeSession({
+    schemaVersion: 1,
+    refreshMode: "hosted",
+    cliSessionId: "30000000-0000-4000-8000-000000000001",
+    accessToken: "expired-access",
+    refreshToken: "old-refresh",
+    expiresAt: 1,
+    user: { id: userId, email: "user@example.com" },
+  })
+  const fetchImplementation = vi.fn().mockResolvedValue(
+    jsonResponse({
+      accessToken: "fresh-hosted-access",
+      refreshToken: "fresh-hosted-refresh",
+      expiresAt: 2_000_000_000,
+      user: { id: userId, email: "user@example.com" },
+    })
+  ) as unknown as typeof fetch
+
+  const manager = new SessionManager(store, {}, fetchImplementation)
+  await expect(manager.getAccessToken()).resolves.toBe("fresh-hosted-access")
+  expect(fetchImplementation).toHaveBeenCalledWith(
+    "https://mandala.md/api/mandala/cli/sessions/refresh",
+    expect.objectContaining({
+      body: JSON.stringify({ refreshToken: "old-refresh" }),
+      method: "POST",
+    })
+  )
+  await expect(store.readSession()).resolves.toMatchObject({
+    refreshMode: "hosted",
+    cliSessionId: "30000000-0000-4000-8000-000000000001",
+    refreshToken: "fresh-hosted-refresh",
+  })
+})
+
 function session(accessToken: string, refreshToken: string) {
   return {
     access_token: accessToken,
@@ -256,4 +392,11 @@ function requestedRedirect(signInWithOtp: ReturnType<typeof vi.fn>): URL {
   const value = request?.options?.emailRedirectTo
   if (!value) throw new Error("Missing test redirect URL")
   return new URL(value)
+}
+
+function jsonResponse(body: unknown, status = 200) {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "content-type": "application/json" },
+  })
 }

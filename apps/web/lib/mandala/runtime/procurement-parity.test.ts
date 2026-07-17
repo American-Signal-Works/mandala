@@ -107,6 +107,7 @@ async function runCompiledScenario(scenarioId: StaticProcurementFixtureScenarioI
     workflowRunId: `run-${scenarioId}`,
     manifestDigest: manifest.manifestDigest,
     mode: "shadow",
+    sandboxEnabled: false,
     trigger: { id: "synthetic-test", kind: "fixture", input: {} },
   })
 }
