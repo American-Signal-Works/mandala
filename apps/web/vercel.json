@@ -4,6 +4,10 @@
     {
       "path": "/api/internal/mandala/context-index/run",
       "schedule": "* * * * *"
+    },
+    {
+      "path": "/api/internal/mandala/connector-sync/run",
+      "schedule": "*/5 * * * *"
     }
   ]
 }
