@@ -1089,5 +1089,13 @@ export interface ContextIndexProvider {
     readonly stableCustomId: string
     readonly providerDocumentId: string
   }): Promise<ContextIndexProcessingStatus>
+  processingStatusBatch?(
+    inputs: readonly {
+      readonly requestId: string
+      readonly scope: ContextTenantScope
+      readonly stableCustomId: string
+      readonly providerDocumentId: string
+    }[]
+  ): Promise<readonly ContextIndexProcessingStatus[]>
   health(scope: ContextTenantScope): Promise<ContextProviderHealth>
 }

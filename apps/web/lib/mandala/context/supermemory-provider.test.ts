@@ -256,6 +256,64 @@ describe("SupermemoryContextProvider retrieval", () => {
       expect(JSON.stringify(result)).not.toContain("sensitive provider body")
     }
   )
+
+  it("checks a bounded set of processing documents with one filtered list request", async () => {
+    const calls: Array<{ url: string; init: RequestInit }> = []
+    const provider = providerWith(async (url, init) => {
+      calls.push({ url, init })
+      return jsonResponse({
+        memories: [
+          {
+            id: "provider_doc_1",
+            customId: `ctx_${"1".repeat(64)}`,
+            containerTags: [`company:${companyId}`],
+            status: "done",
+          },
+          {
+            id: "provider_doc_2",
+            customId: `ctx_${"2".repeat(64)}`,
+            containerTags: [`company:${companyId}`],
+            status: "embedding",
+          },
+        ],
+        pagination: { currentPage: 1, totalPages: 1, totalItems: 2 },
+      })
+    })
+
+    const result = await provider.processingStatusBatch([
+      {
+        requestId,
+        scope: { companyId, workspaceScopeId: companyId },
+        stableCustomId: `ctx_${"1".repeat(64)}`,
+        providerDocumentId: "provider_doc_1",
+      },
+      {
+        requestId: "10000000-0000-4000-8000-000000000002",
+        scope: { companyId, workspaceScopeId: companyId },
+        stableCustomId: `ctx_${"2".repeat(64)}`,
+        providerDocumentId: "provider_doc_2",
+      },
+    ])
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]!.url).toBe("https://api.supermemory.ai/v3/documents/list")
+    expect(JSON.parse(String(calls[0]!.init.body))).toMatchObject({
+      containerTags: [`company:${companyId}`],
+      includeContent: false,
+      limit: 100,
+      page: 1,
+      filters: {
+        OR: [
+          { key: "stable_custom_id", value: `ctx_${"1".repeat(64)}` },
+          { key: "stable_custom_id", value: `ctx_${"2".repeat(64)}` },
+        ],
+      },
+    })
+    expect(result.map((status) => status.status)).toEqual([
+      "complete",
+      "processing",
+    ])
+  })
 })
 
 describe("SupermemoryContextProvider indexing", () => {
@@ -643,6 +701,7 @@ describe("Supermemory provider composition", () => {
       "health",
       "list",
       "processingStatus",
+      "processingStatusBatch",
       "provider",
       "replace",
     ])

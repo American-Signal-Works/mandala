@@ -127,22 +127,16 @@ export async function runContextIndexBatch(input: {
     )
     return contextIndexWorkerSummarySchema.parse(summarize(results))
   }
-  const processingLeases = await input.repository.claimProcessing(
-    boundedSingleRequestInput
-  )
+  const processingLeases = await input.repository.claimProcessing(claimInput)
   if (processingLeases.length > 0) {
-    const results = await mapWithConcurrency(
-      processingLeases,
-      options.concurrency,
-      (lease) =>
-        executeProcessingLease({
-          repository: input.repository,
-          resolveProvider: input.resolveProvider,
-          workerId: options.workerId,
-          lease,
-          now: options.now,
-        })
-    )
+    const results = await executeProcessingLeases({
+      repository: input.repository,
+      resolveProvider: input.resolveProvider,
+      workerId: options.workerId,
+      leases: processingLeases,
+      concurrency: options.concurrency,
+      now: options.now,
+    })
     return contextIndexWorkerSummarySchema.parse(summarize(results))
   }
   // Confirm provider-accepted documents before sending another add batch. A
@@ -400,6 +394,95 @@ async function executeProcessingLease(input: {
   } catch {
     return deferProcessing(input, "unavailable")
   }
+  return settleProcessingLease(input, processing)
+}
+
+async function executeProcessingLeases(input: {
+  repository: ContextIndexRepository
+  resolveProvider: ContextIndexProviderResolver
+  workerId: string
+  leases: readonly ContextIndexProcessingLease[]
+  concurrency: number
+  now: string
+}): Promise<ContextIndexWorkResult[]> {
+  const firstLease = input.leases[0]
+  const provider = firstLease
+    ? input.resolveProvider(firstLease.provider)
+    : undefined
+  const canBatch =
+    firstLease !== undefined &&
+    provider?.processingStatusBatch !== undefined &&
+    input.leases.every(
+      (lease) =>
+        lease.provider === firstLease.provider &&
+        lease.companyId === firstLease.companyId
+    )
+
+  if (canBatch) {
+    try {
+      const statusChunks = await mapWithConcurrency(
+        chunkValues(input.leases, 100),
+        Math.min(input.concurrency, 4),
+        (leases) =>
+          provider.processingStatusBatch!(
+            leases.map((lease) => ({
+              requestId: lease.event.id,
+              scope: {
+                companyId: lease.companyId,
+                workspaceScopeId: lease.companyId,
+              },
+              stableCustomId: lease.stableCustomId,
+              providerDocumentId: lease.providerDocumentId,
+            }))
+          )
+      )
+      const statuses = statusChunks.flat()
+      if (statuses.length === input.leases.length) {
+        return mapWithConcurrency(
+          input.leases,
+          input.concurrency,
+          (lease, index) =>
+            settleProcessingLease(
+              {
+                repository: input.repository,
+                resolveProvider: input.resolveProvider,
+                workerId: input.workerId,
+                lease,
+                now: input.now,
+              },
+              statuses[index]!
+            )
+        )
+      }
+    } catch {
+      // A provider that cannot honor the bounded batch query safely falls
+      // back to the established per-document status path.
+    }
+  }
+
+  return mapWithConcurrency(input.leases, input.concurrency, (lease) =>
+    executeProcessingLease({
+      repository: input.repository,
+      resolveProvider: input.resolveProvider,
+      workerId: input.workerId,
+      lease,
+      now: input.now,
+    })
+  )
+}
+
+function chunkValues<T>(values: readonly T[], size: number): T[][] {
+  const chunks: T[][] = []
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size))
+  }
+  return chunks
+}
+
+async function settleProcessingLease(
+  input: Parameters<typeof executeProcessingLease>[0],
+  processing: Awaited<ReturnType<ContextIndexProvider["processingStatus"]>>
+): Promise<ContextIndexWorkResult> {
   if (
     processing.requestId !== input.lease.event.id ||
     processing.provider !== input.lease.provider ||

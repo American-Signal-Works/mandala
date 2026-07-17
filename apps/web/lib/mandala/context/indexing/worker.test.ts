@@ -78,6 +78,43 @@ describe("Context provider-neutral index worker", () => {
     expect(provider.addBatch).not.toHaveBeenCalled()
   })
 
+  it("reconciles accepted work through one bounded provider status batch", async () => {
+    const leases = Array.from({ length: 101 }, (_, index) =>
+      processingLease(index + 1)
+    )
+    const repository = repositoryFor([])
+    repository.claimProcessing = vi.fn().mockResolvedValue(leases)
+    const provider = providerFor()
+    provider.processingStatusBatch = vi.fn(
+      async (
+        inputs: Parameters<
+          NonNullable<ContextIndexProvider["processingStatusBatch"]>
+        >[0]
+      ) =>
+        inputs.map((input) => ({
+          requestId: input.requestId,
+          provider: "supermemory" as const,
+          scope: input.scope,
+          stableCustomId: input.stableCustomId,
+          status: "complete" as const,
+          checkedAt: now.toISOString(),
+        }))
+    )
+
+    const summary = await runContextIndexBatch({
+      repository,
+      resolveProvider: createContextIndexProviderResolver([provider]),
+      workerId: "context-worker-1",
+      limit: 200,
+      now,
+    })
+
+    expect(summary).toMatchObject({ claimed: 101, completed: 101 })
+    expect(provider.processingStatusBatch).toHaveBeenCalledTimes(2)
+    expect(provider.processingStatus).not.toHaveBeenCalled()
+    expect(repository.complete).toHaveBeenCalledTimes(101)
+  })
+
   it("dispatches add, replace, and delete and records strict completions", async () => {
     const leases = [lease("add", 1), lease("replace", 2), lease("delete", 3)]
     const repository = repositoryFor(leases)
@@ -435,18 +472,19 @@ function providerFor(): ContextIndexProvider {
   }
 }
 
-function processingLease() {
+function processingLease(ordinal = 1) {
+  const suffix = ordinal.toString().padStart(12, "0")
   return {
-    leaseId: "71000000-0000-4000-8000-000000000001",
+    leaseId: `71000000-0000-4000-8000-${suffix}`,
     leasedUntil: "2026-07-17T03:02:00.000Z",
     event: {
-      id: "31000000-0000-4000-8000-000000000001",
+      id: `31000000-0000-4000-8000-${suffix}`,
       operation: "add" as const,
     },
     companyId: "20000000-0000-4000-8000-000000000001",
     provider: "supermemory" as const,
-    stableCustomId: `ctx_${"1".repeat(64)}`,
-    providerDocumentId: "provider-doc-1",
+    stableCustomId: `ctx_${ordinal.toString(16).padStart(64, "0")}`,
+    providerDocumentId: `provider-doc-${ordinal}`,
     expectedContentHash: "a".repeat(64),
     pollAttempt: 1,
     maximumPollAttempts: 120,

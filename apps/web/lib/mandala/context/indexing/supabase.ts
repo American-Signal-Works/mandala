@@ -87,7 +87,9 @@ const processingClaimSchema = z
   })
   .strict()
 const processingClaimEnvelopeSchema = z
-  .object({ claims: z.array(processingClaimSchema).max(100) })
+  .object({
+    claims: z.array(processingClaimSchema).max(CONTEXT_INDEX_MAX_BATCH_SIZE),
+  })
   .strict()
 const acceptResultSchema = z
   .object({
@@ -296,7 +298,7 @@ export class SupabaseContextIndexRepository implements ContextIndexRepository {
     leaseSeconds: number
     now: string
   }): Promise<ContextIndexProcessingLease[]> {
-    const request = claimRequestSchema.parse(input)
+    const request = batchClaimRequestSchema.parse(input)
     const data = await this.call(contextIndexRpcNames.claimProcessing, {
       p_worker_id: request.workerId,
       p_limit: request.limit,

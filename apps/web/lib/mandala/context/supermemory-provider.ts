@@ -136,6 +136,43 @@ const documentStatusResponseSchema = z
   })
   .passthrough()
 
+const documentBatchStatusListResponseSchema = z
+  .object({
+    memories: z
+      .array(
+        z
+          .object({
+            id: SAFE_PROVIDER_REFERENCE,
+            customId: STABLE_CUSTOM_ID,
+            containerTags: z.array(SAFE_PROVIDER_REFERENCE),
+            status: z.string().trim().min(1).max(100),
+          })
+          .passthrough()
+      )
+      .max(100),
+    pagination: z
+      .object({
+        currentPage: z.number().int().positive(),
+        totalPages: z.number().int().nonnegative(),
+      })
+      .passthrough(),
+  })
+  .passthrough()
+
+const processingStatusBatchInputSchema = z
+  .array(
+    z
+      .object({
+        requestId: UUID,
+        scope: contextTenantScopeSchema,
+        stableCustomId: STABLE_CUSTOM_ID,
+        providerDocumentId: SAFE_PROVIDER_REFERENCE,
+      })
+      .strict()
+  )
+  .min(1)
+  .max(100)
+
 const scalarMetadataSchema = z.union([
   z.string().max(1_000),
   z.number().finite(),
@@ -516,6 +553,94 @@ export class SupermemoryContextProvider
     )
   }
 
+  async processingStatusBatch(
+    inputs: readonly {
+      readonly requestId: string
+      readonly scope: ContextTenantScope
+      readonly stableCustomId: string
+      readonly providerDocumentId: string
+    }[]
+  ): Promise<readonly ContextIndexProcessingStatus[]> {
+    const parsedInputs = processingStatusBatchInputSchema.parse(inputs)
+    const scope = parsedInputs[0]!.scope
+    if (
+      parsedInputs.some(
+        (input) =>
+          input.scope.companyId !== scope.companyId ||
+          input.scope.workspaceScopeId !== scope.workspaceScopeId
+      )
+    ) {
+      throw new SupermemoryProviderError("provider_scope_mismatch", "failed")
+    }
+
+    const response = await this.request({
+      method: "POST",
+      path: "/v3/documents/list",
+      timeoutMs: 10_000,
+      body: {
+        containerTags: [containerTagFor(scope)],
+        includeContent: false,
+        limit: 100,
+        page: 1,
+        filters: {
+          OR: parsedInputs.map((input) => ({
+            key: "stable_custom_id",
+            value: input.stableCustomId,
+            negate: false,
+          })),
+        },
+      },
+    })
+    const result = documentBatchStatusListResponseSchema.safeParse(
+      response.data
+    )
+    const expectedContainer = containerTagFor(scope)
+    if (
+      !result.success ||
+      result.data.pagination.currentPage !== 1 ||
+      result.data.pagination.totalPages > 1 ||
+      result.data.memories.some(
+        (document) =>
+          document.containerTags.length !== 1 ||
+          document.containerTags[0] !== expectedContainer
+      )
+    ) {
+      throw new SupermemoryProviderError(
+        "provider_response_malformed",
+        "failed"
+      )
+    }
+
+    const documentsByCustomId = new Map(
+      result.data.memories.map((document) => [document.customId, document])
+    )
+    if (documentsByCustomId.size !== result.data.memories.length) {
+      throw new SupermemoryProviderError(
+        "provider_response_malformed",
+        "failed"
+      )
+    }
+    return deepFreeze(
+      parsedInputs.map((input) => {
+        const document = documentsByCustomId.get(input.stableCustomId)
+        if (!document || document.id !== input.providerDocumentId) {
+          throw new SupermemoryProviderError(
+            "provider_response_malformed",
+            "failed"
+          )
+        }
+        return contextIndexProcessingStatusSchema.parse({
+          requestId: input.requestId,
+          provider: "supermemory",
+          scope: input.scope,
+          stableCustomId: input.stableCustomId,
+          status: mapProcessingStatus(document.status),
+          checkedAt: this.now().toISOString(),
+        })
+      })
+    )
+  }
+
   private async request(input: ProviderRequest): Promise<ProviderResponse> {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), input.timeoutMs)
@@ -621,6 +746,7 @@ export function createSupermemoryIndexProvider(
     delete: provider.delete.bind(provider),
     list: provider.list.bind(provider),
     processingStatus: provider.processingStatus.bind(provider),
+    processingStatusBatch: provider.processingStatusBatch.bind(provider),
     health: provider.health.bind(provider),
   })
 }
