@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { contextPacketProvenanceSchema } from "./context.js"
 
 const identifier = z.string().regex(/^[a-z][a-z0-9_-]{0,63}$/)
 const fieldIdentifier = z
@@ -270,6 +271,7 @@ const sandboxDeliverableSchema = z
         assumptions: z.array(z.string()),
         sourceCapabilities: z.array(z.string()),
         sourceRefs: z.array(z.unknown()),
+        operationalContext: contextPacketProvenanceSchema.nullable(),
       })
       .strict(),
   })
