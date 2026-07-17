@@ -27,6 +27,7 @@ export type SlashCommandName =
   | "/agent-rollback"
   | "/inbox"
   | "/purchase-requests"
+  | "/settings"
   | "/sandbox"
   | "/fixtures"
   | "/run-fixture"
@@ -56,6 +57,7 @@ export type SlashCommandKind =
   | "company"
   | "agent"
   | "view"
+  | "settings"
   | "sandbox"
   | "fixture"
   | "selection"
@@ -74,6 +76,7 @@ export type SlashCommandGroup =
   | "Account"
   | "Review work"
   | "Agents"
+  | "Workspace settings"
   | "Inspect selected"
   | "Decide"
   | "Sandbox"
@@ -326,6 +329,12 @@ export const slashCommands = [
         renderer: "work-item-list",
       },
     }
+  ),
+  command(
+    "/settings",
+    "settings",
+    "Manage Context and Sandbox safety settings",
+    "/settings"
   ),
   command(
     "/sandbox",
@@ -636,6 +645,8 @@ function groupForKind(kind: SlashCommandKind): SlashCommandGroup {
     case "fixture":
     case "sandbox":
       return "Sandbox"
+    case "settings":
+      return "Workspace settings"
     case "local":
       return "Session"
   }

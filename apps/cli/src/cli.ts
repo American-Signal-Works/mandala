@@ -227,7 +227,10 @@ async function executeCommand(input: {
 
   if (group === "auth") return handleAuth(action, rest, input)
   if (group === "company") return handleCompany(action, rest, input)
-  if (group === "context") return showContext(input.store)
+  if (group === "context") {
+    if (action === undefined) return showContext(input.store)
+    return handleContextSettings(action, rest, input)
+  }
   if (group === "sandbox") return handleSandbox(action, rest, input)
   if (group === "workflow") return handleWorkflow(action, rest, input)
   if (group === "work") return handleWork(action, rest, input)
@@ -387,11 +390,72 @@ async function showContext(store: SecureStore): Promise<unknown> {
   }
 }
 
+async function handleContextSettings(
+  action: string | undefined,
+  args: string[],
+  input: Parameters<typeof executeCommand>[0]
+): Promise<unknown> {
+  const config = await requireCompany(input.store, input.audit)
+  if (action === "status") {
+    requireNoArguments(args, "mandala context status")
+    return input.getApi().getContextWorkspaceStatus(config.selectedCompany.id)
+  }
+  if (action === "set") {
+    const parsed = parseSettingsMutation(args, "context")
+    const provider = parsed.value
+    if (provider !== "off" && provider !== "supermemory")
+      throw new CliError(
+        "invalid_arguments",
+        "Context provider must be 'off' or 'supermemory'."
+      )
+    if (provider === "supermemory" && !parsed.confirmed)
+      throw new CliError(
+        "safety_confirmation_required",
+        "Selecting Supermemory weakens the current safety posture. Review the change, then rerun with --confirm."
+      )
+    return setWorkspaceConfiguration(input, {
+      companyId: config.selectedCompany.id,
+      provider,
+      expectedConfigurationVersion: parsed.expectedConfigurationVersion,
+      reason: parsed.reason,
+    })
+  }
+  throw new CliError(
+    "unknown_command",
+    "Use: mandala context, mandala context status, or mandala context set <off|supermemory> --expected-version <n> --reason <text>."
+  )
+}
+
 async function handleSandbox(
   action: string | undefined,
   args: string[],
   input: Parameters<typeof executeCommand>[0]
 ): Promise<unknown> {
+  if (action === "status") {
+    requireNoArguments(args, "mandala sandbox status")
+    const config = await requireCompany(input.store, input.audit)
+    return input.getApi().getContextWorkspaceStatus(config.selectedCompany.id)
+  }
+  if (action === "set") {
+    const config = await requireCompany(input.store, input.audit)
+    const parsed = parseSettingsMutation(args, "sandbox")
+    if (parsed.value !== "on" && parsed.value !== "off")
+      throw new CliError(
+        "invalid_arguments",
+        "Sandbox setting must be 'on' or 'off'."
+      )
+    if (parsed.value === "off" && !parsed.confirmed)
+      throw new CliError(
+        "safety_confirmation_required",
+        "Turning Sandbox safety Off weakens the workspace safety posture. Review the change, then rerun with --confirm."
+      )
+    return setWorkspaceConfiguration(input, {
+      companyId: config.selectedCompany.id,
+      sandboxEnabled: parsed.value === "on",
+      expectedConfigurationVersion: parsed.expectedConfigurationVersion,
+      reason: parsed.reason,
+    })
+  }
   if (action === "run") {
     const parsed = parseOptions(args, {
       skill: { type: "string" },
@@ -429,7 +493,7 @@ async function handleSandbox(
   if (action !== "open")
     throw new CliError(
       "unknown_command",
-      "Use: mandala sandbox open [--limit <1-100>] or mandala sandbox run --skill <SKILL.md> --confirm-mappings."
+      "Use: mandala sandbox open [--limit <1-100>], mandala sandbox run --skill <SKILL.md> --confirm-mappings, mandala sandbox status, or mandala sandbox set <on|off> --expected-version <n> --reason <text>."
     )
   const parsed = parseOptions(args, { limit: { type: "string" } })
   if (parsed.positionals.length)
@@ -453,6 +517,70 @@ async function handleSandbox(
     companyId: config.selectedCompany.id,
     candidateLimit,
   })
+}
+
+function parseSettingsMutation(
+  args: string[],
+  setting: "context" | "sandbox"
+): {
+  confirmed: boolean
+  expectedConfigurationVersion: number
+  reason: string
+  value: string
+} {
+  const parsed = parseOptions(args, {
+    confirm: { type: "boolean" },
+    "expected-version": { type: "string" },
+    reason: { type: "string" },
+  })
+  const usage =
+    setting === "context"
+      ? "mandala context set <off|supermemory> --expected-version <n> --reason <text> [--confirm]"
+      : "mandala sandbox set <on|off> --expected-version <n> --reason <text> [--confirm]"
+  const [value] = parsed.positionals
+  const expectedVersion = stringOption(parsed.values["expected-version"])
+  const reason = stringOption(parsed.values.reason)?.trim()
+  const expectedConfigurationVersion = expectedVersion
+    ? Number(expectedVersion)
+    : Number.NaN
+  if (
+    parsed.positionals.length !== 1 ||
+    !value ||
+    !Number.isInteger(expectedConfigurationVersion) ||
+    expectedConfigurationVersion < 1 ||
+    !reason ||
+    reason.length > 1_000
+  ) {
+    throw new CliError("invalid_arguments", `Use: ${usage}.`)
+  }
+  return {
+    confirmed: parsed.values.confirm === true,
+    expectedConfigurationVersion,
+    reason,
+    value,
+  }
+}
+
+async function setWorkspaceConfiguration(
+  input: Parameters<typeof executeCommand>[0],
+  request: Parameters<ControlApi["setContextWorkspaceConfiguration"]>[0]
+): Promise<unknown> {
+  try {
+    return await input.getApi().setContextWorkspaceConfiguration(request)
+  } catch (error) {
+    const parsed = asCliError(error)
+    if (
+      parsed.code === "stale_context_workspace_configuration" ||
+      parsed.code === "stale_configuration_version" ||
+      parsed.code === "configuration_version_conflict"
+    ) {
+      throw new CliError(
+        parsed.code,
+        "Workspace settings changed since you last viewed them. Run the status command, then retry with its current configuration version."
+      )
+    }
+    throw error
+  }
 }
 
 async function handleWorkflow(
@@ -1447,11 +1575,15 @@ Authentication
 
 Context
   mandala context
+  mandala context status
+  mandala context set <off|supermemory> --expected-version <n> --reason <text> [--confirm]
   mandala company list
   mandala company use <company-id>
   mandala company current
 
 Real-data Sandbox
+  mandala sandbox status
+  mandala sandbox set <on|off> --expected-version <n> --reason <text> [--confirm]
   mandala sandbox open [--limit <1-100>]
   mandala sandbox run --skill <SKILL.md> --confirm-mappings
 

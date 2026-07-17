@@ -6,7 +6,7 @@ import { createGenericWorkflowRuntime } from "./graph"
 const manifest = createManifest()
 
 describe("generic workflow runtime", () => {
-  it("blocks Sandbox when a durable review persister is not explicitly replaced", async () => {
+  it("defaults to Sandbox and blocks a durable review persister", async () => {
     const runtime = createGenericWorkflowRuntime({
       manifest,
       dependencies: {
@@ -43,7 +43,6 @@ describe("generic workflow runtime", () => {
       workflowRunId: "run-sandbox-firewall",
       manifestDigest: manifest.manifestDigest,
       mode: "mock",
-      operatingMode: "sandbox",
       trigger: { id: "manual-review", kind: "manual", input: {} },
     })
 
@@ -102,6 +101,7 @@ describe("generic workflow runtime", () => {
       workflowRunId: "run-1",
       manifestDigest: manifest.manifestDigest,
       mode: "mock",
+      sandboxEnabled: false,
       trigger: { id: "manual", kind: "manual", input: {} },
     })
 
@@ -204,6 +204,7 @@ describe("generic workflow runtime", () => {
       workflowRunId: "run-2",
       manifestDigest: manifest.manifestDigest,
       mode: "mock",
+      sandboxEnabled: false,
       trigger: { id: "manual", kind: "manual", input: {} },
     })
 

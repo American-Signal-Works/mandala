@@ -64,6 +64,7 @@ describe("real Skill v1 files on the generic runtime", () => {
       workflowRunId: "run-clean",
       manifestDigest: compiled.manifest.manifestDigest,
       mode: "mock",
+      sandboxEnabled: false,
       trigger: { id: "synthetic-test", kind: "fixture", input: {} },
     })
 
@@ -132,6 +133,7 @@ describe("real Skill v1 files on the generic runtime", () => {
       workflowRunId: "run-spike",
       manifestDigest: compiled.manifest.manifestDigest,
       mode: "mock",
+      sandboxEnabled: false,
       trigger: { id: "synthetic-test", kind: "fixture", input: {} },
     })
 

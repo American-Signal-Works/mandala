@@ -1539,6 +1539,7 @@ export type Database = {
         Row: {
           approved_at: string | null
           approved_user_id: string | null
+          browser_token_hash: string
           client_name: string
           client_platform: string
           client_version: string
@@ -1557,11 +1558,11 @@ export type Database = {
           selected_company_id: string | null
           status: string
           updated_at: string
-          browser_token_hash: string
         }
         Insert: {
           approved_at?: string | null
           approved_user_id?: string | null
+          browser_token_hash: string
           client_name: string
           client_platform: string
           client_version: string
@@ -1580,11 +1581,11 @@ export type Database = {
           selected_company_id?: string | null
           status?: string
           updated_at?: string
-          browser_token_hash: string
         }
         Update: {
           approved_at?: string | null
           approved_user_id?: string | null
+          browser_token_hash?: string
           client_name?: string
           client_platform?: string
           client_version?: string
@@ -1603,7 +1604,6 @@ export type Database = {
           selected_company_id?: string | null
           status?: string
           updated_at?: string
-          browser_token_hash?: string
         }
         Relationships: [
           {
@@ -2716,6 +2716,580 @@ export type Database = {
           status?: string
         }
         Relationships: []
+      }
+      context_index_events: {
+        Row: {
+          attempt_count: number | null
+          company_id: string
+          cost_adjustment_microunits: number
+          created_at: string
+          estimated_cost_microunits: number
+          event_type: string
+          id: number
+          job_id: string | null
+          operation: string | null
+          outbox_id: string | null
+          provider: string
+          safe_error_code: string | null
+        }
+        Insert: {
+          attempt_count?: number | null
+          company_id: string
+          cost_adjustment_microunits?: number
+          created_at?: string
+          estimated_cost_microunits?: number
+          event_type: string
+          id?: never
+          job_id?: string | null
+          operation?: string | null
+          outbox_id?: string | null
+          provider: string
+          safe_error_code?: string | null
+        }
+        Update: {
+          attempt_count?: number | null
+          company_id?: string
+          cost_adjustment_microunits?: number
+          created_at?: string
+          estimated_cost_microunits?: number
+          event_type?: string
+          id?: never
+          job_id?: string | null
+          operation?: string | null
+          outbox_id?: string | null
+          provider?: string
+          safe_error_code?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "context_index_events_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "context_index_events_job_id_company_id_fkey"
+            columns: ["job_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "context_index_jobs"
+            referencedColumns: ["id", "company_id"]
+          },
+          {
+            foreignKeyName: "context_index_events_outbox_id_company_id_fkey"
+            columns: ["outbox_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "context_index_outbox"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      context_index_jobs: {
+        Row: {
+          actor_kind: string
+          company_id: string
+          completed_at: string | null
+          completed_count: number
+          created_at: string
+          eligible_count: number
+          failed_count: number
+          id: string
+          mode: string
+          policy_hash: string
+          provider: string
+          query_hash: string
+          queued_count: number
+          requested_limit: number
+          snapshot_hash: string
+          started_at: string
+          status: string
+        }
+        Insert: {
+          actor_kind?: string
+          company_id: string
+          completed_at?: string | null
+          completed_count?: number
+          created_at?: string
+          eligible_count: number
+          failed_count?: number
+          id?: string
+          mode: string
+          policy_hash: string
+          provider: string
+          query_hash: string
+          queued_count?: number
+          requested_limit: number
+          snapshot_hash: string
+          started_at?: string
+          status: string
+        }
+        Update: {
+          actor_kind?: string
+          company_id?: string
+          completed_at?: string | null
+          completed_count?: number
+          created_at?: string
+          eligible_count?: number
+          failed_count?: number
+          id?: string
+          mode?: string
+          policy_hash?: string
+          provider?: string
+          query_hash?: string
+          queued_count?: number
+          requested_limit?: number
+          snapshot_hash?: string
+          started_at?: string
+          status?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "context_index_jobs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      context_index_ledger: {
+        Row: {
+          attempt_count: number
+          canonical_record_id: string
+          canonical_version: string
+          company_id: string
+          content_hash: string
+          deletion_confirmed_at: string | null
+          deletion_requested_at: string | null
+          first_queued_at: string
+          id: string
+          last_error_at: string | null
+          last_indexed_at: string | null
+          last_verified_at: string | null
+          policy_hash: string
+          policy_version: number
+          provider: string
+          provider_document_id: string | null
+          record_type: string
+          safe_error_code: string | null
+          source_key: string
+          stable_custom_id: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          attempt_count?: number
+          canonical_record_id: string
+          canonical_version: string
+          company_id: string
+          content_hash: string
+          deletion_confirmed_at?: string | null
+          deletion_requested_at?: string | null
+          first_queued_at?: string
+          id?: string
+          last_error_at?: string | null
+          last_indexed_at?: string | null
+          last_verified_at?: string | null
+          policy_hash: string
+          policy_version: number
+          provider: string
+          provider_document_id?: string | null
+          record_type: string
+          safe_error_code?: string | null
+          source_key: string
+          stable_custom_id: string
+          status: string
+          updated_at?: string
+        }
+        Update: {
+          attempt_count?: number
+          canonical_record_id?: string
+          canonical_version?: string
+          company_id?: string
+          content_hash?: string
+          deletion_confirmed_at?: string | null
+          deletion_requested_at?: string | null
+          first_queued_at?: string
+          id?: string
+          last_error_at?: string | null
+          last_indexed_at?: string | null
+          last_verified_at?: string | null
+          policy_hash?: string
+          policy_version?: number
+          provider?: string
+          provider_document_id?: string | null
+          record_type?: string
+          safe_error_code?: string | null
+          source_key?: string
+          stable_custom_id?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "context_index_ledger_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      context_index_operation_controls: {
+        Row: {
+          canary_record_limit: number
+          company_id: string
+          daily_cost_cap_microunits: number
+          daily_operation_cap: number
+          estimated_operation_cost_microunits: number
+          max_attempts: number
+          provider: string
+          requests_per_minute: number
+          updated_at: string
+          worker_enabled: boolean
+        }
+        Insert: {
+          canary_record_limit?: number
+          company_id: string
+          daily_cost_cap_microunits?: number
+          daily_operation_cap?: number
+          estimated_operation_cost_microunits?: number
+          max_attempts?: number
+          provider?: string
+          requests_per_minute?: number
+          updated_at?: string
+          worker_enabled?: boolean
+        }
+        Update: {
+          canary_record_limit?: number
+          company_id?: string
+          daily_cost_cap_microunits?: number
+          daily_operation_cap?: number
+          estimated_operation_cost_microunits?: number
+          max_attempts?: number
+          provider?: string
+          requests_per_minute?: number
+          updated_at?: string
+          worker_enabled?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "context_index_operation_controls_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      context_index_outbox: {
+        Row: {
+          attempt_count: number
+          available_at: string
+          canonical_record_id: string
+          canonical_version: string
+          company_id: string
+          content_hash: string
+          created_at: string
+          delivery_state: string
+          id: string
+          idempotency_key: string
+          job_id: string | null
+          lease_expires_at: string | null
+          lease_id: string | null
+          lease_owner: string | null
+          operation: string
+          policy_hash: string
+          policy_version: number
+          provider: string
+          provider_document_id: string | null
+          record_type: string
+          reserved_cost_microunits: number
+          safe_error_code: string | null
+          source_key: string
+          stable_custom_id: string
+          terminal_at: string | null
+          updated_at: string
+        }
+        Insert: {
+          attempt_count?: number
+          available_at?: string
+          canonical_record_id: string
+          canonical_version: string
+          company_id: string
+          content_hash: string
+          created_at?: string
+          delivery_state?: string
+          id?: string
+          idempotency_key: string
+          job_id?: string | null
+          lease_expires_at?: string | null
+          lease_id?: string | null
+          lease_owner?: string | null
+          operation: string
+          policy_hash: string
+          policy_version: number
+          provider: string
+          provider_document_id?: string | null
+          record_type: string
+          reserved_cost_microunits?: number
+          safe_error_code?: string | null
+          source_key: string
+          stable_custom_id: string
+          terminal_at?: string | null
+          updated_at?: string
+        }
+        Update: {
+          attempt_count?: number
+          available_at?: string
+          canonical_record_id?: string
+          canonical_version?: string
+          company_id?: string
+          content_hash?: string
+          created_at?: string
+          delivery_state?: string
+          id?: string
+          idempotency_key?: string
+          job_id?: string | null
+          lease_expires_at?: string | null
+          lease_id?: string | null
+          lease_owner?: string | null
+          operation?: string
+          policy_hash?: string
+          policy_version?: number
+          provider?: string
+          provider_document_id?: string | null
+          record_type?: string
+          reserved_cost_microunits?: number
+          safe_error_code?: string | null
+          source_key?: string
+          stable_custom_id?: string
+          terminal_at?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "context_index_outbox_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "context_index_outbox_job_id_company_id_fkey"
+            columns: ["job_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "context_index_jobs"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      context_index_tombstones: {
+        Row: {
+          canonical_record_id: string
+          company_id: string
+          confirmed_at: string | null
+          delete_outbox_id: string
+          deleted_at: string
+          deletion_reason: string
+          id: string
+          provider: string
+          provider_document_id: string
+          stable_custom_id: string
+        }
+        Insert: {
+          canonical_record_id: string
+          company_id: string
+          confirmed_at?: string | null
+          delete_outbox_id: string
+          deleted_at?: string
+          deletion_reason?: string
+          id?: string
+          provider: string
+          provider_document_id: string
+          stable_custom_id: string
+        }
+        Update: {
+          canonical_record_id?: string
+          company_id?: string
+          confirmed_at?: string | null
+          delete_outbox_id?: string
+          deleted_at?: string
+          deletion_reason?: string
+          id?: string
+          provider?: string
+          provider_document_id?: string
+          stable_custom_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "context_index_tombstones_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "context_index_tombstones_delete_outbox_id_company_id_fkey"
+            columns: ["delete_outbox_id", "company_id"]
+            isOneToOne: false
+            referencedRelation: "context_index_outbox"
+            referencedColumns: ["id", "company_id"]
+          },
+        ]
+      }
+      context_indexing_policy_versions: {
+        Row: {
+          approved_field_paths: string[]
+          classification: string
+          company_id: string
+          created_at: string
+          created_by: string
+          id: string
+          indexing_enabled: boolean
+          maximum_content_bytes: number
+          policy_version: number
+          projection_version: number
+          reason: string
+          record_type: string
+          retention_days: number
+          source_key: string
+        }
+        Insert: {
+          approved_field_paths?: string[]
+          classification: string
+          company_id: string
+          created_at?: string
+          created_by: string
+          id?: string
+          indexing_enabled?: boolean
+          maximum_content_bytes?: number
+          policy_version: number
+          projection_version: number
+          reason: string
+          record_type: string
+          retention_days: number
+          source_key: string
+        }
+        Update: {
+          approved_field_paths?: string[]
+          classification?: string
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          id?: string
+          indexing_enabled?: boolean
+          maximum_content_bytes?: number
+          policy_version?: number
+          projection_version?: number
+          reason?: string
+          record_type?: string
+          retention_days?: number
+          source_key?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "context_indexing_policy_versions_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      context_workspace_setting_audits: {
+        Row: {
+          actor_id: string
+          change_kind: string
+          company_id: string
+          configuration_version: number
+          created_at: string
+          id: string
+          previous_provider: string | null
+          previous_readiness: string | null
+          previous_sandbox_enabled: boolean | null
+          provider: string
+          readiness: string
+          reason: string
+          sandbox_enabled: boolean
+        }
+        Insert: {
+          actor_id: string
+          change_kind: string
+          company_id: string
+          configuration_version: number
+          created_at?: string
+          id?: string
+          previous_provider?: string | null
+          previous_readiness?: string | null
+          previous_sandbox_enabled?: boolean | null
+          provider: string
+          readiness: string
+          reason: string
+          sandbox_enabled: boolean
+        }
+        Update: {
+          actor_id?: string
+          change_kind?: string
+          company_id?: string
+          configuration_version?: number
+          created_at?: string
+          id?: string
+          previous_provider?: string | null
+          previous_readiness?: string | null
+          previous_sandbox_enabled?: boolean | null
+          provider?: string
+          readiness?: string
+          reason?: string
+          sandbox_enabled?: boolean
+        }
+        Relationships: [
+          {
+            foreignKeyName: "context_workspace_setting_audits_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      context_workspace_settings: {
+        Row: {
+          company_id: string
+          configuration_version: number
+          provider: string
+          readiness: string
+          sandbox_enabled: boolean
+          updated_at: string
+          updated_by: string
+        }
+        Insert: {
+          company_id: string
+          configuration_version?: number
+          provider?: string
+          readiness?: string
+          sandbox_enabled?: boolean
+          updated_at?: string
+          updated_by: string
+        }
+        Update: {
+          company_id?: string
+          configuration_version?: number
+          provider?: string
+          readiness?: string
+          sandbox_enabled?: boolean
+          updated_at?: string
+          updated_by?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "context_workspace_settings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       email_deliveries: {
         Row: {
@@ -5281,6 +5855,15 @@ export type Database = {
         Args: { p_device_code_hash: string }
         Returns: Json
       }
+      claim_context_index_work_v1: {
+        Args: {
+          p_lease_seconds?: number
+          p_limit?: number
+          p_now?: string
+          p_worker_id: string
+        }
+        Returns: Json
+      }
       claim_due_email_deliveries: {
         Args: { p_lease_seconds?: number; p_limit?: number }
         Returns: {
@@ -5306,6 +5889,15 @@ export type Database = {
           p_exchange_nonce: string
           p_refresh_expires_at: string
           p_refresh_token_hash: string
+        }
+        Returns: Json
+      }
+      complete_context_index_work_v1: {
+        Args: {
+          p_lease_id: string
+          p_now?: string
+          p_result: Json
+          p_worker_id: string
         }
         Returns: Json
       }
@@ -5337,6 +5929,7 @@ export type Database = {
       }
       create_cli_device_authorization_v1: {
         Args: {
+          p_browser_token_hash: string
           p_client_name: string
           p_client_platform: string
           p_client_version: string
@@ -5345,7 +5938,6 @@ export type Database = {
           p_id: string
           p_requested_scopes?: string[]
           p_requester_hash: string
-          p_browser_token_hash: string
         }
         Returns: Json
       }
@@ -5365,10 +5957,10 @@ export type Database = {
       decide_cli_device_authorization_v1: {
         Args: {
           p_actor_user_id: string
+          p_browser_token_hash: string
           p_company_id: string | null
           p_decision: string
           p_subject_hash: string
-          p_browser_token_hash: string
         }
         Returns: Json
       }
@@ -5453,6 +6045,16 @@ export type Database = {
         Returns: Json
       }
       export_agent_memory_v1: { Args: { p_company_id: string }; Returns: Json }
+      fail_context_index_work_v1: {
+        Args: {
+          p_disposition: string
+          p_error_code: string
+          p_lease_id: string
+          p_now?: string
+          p_worker_id: string
+        }
+        Returns: Json
+      }
       forget_agent_memory_candidate_v1: {
         Args: {
           p_actor_id: string
@@ -5478,6 +6080,10 @@ export type Database = {
           p_period_end: string
           p_period_start: string
         }
+        Returns: Json
+      }
+      get_context_index_status_v1: {
+        Args: { p_company_id: string }
         Returns: Json
       }
       get_my_profile_identity: { Args: never; Returns: Json }
@@ -5606,6 +6212,26 @@ export type Database = {
         Returns: Json
       }
       preflight_account_deletion: { Args: never; Returns: Json }
+      prepare_context_index_work_v1: {
+        Args: { p_limit?: number; p_now?: string }
+        Returns: Json
+      }
+      publish_context_indexing_policy_v1: {
+        Args: {
+          p_approved_field_paths: string[]
+          p_classification: string
+          p_company_id: string
+          p_expected_current_version: number
+          p_indexing_enabled: boolean
+          p_maximum_content_bytes: number
+          p_projection_version: number
+          p_reason: string
+          p_record_type: string
+          p_retention_days: number
+          p_source_key: string
+        }
+        Returns: Json
+      }
       publish_provider_model_rate_v1: {
         Args: {
           p_created_by?: string
@@ -5640,6 +6266,15 @@ export type Database = {
       purge_terminal_email_delivery_pii: {
         Args: { p_before?: string }
         Returns: number
+      }
+      reconcile_context_index_work_v1: {
+        Args: {
+          p_company_id: string
+          p_mode?: string
+          p_now?: string
+          p_requested_limit?: number
+        }
+        Returns: Json
       }
       record_account_deletion_progress: {
         Args: { p_error_code?: string; p_status: string; p_user_id: string }
@@ -5891,18 +6526,6 @@ export type Database = {
         Args: { p_actor_user_id: string; p_cli_session_id: string }
         Returns: Json
       }
-      rotate_cli_session_credentials_v1: {
-        Args: {
-          p_access_expires_at: string
-          p_actor_auth_session_id: string
-          p_actor_session_ciphertext: string
-          p_next_access_token_hash: string
-          p_next_refresh_token_hash: string
-          p_refresh_expires_at: string
-          p_refresh_token_hash: string
-        }
-        Returns: Json
-      }
       revoke_company_invitation: {
         Args: { p_invitation_id: string }
         Returns: Json
@@ -5928,6 +6551,18 @@ export type Database = {
             }
             Returns: Json
           }
+      rotate_cli_session_credentials_v1: {
+        Args: {
+          p_access_expires_at: string
+          p_actor_auth_session_id: string
+          p_actor_session_ciphertext: string
+          p_next_access_token_hash: string
+          p_next_refresh_token_hash: string
+          p_refresh_expires_at: string
+          p_refresh_token_hash: string
+        }
+        Returns: Json
+      }
       schedule_agent_follow_up_v1: {
         Args: { p_actor_id: string; p_company_id: string; p_payload: Json }
         Returns: Json
@@ -5972,6 +6607,17 @@ export type Database = {
           p_installation_id: string
           p_observed_schema_hash?: string
           p_status: string
+        }
+        Returns: Json
+      }
+      set_context_workspace_configuration_v1: {
+        Args: {
+          p_company_id: string
+          p_expected_configuration_version: number
+          p_provider: string
+          p_readiness: string
+          p_reason: string
+          p_sandbox_enabled: boolean
         }
         Returns: Json
       }

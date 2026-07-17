@@ -138,6 +138,136 @@ describe("CLI commands", () => {
     })
   })
 
+  it("reads server-authoritative Context and Sandbox status for the selected workspace", async () => {
+    const getContextWorkspaceStatus = vi.fn(async () => workspaceStatus())
+    const api = fakeApi({ getContextWorkspaceStatus })
+
+    expect(await command(["context", "status", "--json"], api)).toBe(0)
+    expect(getContextWorkspaceStatus).toHaveBeenCalledWith(companyId)
+    expect(JSON.parse(stdout.value)).toMatchObject({
+      ok: true,
+      data: {
+        provider: "off",
+        sandboxEnabled: true,
+        readiness: "disabled",
+        indexingCoverage: { status: "unavailable", percent: null },
+        synchronization: { status: "unavailable", lagSeconds: null },
+      },
+    })
+
+    stdout.value = ""
+    expect(await command(["sandbox", "status", "--json"], api)).toBe(0)
+    expect(getContextWorkspaceStatus).toHaveBeenLastCalledWith(companyId)
+  })
+
+  it("requires explicit confirmation before non-interactive safety weakening", async () => {
+    const setContextWorkspaceConfiguration = vi.fn(async () =>
+      workspaceStatus({ provider: "supermemory", readiness: "not_ready" })
+    )
+    const api = fakeApi({ setContextWorkspaceConfiguration })
+    const shared = [
+      "--expected-version",
+      "1",
+      "--reason",
+      "Approved evaluation",
+      "--json",
+    ]
+
+    expect(
+      await command(["context", "set", "supermemory", ...shared], api)
+    ).toBe(1)
+    expect(stderr.value).toContain("safety_confirmation_required")
+    expect(setContextWorkspaceConfiguration).not.toHaveBeenCalled()
+
+    stderr.value = ""
+    expect(
+      await command(
+        ["context", "set", "supermemory", ...shared, "--confirm"],
+        api
+      )
+    ).toBe(0)
+    expect(setContextWorkspaceConfiguration).toHaveBeenCalledWith({
+      companyId,
+      provider: "supermemory",
+      expectedConfigurationVersion: 1,
+      reason: "Approved evaluation",
+    })
+
+    setContextWorkspaceConfiguration.mockClear()
+    stdout.value = ""
+    expect(
+      await command(
+        [
+          "sandbox",
+          "set",
+          "off",
+          "--expected-version",
+          "2",
+          "--reason",
+          "Temporary exception",
+          "--json",
+        ],
+        api
+      )
+    ).toBe(1)
+    expect(setContextWorkspaceConfiguration).not.toHaveBeenCalled()
+  })
+
+  it("allows safety-strengthening settings without a weakening confirmation", async () => {
+    const setContextWorkspaceConfiguration = vi.fn(async () =>
+      workspaceStatus({ configurationVersion: 3 })
+    )
+    const api = fakeApi({ setContextWorkspaceConfiguration })
+
+    expect(
+      await command(
+        [
+          "sandbox",
+          "set",
+          "on",
+          "--expected-version",
+          "2",
+          "--reason",
+          "Restore write firewall",
+          "--json",
+        ],
+        api
+      )
+    ).toBe(0)
+    expect(setContextWorkspaceConfiguration).toHaveBeenCalledWith({
+      companyId,
+      sandboxEnabled: true,
+      expectedConfigurationVersion: 2,
+      reason: "Restore write firewall",
+    })
+  })
+
+  it("turns stale setting writes into refresh-and-retry guidance", async () => {
+    const api = fakeApi({
+      setContextWorkspaceConfiguration: vi.fn(async () => {
+        throw new CliError("stale_context_workspace_configuration", "Conflict")
+      }),
+    })
+
+    expect(
+      await command(
+        [
+          "context",
+          "set",
+          "off",
+          "--expected-version",
+          "1",
+          "--reason",
+          "Disable external Context",
+          "--json",
+        ],
+        api
+      )
+    ).toBe(1)
+    expect(stderr.value).toContain("Run the status command")
+    expect(stderr.value).toContain("current configuration version")
+  })
+
   it("runs the installed skill golden path only after mapping confirmation", async () => {
     const runWorkspaceSandbox = vi.fn(async () => workspaceSandboxRun())
     const api = fakeApi({ runWorkspaceSandbox })
@@ -168,7 +298,11 @@ describe("CLI commands", () => {
       ok: true,
       data: {
         harness: { status: "waiting_for_approval" },
-        proof: { unchanged: true, persistenceWrites: 0, externalWriteAttempts: 0 },
+        proof: {
+          unchanged: true,
+          persistenceWrites: 0,
+          externalWriteAttempts: 0,
+        },
       },
     })
   })
@@ -830,6 +964,8 @@ async function command(
 
 function fakeApi(overrides: Partial<ControlApi> = {}) {
   return {
+    getContextWorkspaceStatus: vi.fn(async () => workspaceStatus()),
+    setContextWorkspaceConfiguration: vi.fn(async () => workspaceStatus()),
     runWorkspaceSandbox: vi.fn(async () => workspaceSandboxRun()),
     createSandboxSession: vi.fn(async () => sandboxSession()),
     listAgents: vi.fn(async () => ({ agents: [] })),
@@ -914,6 +1050,48 @@ function fakeApi(overrides: Partial<ControlApi> = {}) {
       request: { id: controlId },
     })),
     ...overrides,
+  }
+}
+
+function workspaceStatus(
+  overrides: {
+    configurationVersion?: number
+    provider?: "off" | "supermemory"
+    readiness?: "disabled" | "not_ready"
+    sandboxEnabled?: boolean
+  } = {}
+) {
+  const provider = overrides.provider ?? "off"
+  const readiness =
+    overrides.readiness ?? (provider === "off" ? "disabled" : "not_ready")
+  return {
+    schemaVersion: 1 as const,
+    companyId,
+    provider,
+    sandboxEnabled: overrides.sandboxEnabled ?? true,
+    readiness,
+    configurationVersion: overrides.configurationVersion ?? 1,
+    updatedAt: "2026-07-16T20:00:00.000Z",
+    providerStatus: {
+      operational: false,
+      status: readiness,
+      detailCode:
+        provider === "off"
+          ? ("context_off" as const)
+          : ("provider_not_operational" as const),
+    },
+    indexingCoverage: {
+      status: "unavailable" as const,
+      eligibleRecordCount: null,
+      indexedRecordCount: null,
+      percent: null,
+    },
+    synchronization: {
+      status: "unavailable" as const,
+      lagSeconds: null,
+      lastSynchronizedAt: null,
+      recentErrorCount: null,
+    },
   }
 }
 

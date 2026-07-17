@@ -3,6 +3,43 @@ import { Annotation } from "@langchain/langgraph"
 export type RuntimeMode = "mock" | "dry_run" | "shadow"
 export type RuntimeOperatingMode = "sandbox" | "live"
 
+export type RuntimeSandboxCompatibilityInput = {
+  sandboxEnabled?: unknown
+  operatingMode?: unknown
+}
+
+export function resolveRuntimeSandboxEnabled(
+  input: RuntimeSandboxCompatibilityInput
+): boolean {
+  const hasSandboxValue = input.sandboxEnabled !== undefined
+  const hasOperatingMode = input.operatingMode !== undefined
+  const sandboxValue = input.sandboxEnabled
+  const operatingMode = input.operatingMode
+
+  if (hasSandboxValue && typeof sandboxValue !== "boolean") return true
+  if (
+    hasOperatingMode &&
+    operatingMode !== "sandbox" &&
+    operatingMode !== "live"
+  ) {
+    return true
+  }
+
+  if (typeof sandboxValue === "boolean") {
+    if (!hasOperatingMode) return sandboxValue
+    const legacyValue = operatingMode === "sandbox"
+    return legacyValue === sandboxValue ? sandboxValue : true
+  }
+
+  if (operatingMode === "sandbox") return true
+  if (operatingMode === "live") return false
+  return true
+}
+
+export function runtimeOperatingMode(sandboxEnabled: boolean): RuntimeOperatingMode {
+  return sandboxEnabled ? "sandbox" : "live"
+}
+
 export type RuntimeStatus =
   | "created"
   | "bindings_resolved"
@@ -137,6 +174,7 @@ export const RuntimeStateAnnotation = Annotation.Root({
   workflowRunId: Annotation<string>,
   manifestDigest: Annotation<string>,
   mode: Annotation<RuntimeMode>,
+  sandboxEnabled: Annotation<boolean>,
   operatingMode: Annotation<RuntimeOperatingMode>,
   trigger: Annotation<RuntimeTrigger>,
   status: Annotation<RuntimeStatus>,
@@ -198,14 +236,25 @@ export type RuntimeStartInput = Pick<
   | "manifestDigest"
   | "mode"
   | "trigger"
-> & { operatingMode?: RuntimeOperatingMode }
+> & {
+  sandboxEnabled?: boolean
+  operatingMode?: RuntimeOperatingMode
+}
 
 export function createRuntimeStartState(
   input: RuntimeStartInput
 ): RuntimeStateUpdate {
+  const sandboxEnabled = resolveRuntimeSandboxEnabled(input)
   return {
-    ...input,
-    operatingMode: input.operatingMode ?? "live",
+    companyId: input.companyId,
+    actorId: input.actorId,
+    workflowDefinitionId: input.workflowDefinitionId,
+    workflowRunId: input.workflowRunId,
+    manifestDigest: input.manifestDigest,
+    mode: input.mode,
+    trigger: input.trigger,
+    sandboxEnabled,
+    operatingMode: runtimeOperatingMode(sandboxEnabled),
     status: "created",
     data: {},
     sourceRefs: [],

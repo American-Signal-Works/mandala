@@ -3,6 +3,7 @@ import {
   authorizeCompanyRole,
   permissionForWorkflowDecision,
   type CompanyRole,
+  type ContextPacketProvenance,
 } from "@workspace/control-plane";
 import type { WorkflowSpec } from "./schema";
 import { hashWorkflowValue, workflowUuidFor } from "./hash";
@@ -97,6 +98,7 @@ export type WorkflowContextPacketRecord = {
   sources: Array<Record<string, unknown>>;
   facts: Record<string, unknown>;
   memoryRefs: Array<Record<string, unknown>>;
+  operationalContext?: ContextPacketProvenance;
   freshnessState: "fresh" | "stale" | "unknown";
   warnings: string[];
   createdAt: string;

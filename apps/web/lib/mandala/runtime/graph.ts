@@ -18,6 +18,8 @@ import {
   RuntimeStateAnnotation,
   checkpointCorrelation,
   createRuntimeStartState,
+  resolveRuntimeSandboxEnabled,
+  runtimeOperatingMode,
   runtimeThreadConfig,
   type RuntimeActionResult,
   type RuntimeAgentJudgment,
@@ -52,6 +54,7 @@ export type RuntimeAgentJudgmentHandler = (input: {
     | "workflowDefinitionId"
     | "workflowRunId"
     | "mode"
+    | "sandboxEnabled"
     | "operatingMode"
     | "trigger"
     | "warnings"
@@ -171,7 +174,10 @@ export function createRuntimeHandlerRegistry(input: {
           workflowDefinitionId: state.workflowDefinitionId,
           workflowRunId: state.workflowRunId,
           mode: state.mode,
-          operatingMode: state.operatingMode,
+          sandboxEnabled: resolveRuntimeSandboxEnabled(state),
+          operatingMode: runtimeOperatingMode(
+            resolveRuntimeSandboxEnabled(state)
+          ),
           trigger: state.trigger,
           warnings: state.warnings,
         },
@@ -237,7 +243,7 @@ export function createRuntimeHandlerRegistry(input: {
         }
       }
       if (
-        state.operatingMode === "sandbox" &&
+        resolveRuntimeSandboxEnabled(state) &&
         dependencies.mutationBoundary?.persistence !== "ephemeral"
       ) {
         return {
@@ -332,7 +338,7 @@ export function createRuntimeHandlerRegistry(input: {
         }
       }
       if (
-        state.operatingMode === "sandbox" &&
+        resolveRuntimeSandboxEnabled(state) &&
         dependencies.mutationBoundary?.externalActions !== "simulate"
       ) {
         return {
@@ -518,7 +524,8 @@ function runtimeRuleContext(state: RuntimeState): Record<string, unknown> {
       companyId: state.companyId,
       workflowRunId: state.workflowRunId,
       mode: state.mode,
-      operatingMode: state.operatingMode,
+      sandboxEnabled: resolveRuntimeSandboxEnabled(state),
+      operatingMode: runtimeOperatingMode(resolveRuntimeSandboxEnabled(state)),
       warnings: state.warnings,
       sourceRefs: state.sourceRefs,
     },

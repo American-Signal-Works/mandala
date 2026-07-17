@@ -202,8 +202,10 @@ describe("terminal renderer", () => {
     const header = renderHeader(
       {
         companyName: "Mandala Local Demo",
+        contextStatus: "Supermemory (not ready)",
         inboxCount: 3,
         mode: "mock",
+        sandboxStatus: "On",
         userEmail: "seed@example.com",
         warningCount: 2,
       },
@@ -214,6 +216,8 @@ describe("terminal renderer", () => {
     expect(header).toContain("Mandala")
     expect(header).toContain("Mandala Local Demo")
     expect(header).toContain("Sandbox")
+    expect(header).toContain("Context: Supermemory (not ready)")
+    expect(header).toContain("Sandbox: On")
     expect(header).toContain("3 items need review · 2 with warnings")
     expect(
       renderHeader({}, { color: false, width: 40 }).split("\n").slice(0, 7)
@@ -233,6 +237,24 @@ describe("terminal renderer", () => {
         80
       )
     ).toBe("3 items need your review - 2 have warnings.  /inbox")
+  })
+
+  it("does not present legacy local mode as server Sandbox status", () => {
+    const header = renderHeader(
+      {
+        companyName: "Acme",
+        contextStatus: "Off",
+        mode: "mock",
+        sandboxStatus: "Off",
+        userEmail: "operator@example.com",
+      },
+      { color: false, width: 80 }
+    )
+
+    expect(header).toContain("Acme")
+    expect(header).toContain("Context: Off")
+    expect(header).toContain("Sandbox: Off")
+    expect(header).not.toContain("Acme · Sandbox")
   })
 
   it("renders a clear real-data Sandbox boundary and candidate summary", () => {

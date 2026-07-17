@@ -47,6 +47,7 @@ describe("slash command registry", () => {
       "/agent-rollback",
       "/inbox",
       "/purchase-requests",
+      "/settings",
       "/sandbox",
       "/fixtures",
       "/run-fixture",
@@ -178,6 +179,105 @@ describe("interactive TUI", () => {
     ])
     expect(stdout.value).toContain("Temporary approved")
     expect(stdout.value).toContain("Nothing was written or sent")
+  })
+
+  it("guides audited workspace settings and confirms safety weakening", async () => {
+    const base = fakeExecute()
+    const status = {
+      schemaVersion: 1,
+      companyId,
+      provider: "off",
+      sandboxEnabled: true,
+      readiness: "disabled",
+      configurationVersion: 4,
+      updatedAt: "2026-07-16T20:00:00.000Z",
+      providerStatus: {
+        operational: false,
+        status: "disabled",
+        detailCode: "context_off",
+      },
+      indexingCoverage: {
+        status: "unavailable",
+        eligibleRecordCount: null,
+        indexedRecordCount: null,
+        percent: null,
+      },
+      synchronization: {
+        status: "unavailable",
+        lagSeconds: null,
+        lastSynchronizedAt: null,
+        recentErrorCount: null,
+      },
+    }
+    const execute = vi.fn(async (args: string[]): Promise<CliCommandResult> => {
+      if (args[0] === "context" && args[1] === "status")
+        return { ok: true, data: status }
+      if (args[0] === "context" && args[1] === "set")
+        return {
+          ok: true,
+          data: {
+            ...status,
+            provider: "supermemory",
+            readiness: "not_ready",
+            configurationVersion: 5,
+          },
+        }
+      return base(args)
+    }) as NonNullable<TuiDependencies["execute"]> & ReturnType<typeof vi.fn>
+    const stdout = new CaptureStream()
+    const stderr = new CaptureStream()
+    const selections = ["context", "supermemory", "continue"]
+    const prompts: string[] = []
+    const ask = vi.fn(async () => "Approved provider evaluation")
+    const controller = createTuiSessionFactory(
+      { execute },
+      stdout,
+      stderr
+    )({
+      append: (value) => stdout.write(`${value}\n`),
+      ask,
+      choose: async (prompt, choices) => {
+        prompts.push(prompt)
+        const selected = selections.shift() ?? null
+        if (selected)
+          expect(choices.map(({ value }) => value)).toContain(selected)
+        return selected
+      },
+      clearScreen: () => undefined,
+      onSnapshot: () => undefined,
+      renderOptions: { color: false, width: 100 },
+    })
+
+    await controller.start()
+    await controller.handleLine("/settings")
+
+    expect(prompts).toEqual([
+      "Choose a workspace setting",
+      "Choose Context provider",
+      "This change weakens workspace safety. Continue?",
+    ])
+    expect(ask).toHaveBeenCalledWith("Reason for this audited change: ")
+    expect(commandCalls(execute)).toContainEqual([
+      "context",
+      "set",
+      "supermemory",
+      "--confirm",
+      "--expected-version",
+      "4",
+      "--reason",
+      "Approved provider evaluation",
+    ])
+    expect(stdout.value).toContain("Supermemory (not ready)")
+    expect(stdout.value).toContain("unavailable")
+
+    selections.push("sandbox", "off", "cancel")
+    await controller.handleLine("/settings")
+    expect(
+      commandCalls(execute).some(
+        (args) => args[0] === "sandbox" && args[1] === "set"
+      )
+    ).toBe(false)
+    expect(stdout.value).toContain("Workspace settings were not changed")
   })
 
   it("uses a safe nested fixture picker before running sandbox data", async () => {
@@ -683,10 +783,73 @@ describe("interactive TUI", () => {
     expect(stdout.value).toContain("Example Company")
     expect(stdout.value).toContain("Active work")
     expect(stdout.value).toContain("Open the inbox to review work")
+    expect(stdout.value).toContain("Context: Off")
+    expect(stdout.value).toContain("Sandbox: On")
     expect(commandCalls(execute).slice(0, 2)).toEqual([
       ["context"],
       ["work", "list"],
     ])
+    expect(commandCalls(execute)).toContainEqual(["context", "status"])
+  })
+
+  it("keeps home available when workspace settings status cannot load", async () => {
+    const base = fakeExecute()
+    const execute = vi.fn(async (args: string[]): Promise<CliCommandResult> => {
+      if (args[0] === "context" && args[1] === "status") {
+        return {
+          ok: false,
+          error: new CliError(
+            "context_workspace_settings_failed",
+            "Settings unavailable."
+          ),
+        }
+      }
+      return base(args)
+    }) as NonNullable<TuiDependencies["execute"]> & ReturnType<typeof vi.fn>
+
+    const { stdout } = await session("/exit\n", execute)
+
+    expect(stdout.value).toContain("Home")
+    expect(stdout.value).toContain("Active work")
+    expect(stdout.value).toContain("Context: Unavailable")
+    expect(stdout.value).toContain("Sandbox: Unavailable")
+  })
+
+  it("does not let legacy local mode contradict server Sandbox Off", async () => {
+    const base = fakeExecute()
+    const execute = vi.fn(async (args: string[]): Promise<CliCommandResult> => {
+      const result = await base(args)
+      if (args[0] === "context" && args[1] === "status" && result.ok) {
+        return {
+          ok: true,
+          data: {
+            ...(result.data as Record<string, unknown>),
+            sandboxEnabled: false,
+          },
+        }
+      }
+      return result
+    }) as NonNullable<TuiDependencies["execute"]> & ReturnType<typeof vi.fn>
+
+    const { stdout } = await session("/exit\n", execute)
+
+    expect(stdout.value).toContain("Example Company")
+    expect(stdout.value).toContain("Context: Off")
+    expect(stdout.value).toContain("Sandbox: Off")
+    expect(stdout.value).not.toContain("Example Company · Sandbox")
+  })
+
+  it("refreshes persistent workspace settings when the header redraws", async () => {
+    const execute = fakeExecute()
+    const { stdout } = await session("/clear\n/exit\n", execute)
+
+    expect(
+      commandCalls(execute).filter(
+        (args) => args[0] === "context" && args[1] === "status"
+      )
+    ).toHaveLength(2)
+    expect(stdout.value.match(/Context: Off/g)).toHaveLength(2)
+    expect(stdout.value.match(/Sandbox: On/g)).toHaveLength(2)
   })
 
   it("renders explicit inbox row ownership and a focused item overview", async () => {
@@ -905,7 +1068,8 @@ describe("interactive TUI", () => {
       execute
     )
 
-    expect(stdout.value).toContain("Other Company · Sandbox")
+    expect(stdout.value).toContain("Other Company")
+    expect(stdout.value).not.toContain("Other Company · Sandbox")
     expect(stdout.value).toContain("(none) · Sandbox")
     expect(commandCalls(execute)).toContainEqual(["auth", "logout"])
   })
@@ -1692,6 +1856,37 @@ function fakeExecute(
   let detailState = workItemDetail(options.warning) as MutableWorkItemDetail
   let currentStatus = detailState.item.status
   return vi.fn(async (args: string[]): Promise<CliCommandResult> => {
+    if (args[0] === "context" && args[1] === "status") {
+      return {
+        ok: true,
+        data: {
+          schemaVersion: 1,
+          companyId: activeCompanyId,
+          provider: "off",
+          sandboxEnabled: true,
+          readiness: "disabled",
+          configurationVersion: 1,
+          updatedAt: "2026-07-16T20:00:00.000Z",
+          providerStatus: {
+            operational: false,
+            status: "disabled",
+            detailCode: "context_off",
+          },
+          indexingCoverage: {
+            status: "unavailable",
+            eligibleRecordCount: null,
+            indexedRecordCount: null,
+            percent: null,
+          },
+          synchronization: {
+            status: "unavailable",
+            lagSeconds: null,
+            lastSynchronizedAt: null,
+            recentErrorCount: null,
+          },
+        },
+      }
+    }
     if (args[0] === "context") {
       return {
         ok: true,
@@ -1899,6 +2094,8 @@ function agentControlApi(
     throw new Error("This API method is not used by the TUI test.")
   }
   return {
+    getContextWorkspaceStatus: unsupported,
+    setContextWorkspaceConfiguration: unsupported,
     runWorkspaceSandbox: unsupported,
     createSandboxSession: unsupported,
     listAgents: vi.fn(async () => ({ agents: [agent] })),

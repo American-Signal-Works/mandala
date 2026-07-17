@@ -13,7 +13,9 @@
     "format": "prettier --write \"**/*.{ts,tsx}\"",
     "pretypecheck": "pnpm --dir ../.. --filter @workspace/control-plane build",
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:context-local-e2e": "eval \"$(cd ../.. && supabase status -o env)\" && RUN_CONTEXT_LOCAL_E2E=1 NEXT_PUBLIC_SUPABASE_URL=\"$API_URL\" NEXT_PUBLIC_SUPABASE_ANON_KEY=\"$ANON_KEY\" SUPABASE_SERVICE_ROLE_KEY=\"$SERVICE_ROLE_KEY\" vitest run app/api/mandala/context/settings/local-supabase.e2e.test.ts",
+    "test:context-index-local-e2e": "eval \"$(cd ../.. && supabase status -o env)\" && RUN_CONTEXT_INDEX_LOCAL_E2E=1 CONTEXT_INDEX_LOCAL_DB_URL=\"$DB_URL\" NEXT_PUBLIC_SUPABASE_URL=\"$API_URL\" NEXT_PUBLIC_SUPABASE_ANON_KEY=\"$ANON_KEY\" SUPABASE_SERVICE_ROLE_KEY=\"$SERVICE_ROLE_KEY\" vitest run lib/mandala/context/indexing/local-supabase.e2e.test.ts"
   },
   "dependencies": {
     "@ai-sdk/gateway": "^3.0.105",

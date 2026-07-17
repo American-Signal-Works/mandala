@@ -2,6 +2,77 @@ import { describe, expect, it, vi } from "vitest"
 import { ApiClient } from "../src/api-client.js"
 
 describe("API client", () => {
+  it("reads and updates bounded workspace Context settings", async () => {
+    const status = {
+      schemaVersion: 1,
+      companyId: "20000000-0000-4000-8000-000000000001",
+      provider: "supermemory",
+      sandboxEnabled: true,
+      readiness: "not_ready",
+      configurationVersion: 2,
+      updatedAt: "2026-07-16T20:00:00.000Z",
+      providerStatus: {
+        operational: false,
+        status: "not_ready",
+        detailCode: "provider_not_operational",
+      },
+      indexingCoverage: {
+        status: "unavailable",
+        eligibleRecordCount: null,
+        indexedRecordCount: null,
+        percent: null,
+      },
+      synchronization: {
+        status: "unavailable",
+        lagSeconds: null,
+        lastSynchronizedAt: null,
+        recentErrorCount: null,
+      },
+    }
+    const request = vi
+      .fn<typeof fetch>()
+      .mockResolvedValueOnce(Response.json(status))
+      .mockResolvedValueOnce(
+        Response.json({ ...status, sandboxEnabled: false })
+      )
+    const client = new ApiClient(
+      "http://127.0.0.1:3000",
+      { getAccessToken: vi.fn().mockResolvedValue("access") },
+      request
+    )
+
+    await expect(
+      client.getContextWorkspaceStatus(status.companyId)
+    ).resolves.toMatchObject({
+      provider: "supermemory",
+      readiness: "not_ready",
+      indexingCoverage: { status: "unavailable", percent: null },
+      synchronization: { status: "unavailable", lagSeconds: null },
+    })
+    await client.setContextWorkspaceConfiguration({
+      companyId: status.companyId,
+      sandboxEnabled: false,
+      expectedConfigurationVersion: 2,
+      reason: "Approved temporary exception",
+    })
+
+    expect(request.mock.calls[0]?.[0]).toBe(
+      `http://127.0.0.1:3000/api/mandala/context/settings?companyId=${status.companyId}`
+    )
+    expect(request.mock.calls[1]?.[0]).toBe(
+      "http://127.0.0.1:3000/api/mandala/context/settings"
+    )
+    expect(request.mock.calls[1]?.[1]?.method).toBe("PATCH")
+    expect(JSON.parse(String(request.mock.calls[1]?.[1]?.body))).toEqual({
+      companyId: status.companyId,
+      sandboxEnabled: false,
+      expectedConfigurationVersion: 2,
+      reason: "Approved temporary exception",
+    })
+    expect(String(request.mock.calls[1]?.[1]?.body)).not.toContain("credential")
+    expect(String(request.mock.calls[1]?.[1]?.body)).not.toContain("readiness")
+  })
+
   it("posts explicit contextual chat state without granting mutation authority", async () => {
     const request = vi.fn<typeof fetch>().mockResolvedValue(
       Response.json({

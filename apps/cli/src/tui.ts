@@ -119,6 +119,11 @@ type ContextualConversationResult = {
   result?: ContextualChatResponse
 }
 
+type WorkspaceHeaderSettings = {
+  contextStatus: string
+  sandboxStatus: string
+}
+
 const uuidPattern =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i
 
@@ -309,16 +314,22 @@ class TuiSession {
     }
 
     this.updateCompanyFromContext(context.data)
-    const inbox =
+    const [inbox, settings] =
       isAuthenticatedContext(context.data) && this.currentCompanyId
-        ? await this.loadInbox()
-        : undefined
+        ? await Promise.all([
+            this.loadInbox(),
+            this.loadWorkspaceHeaderSettings(),
+          ])
+        : [undefined, undefined]
     if (inbox?.error && isAuthenticationError(inbox.error)) {
       this.writeSignedOutState(inbox.error)
       return
     }
     this.write(
-      renderHeader(headerContext(context.data, inbox), this.renderOptions)
+      renderHeader(
+        headerContext(context.data, inbox, settings),
+        this.renderOptions
+      )
     )
     if (inbox?.error) {
       this.writeError(inbox.error)
@@ -581,6 +592,10 @@ class TuiSession {
       case "/sandbox":
         requireNoArguments(args, definition.usage)
         await this.showSandbox()
+        return
+      case "/settings":
+        requireNoArguments(args, definition.usage)
+        await this.showWorkspaceSettings()
         return
       case "/fixtures":
         requireNoArguments(args, definition.usage)
@@ -1926,6 +1941,175 @@ class TuiSession {
     this.write(renderHumanResult(result.data, this.renderOptions))
   }
 
+  private async showWorkspaceSettings(): Promise<void> {
+    const status = await this.runCommand(["context", "status"])
+    if (!status.ok) {
+      this.writeError(status.error)
+      return
+    }
+    const current = asRecord(status.data)
+    const provider = stringValue(current?.provider)
+    const sandboxEnabled = current?.sandboxEnabled
+    const configurationVersion = numericValue(current?.configurationVersion)
+    if (
+      !current ||
+      (provider !== "off" && provider !== "supermemory") ||
+      typeof sandboxEnabled !== "boolean" ||
+      !Number.isInteger(configurationVersion) ||
+      !configurationVersion ||
+      configurationVersion < 1
+    ) {
+      this.writeError(
+        new CliError(
+          "invalid_api_response",
+          "The server returned incomplete workspace settings."
+        )
+      )
+      return
+    }
+
+    this.write(workspaceSettingsSummary(current, this.renderOptions))
+    if (!this.io.choose) {
+      this.write(
+        renderAssistantMessage(
+          "Use the non-interactive context and sandbox set commands to change these settings.",
+          this.renderOptions
+        )
+      )
+      return
+    }
+
+    const setting = await this.io.choose("Choose a workspace setting", [
+      {
+        value: "context",
+        label: "Context provider",
+        description: provider === "off" ? "Off" : "Supermemory · not ready",
+      },
+      {
+        value: "sandbox",
+        label: "Sandbox safety",
+        description: sandboxEnabled ? "On" : "Off",
+      },
+      { value: "cancel", label: "Back", description: "Change nothing" },
+    ])
+    if (!setting || setting === "cancel") return
+
+    let command: string[]
+    let weakensSafety = false
+    if (setting === "context") {
+      const nextProvider = await this.io.choose("Choose Context provider", [
+        {
+          value: "off",
+          label: "Off",
+          description: "Do not retrieve or index external Context",
+        },
+        {
+          value: "supermemory",
+          label: "Supermemory · not ready",
+          description: "Save the selection only; no provider call is made",
+        },
+        { value: "cancel", label: "Cancel", description: "Change nothing" },
+      ])
+      if (!nextProvider || nextProvider === "cancel") return
+      if (nextProvider === provider) {
+        this.write(
+          renderAssistantMessage(
+            `Context is already ${nextProvider === "off" ? "Off" : "set to Supermemory (not ready)"}. Nothing changed.`,
+            this.renderOptions
+          )
+        )
+        return
+      }
+      weakensSafety = provider === "off" && nextProvider === "supermemory"
+      command = ["context", "set", nextProvider]
+    } else {
+      const nextSandbox = await this.io.choose("Choose Sandbox safety", [
+        {
+          value: "on",
+          label: "On",
+          description: "Keep the write firewall enabled",
+        },
+        {
+          value: "off",
+          label: "Off",
+          description: "Remove this workspace safety control",
+        },
+        { value: "cancel", label: "Cancel", description: "Change nothing" },
+      ])
+      if (!nextSandbox || nextSandbox === "cancel") return
+      const nextEnabled = nextSandbox === "on"
+      if (nextEnabled === sandboxEnabled) {
+        this.write(
+          renderAssistantMessage(
+            `Sandbox safety is already ${nextEnabled ? "On" : "Off"}. Nothing changed.`,
+            this.renderOptions
+          )
+        )
+        return
+      }
+      weakensSafety = sandboxEnabled && !nextEnabled
+      command = ["sandbox", "set", nextSandbox]
+    }
+
+    if (weakensSafety) {
+      const confirmation = await this.io.choose(
+        "This change weakens workspace safety. Continue?",
+        [
+          {
+            value: "cancel",
+            label: "Cancel",
+            description: "Keep the safer current setting",
+          },
+          {
+            value: "continue",
+            label: "Continue",
+            description: "A reason is required and the change is audited",
+          },
+        ]
+      )
+      if (confirmation !== "continue") {
+        this.write(
+          renderAssistantMessage(
+            "Cancelled. Workspace settings were not changed.",
+            this.renderOptions
+          )
+        )
+        return
+      }
+      command.push("--confirm")
+    }
+
+    const reason = (
+      await this.io.ask("Reason for this audited change: ")
+    )?.trim()
+    if (!reason || reason.length > 1_000) {
+      this.writeError(
+        new CliError(
+          "invalid_arguments",
+          "Enter a reason from 1 to 1,000 characters. Nothing was changed."
+        )
+      )
+      return
+    }
+    const result = await this.runCommand([
+      ...command,
+      "--expected-version",
+      String(configurationVersion),
+      "--reason",
+      reason,
+    ])
+    if (!result.ok) {
+      this.writeError(result.error)
+      return
+    }
+    const updated = asRecord(result.data)
+    this.write(
+      updated
+        ? workspaceSettingsSummary(updated, this.renderOptions)
+        : renderHumanResult(result.data, this.renderOptions)
+    )
+  }
+
   private async showHeader(): Promise<void> {
     const result = await this.runCommand(["context"])
     if (!result.ok) {
@@ -1935,16 +2119,22 @@ class TuiSession {
       return
     }
     this.updateCompanyFromContext(result.data)
-    const inbox =
+    const [inbox, settings] =
       isAuthenticatedContext(result.data) && this.currentCompanyId
-        ? await this.loadInbox()
-        : undefined
+        ? await Promise.all([
+            this.loadInbox(),
+            this.loadWorkspaceHeaderSettings(),
+          ])
+        : [undefined, undefined]
     if (inbox?.error && isAuthenticationError(inbox.error)) {
       this.writeSignedOutState(inbox.error)
       return
     }
     this.write(
-      renderHeader(headerContext(result.data, inbox), this.renderOptions)
+      renderHeader(
+        headerContext(result.data, inbox, settings),
+        this.renderOptions
+      )
     )
     if (inbox?.error) {
       this.writeError(inbox.error)
@@ -2035,6 +2225,38 @@ class TuiSession {
       items,
       itemCount: items.length,
       warningCount: countItemsWithWarnings(items),
+    }
+  }
+
+  private async loadWorkspaceHeaderSettings(): Promise<WorkspaceHeaderSettings> {
+    const unavailable = {
+      contextStatus: "Unavailable",
+      sandboxStatus: "Unavailable",
+    }
+    const result = await this.runCommand(["context", "status"])
+    if (!result.ok) return unavailable
+    const status = asRecord(result.data)
+    if (!status) return unavailable
+    const provider = stringValue(status.provider)
+    const readiness = stringValue(status.readiness)
+    const sandboxEnabled = status.sandboxEnabled
+    if (
+      (provider !== "off" && provider !== "supermemory") ||
+      typeof sandboxEnabled !== "boolean"
+    ) {
+      return unavailable
+    }
+    const contextStatus =
+      provider === "off"
+        ? "Off"
+        : readiness === "ready"
+          ? "Supermemory"
+          : readiness === "error"
+            ? "Supermemory (error)"
+            : "Supermemory (not ready)"
+    return {
+      contextStatus,
+      sandboxStatus: sandboxEnabled ? "On" : "Off",
     }
   }
 
@@ -3296,15 +3518,18 @@ function isAuthenticatedContext(value: unknown): boolean {
 
 function headerContext(
   value: unknown,
-  inbox?: { itemCount?: number; warningCount?: number }
+  inbox?: { itemCount?: number; warningCount?: number },
+  settings?: WorkspaceHeaderSettings
 ): TerminalHeaderContext {
   const source = asRecord(value)
   const company = asRecord(source?.company)
   const user = asRecord(source?.user)
   return {
     companyName: stringValue(company?.name) ?? null,
+    contextStatus: settings?.contextStatus ?? null,
     inboxCount: inbox?.itemCount ?? null,
     mode: stringValue(source?.mode) ?? "sandbox",
+    sandboxStatus: settings?.sandboxStatus ?? null,
     userEmail: stringValue(user?.email) ?? null,
     warningCount: inbox?.warningCount ?? null,
   }
@@ -3336,6 +3561,32 @@ function stringValue(value: unknown): string | undefined {
 
 function numericValue(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined
+}
+
+function workspaceSettingsSummary(
+  status: Record<string, unknown>,
+  options: RenderOptions
+): string {
+  const provider = stringValue(status.provider)
+  const readiness = stringValue(status.readiness)
+  const sandboxEnabled = status.sandboxEnabled === true
+  const version = numericValue(status.configurationVersion)
+  return renderHumanResult(
+    {
+      context: {
+        provider:
+          provider === "supermemory" ? "Supermemory (not ready)" : "Off",
+        readiness: readiness ?? "unavailable",
+        providerOperational:
+          asRecord(status.providerStatus)?.operational === true,
+        indexingCoverage: "unavailable",
+        synchronizationLag: "unavailable",
+      },
+      sandboxSafety: sandboxEnabled ? "On" : "Off",
+      configurationVersion: version ?? "unavailable",
+    },
+    { ...options, title: "Workspace settings" }
+  )
 }
 
 function formatCount(value: number | undefined): string {

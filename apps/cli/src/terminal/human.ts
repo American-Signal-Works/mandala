@@ -60,8 +60,10 @@ export type ReviewWorkspaceTab = {
 
 export type TerminalHeaderContext = {
   companyName?: string | null
+  contextStatus?: string | null
   inboxCount?: number | null
   mode?: string | null
+  sandboxStatus?: string | null
   userEmail?: string | null
   warningCount?: number | null
 }
@@ -334,8 +336,10 @@ export function renderHeader(
   const width = normalizeTerminalWidth(resolved.width)
   const safe = redactSecrets({
     companyName: context.companyName ?? null,
+    contextStatus: context.contextStatus ?? null,
     inboxCount: context.inboxCount ?? null,
     mode: context.mode ?? "sandbox",
+    sandboxStatus: context.sandboxStatus ?? null,
     userEmail: context.userEmail ?? null,
     warningCount: context.warningCount ?? null,
   }) as Record<string, unknown>
@@ -343,7 +347,19 @@ export function renderHeader(
   const mode = environmentLabel(displayContextValue(safe.mode))
   const user = displayContextValue(safe.userEmail)
   const inbox = inboxLabel(safe.inboxCount, safe.warningCount, user)
-  const details = ["Mandala", `${company} · ${mode}`, user, inbox]
+  const contextStatus = displayContextValue(safe.contextStatus)
+  const sandboxStatus = displayContextValue(safe.sandboxStatus)
+  const hasServerSettings =
+    context.contextStatus != null || context.sandboxStatus != null
+  const details = [
+    "Mandala",
+    hasServerSettings ? company : `${company} · ${mode}`,
+    user,
+    inbox,
+  ]
+  if (hasServerSettings) {
+    details.push(`Context: ${contextStatus}`, `Sandbox: ${sandboxStatus}`)
+  }
   const logoWidth = Math.max(...TERMINAL_LOGO.map((line) => line.length))
   const detailOffset = logoWidth + 3
   const renderDetail = (detail: string, index: number, maxWidth: number) => {

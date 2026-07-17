@@ -18,6 +18,8 @@ import {
   contextualChatRequestSchema,
   contextualChatResponseSchema,
   contextualChatStreamEventSchema,
+  contextWorkspaceConfigurationRequestSchema,
+  contextWorkspaceStatusSchema,
   decisionRequestSchema,
   decisionResponseSchema,
   executionRequestSchema,
@@ -49,6 +51,8 @@ import {
   type ContextualChatRequest,
   type ContextualChatResponse,
   type ContextualChatStreamEvent,
+  type ContextWorkspaceConfigurationRequest,
+  type ContextWorkspaceStatus,
   type DecisionData,
   type DecisionRequest,
   type ExecutionData,
@@ -76,6 +80,10 @@ type AgentInstallData = z.infer<typeof agentInstallResponseSchema>
 type AgentTestRunData = z.infer<typeof agentTestRunResponseSchema>
 
 export interface ControlApi {
+  getContextWorkspaceStatus(companyId: string): Promise<ContextWorkspaceStatus>
+  setContextWorkspaceConfiguration(
+    request: ContextWorkspaceConfigurationRequest
+  ): Promise<ContextWorkspaceStatus>
   runWorkspaceSandbox(
     request: WorkspaceSandboxRunRequest
   ): Promise<WorkspaceSandboxRunResponse>
@@ -156,6 +164,29 @@ export class ApiClient implements ControlApi {
     private readonly fetchImplementation: typeof fetch = fetch
   ) {
     this.baseUrl = baseUrl.replace(/\/$/, "")
+  }
+
+  getContextWorkspaceStatus(
+    companyId: string
+  ): Promise<ContextWorkspaceStatus> {
+    const query = new URLSearchParams({ companyId })
+    return this.request(
+      `/api/mandala/context/settings?${query.toString()}`,
+      contextWorkspaceStatusSchema
+    )
+  }
+
+  setContextWorkspaceConfiguration(
+    request: ContextWorkspaceConfigurationRequest
+  ): Promise<ContextWorkspaceStatus> {
+    return this.request(
+      "/api/mandala/context/settings",
+      contextWorkspaceStatusSchema,
+      {
+        method: "PATCH",
+        body: contextWorkspaceConfigurationRequestSchema.parse(request),
+      }
+    )
   }
 
   runWorkspaceSandbox(
@@ -547,7 +578,7 @@ export class ApiClient implements ControlApi {
 }
 
 type RequestOptions = {
-  method?: "GET" | "POST"
+  method?: "GET" | "PATCH" | "POST"
   body?: unknown
   accept?: string
   signal?: AbortSignal
