@@ -4,6 +4,7 @@ import {
   type WorkspaceCapabilityMappingSpec,
 } from "@workspace/control-plane"
 import type { WorkflowSupabaseClient } from "../workflows"
+import { connectorAccessSchema } from "../connectors"
 import {
   WorkspaceDataProviderError,
   type WorkspaceDataStore,
@@ -204,7 +205,7 @@ export class SupabaseWorkspaceDataStore implements WorkspaceDataStore {
       .parse(rowsOrThrow(await sourceQuery))
     if (sources.length === 0) return []
     const healthySources = sources.filter(
-      ({ sync_status }) => sync_status === "idle"
+      (source) => source.sync_status === "idle" && hasReadAccess(source.config)
     )
     if (healthySources.length === 0) return []
     const sourceById = new Map(
@@ -295,7 +296,7 @@ export class SupabaseWorkspaceDataStore implements WorkspaceDataStore {
           3_600_000
         : Number.POSITIVE_INFINITY
       const status: WorkspaceSourceCoverage["status"] =
-        source.sync_status !== "idle"
+        !hasReadAccess(source.config) || source.sync_status !== "idle"
           ? "unavailable"
           : catalog?.profile_status === "drifted"
             ? "schema_drift"
@@ -314,16 +315,26 @@ export class SupabaseWorkspaceDataStore implements WorkspaceDataStore {
         freshestObservedAt,
         ...(status === "unavailable"
           ? {
-              error:
-                source.last_sync_error ??
-                (source.sync_status === "syncing"
-                  ? "Source sync is still running."
-                  : "Source sync is unavailable."),
+              error: !hasReadAccess(source.config)
+                ? "Source is not connected with read permission."
+                : (source.last_sync_error ??
+                  (source.sync_status === "syncing"
+                    ? "Source sync is still running."
+                    : "Source sync is unavailable.")),
             }
           : {}),
       }
     })
   }
+}
+
+function hasReadAccess(config: Record<string, unknown>): boolean {
+  const access = connectorAccessSchema.safeParse(config.access ?? {})
+  return (
+    access.success &&
+    access.data.status === "connected" &&
+    access.data.permissions.read
+  )
 }
 
 function advertisesEvidenceRole(
