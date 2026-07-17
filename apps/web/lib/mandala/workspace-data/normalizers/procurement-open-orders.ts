@@ -69,7 +69,15 @@ function candidates(
   role: ProcurementEvidenceRole
 ): CanonicalOpenOrder[] {
   if (role === "supporting" || isClosed(record.payload)) return []
-  const reference = businessReference(record)
+  const explicitReference = explicitBusinessReference(record.payload)
+  if (
+    role === "tracking" &&
+    !explicitReference &&
+    !isProcurementTrackingCard(record.payload)
+  ) {
+    return []
+  }
+  const reference = explicitReference ?? normalizeIdentifier(record.externalId)
   const source = {
     recordId: record.id,
     sourceId: record.sourceId,
@@ -85,7 +93,10 @@ function candidates(
       {
         key: objectKey(reference, record, sku),
         sku,
-        quantity: positiveNumber(record.payload.quantity) ?? 0,
+        quantity:
+          positiveNumber(record.payload.quantity) ??
+          positiveNumber(record.payload.order_quantity) ??
+          0,
         roles: [role],
         sources: [source],
       },
@@ -114,17 +125,34 @@ function candidates(
   })
 }
 
-function businessReference(record: WorkspaceExternalRecord): string | null {
+function explicitBusinessReference(
+  payload: Record<string, unknown>
+): string | null {
   for (const field of [
     "purchase_order_number",
     "po_number",
     "order_number",
     "purchaseOrderNumber",
   ]) {
-    const value = nonEmptyString(record.payload[field])
+    const value = nonEmptyString(payload[field])
     if (value) return normalizeIdentifier(value)
   }
-  return normalizeIdentifier(record.externalId)
+  return null
+}
+
+function isProcurementTrackingCard(payload: Record<string, unknown>): boolean {
+  const description = [
+    payload.list_name,
+    payload.order_type,
+    payload.name,
+    payload.title,
+  ]
+    .map(nonEmptyString)
+    .filter((value): value is string => Boolean(value))
+    .join(" ")
+  return /(?:\b(?:purchase[ -]?order|procurement|po)\b|\bp\.o\.(?:\s|$))/i.test(
+    description
+  )
 }
 
 function objectKey(

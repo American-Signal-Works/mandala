@@ -15,12 +15,33 @@ describe("procurement open-order normalization", () => {
 
   it("finds a Trello-only procurement card", () => {
     const result = normalizeProcurementOpenOrders([
-      { role: "tracking", records: [trackingCard()] },
+      {
+        role: "tracking",
+        records: [trackingCard({ payload: { order_quantity: 8 } })],
+      },
     ])
 
     expect(result.get("SKU-1")).toEqual([
-      expect.objectContaining({ quantity: 0, roles: ["tracking"] }),
+      expect.objectContaining({ quantity: 8, roles: ["tracking"] }),
     ])
+  })
+
+  it("ignores a generic Trello card that merely contains a SKU", () => {
+    const result = normalizeProcurementOpenOrders([
+      {
+        role: "tracking",
+        records: [
+          trackingCard({
+            payload: {
+              purchase_order_number: null,
+              list_name: "Engineering Backlog",
+            },
+          }),
+        ],
+      },
+    ])
+
+    expect(result.size).toBe(0)
   })
 
   it("deduplicates one PO represented by two sources and retains both citations", () => {
@@ -62,6 +83,7 @@ describe("procurement open-order normalization", () => {
 function purchaseOrder(
   overrides: Partial<WorkspaceExternalRecord> = {}
 ): WorkspaceExternalRecord {
+  const { payload, ...recordOverrides } = overrides
   return {
     id: "po-record",
     companyId: "company",
@@ -73,16 +95,17 @@ function purchaseOrder(
       purchase_order_number: "PO-42",
       fulfillment_status: "pending",
       lines: [{ sku: "SKU-1", quantity: 12 }],
-      ...overrides.payload,
+      ...payload,
     },
     pulledAt: "2026-07-17T18:00:00.000Z",
-    ...overrides,
+    ...recordOverrides,
   }
 }
 
 function trackingCard(
   overrides: Partial<WorkspaceExternalRecord> = {}
 ): WorkspaceExternalRecord {
+  const { payload, ...recordOverrides } = overrides
   return {
     id: "card-record",
     companyId: "company",
@@ -95,9 +118,9 @@ function trackingCard(
       purchase_order_number: "PO-42",
       closed: false,
       list_name: "Purchase Order Creation",
-      ...overrides.payload,
+      ...payload,
     },
     pulledAt: "2026-07-17T18:00:00.000Z",
-    ...overrides,
+    ...recordOverrides,
   }
 }
