@@ -154,6 +154,7 @@ export async function resolveCompanyCompilerCapabilities(input: {
                 .map(({ json_pointer }) => jsonPointerToModelPath(json_pointer))
                 .sort()
             : [],
+        evidenceRoles: parseEvidenceRoles(offering.evidence_roles),
       })
     }
   }
@@ -206,6 +207,33 @@ function compilerAccess(effect: string): CompilerCapability["access"] {
 
 function unique(values: string[]): string[] {
   return [...new Set(values)]
+}
+
+function parseEvidenceRoles(
+  value: unknown
+): NonNullable<CompilerCapability["evidenceRoles"]> {
+  if (!Array.isArray(value)) return []
+  return value.flatMap((candidate) => {
+    if (!candidate || typeof candidate !== "object" || Array.isArray(candidate))
+      return []
+    const role = candidate as Record<string, unknown>
+    if (
+      typeof role.businessObject !== "string" ||
+      !["authoritative", "tracking", "supporting"].includes(
+        String(role.role)
+      ) ||
+      !Array.isArray(role.recordTypes) ||
+      !role.recordTypes.every((recordType) => typeof recordType === "string")
+    )
+      return []
+    return [
+      {
+        businessObject: role.businessObject,
+        role: role.role as "authoritative" | "tracking" | "supporting",
+        recordTypes: role.recordTypes as string[],
+      },
+    ]
+  })
 }
 
 export function jsonPointerToModelPath(pointer: string): string {

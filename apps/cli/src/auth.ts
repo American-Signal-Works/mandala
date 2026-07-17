@@ -210,11 +210,7 @@ export async function loginWithDeviceAuthorization(
     }
     await options.store.writeSession(session)
     try {
-      const config = await options.store.readConfig()
-      await options.store.writeConfig({
-        ...config,
-        selectedCompany: token.data.company,
-      })
+      await options.store.clearSelectedCompany()
     } catch (error) {
       await options.store.deleteSession().catch(() => undefined)
       throw error
@@ -224,7 +220,6 @@ export async function loginWithDeviceAuthorization(
       refreshMode: session.refreshMode,
       expiresAt: session.expiresAt,
       user: session.user,
-      company: token.data.company,
     }
   }
   throw new CliError(

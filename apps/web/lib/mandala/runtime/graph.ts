@@ -410,15 +410,21 @@ export function createRuntimeHandlerRegistry(input: {
           errors: ["Draft references an undeclared action."],
         }
       }
-      const binding = manifest.capabilityBindings.find(
-        (candidate) => candidate.id === action.capability
+      const actionBindings = manifest.capabilityBindings.filter(
+        (candidate) =>
+          candidate.id === action.capability && candidate.access !== "read"
       )
-      if (!binding || binding.access === "read") {
+      if (actionBindings.length !== 1) {
         return {
           status: "blocked",
-          errors: ["Action capability binding is unavailable."],
+          errors: [
+            actionBindings.length === 0
+              ? "Action capability binding is unavailable."
+              : "Action must target exactly one frozen connector binding.",
+          ],
         }
       }
+      const binding = actionBindings[0]!
       if (action.requires_approval && state.status !== "approved") {
         return {
           status: "blocked",

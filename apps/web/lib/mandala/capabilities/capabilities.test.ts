@@ -144,23 +144,6 @@ describe("capability resolver", () => {
       },
       code: "capability_schema_drift",
     },
-    {
-      label: "ambiguous",
-      overrides: {
-        installations: [
-          installation(),
-          installation({ id: "40000000-0000-4000-8000-000000000002" }),
-        ],
-        grants: [
-          grant(),
-          grant({
-            id: "50000000-0000-4000-8000-000000000002",
-            installationId: "40000000-0000-4000-8000-000000000002",
-          }),
-        ],
-      },
-      code: "capability_ambiguous",
-    },
   ])("diagnoses $label resolution", ({ overrides, code }) => {
     const result = resolve(overrides)
 
@@ -169,6 +152,29 @@ describe("capability resolver", () => {
     expect(result.diagnostics).toEqual([
       expect.objectContaining({ code, severity: "error" }),
     ])
+  })
+
+  it("combines every healthy authorized read connector", () => {
+    const secondInstallationId = "40000000-0000-4000-8000-000000000002"
+    const result = resolve({
+      installations: [
+        installation(),
+        installation({ id: secondInstallationId }),
+      ],
+      grants: [
+        grant(),
+        grant({
+          id: "50000000-0000-4000-8000-000000000002",
+          installationId: secondInstallationId,
+        }),
+      ],
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.diagnostics).toEqual([])
+    expect(result.bindings.map(({ installationId }) => installationId)).toEqual(
+      [installationId, secondInstallationId]
+    )
   })
 })
 

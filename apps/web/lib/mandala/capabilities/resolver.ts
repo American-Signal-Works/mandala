@@ -148,36 +148,39 @@ export function resolveWorkflowCapabilities(
       continue
     }
 
-    if (schemaCompatible.length > 1) {
+    if (requirement.operation !== "read" && schemaCompatible.length > 1) {
       diagnostics.push(
         diagnostic(
           requirement,
           "capability_ambiguous",
-          `More than one installed connector can satisfy ${requirement.capabilityKey}; choose one before activation.`,
+          `More than one installed connector can satisfy ${requirement.capabilityKey}; choose one for this proposed or executed action before activation.`,
           schemaCompatible
         )
       )
       continue
     }
 
-    const candidate = schemaCompatible[0]!
-    bindings.push(
-      workflowCapabilityBindingSchema.parse({
-        schemaVersion: "1",
-        id: createId(),
-        companyId: input.companyId,
-        workflowDefinitionId: input.workflowDefinitionId,
-        requirementId: requirement.id,
-        installationId: candidate.installation.id,
-        connectorKey: candidate.connector.key,
-        connectorVersion: candidate.connector.version,
-        capabilityKey: requirement.capabilityKey,
-        capabilityVersion: requirement.capabilityVersion,
-        operation: requirement.operation,
-        schemaDigest: candidate.schemaDigest,
-        resolvedAt: now,
-      })
-    )
+    for (const candidate of [...schemaCompatible].sort((left, right) =>
+      left.installation.id.localeCompare(right.installation.id)
+    )) {
+      bindings.push(
+        workflowCapabilityBindingSchema.parse({
+          schemaVersion: "1",
+          id: createId(),
+          companyId: input.companyId,
+          workflowDefinitionId: input.workflowDefinitionId,
+          requirementId: requirement.id,
+          installationId: candidate.installation.id,
+          connectorKey: candidate.connector.key,
+          connectorVersion: candidate.connector.version,
+          capabilityKey: requirement.capabilityKey,
+          capabilityVersion: requirement.capabilityVersion,
+          operation: requirement.operation,
+          schemaDigest: candidate.schemaDigest,
+          resolvedAt: now,
+        })
+      )
+    }
   }
 
   const boundRequirementIds = new Set(

@@ -26,6 +26,13 @@ export const workspaceDatasetSpecSchema = z
     entityPath: jsonPointer,
     maximumFreshnessHours: z.number().int().min(1).max(8_760).default(72),
     required: z.boolean().default(true),
+    businessObject: z
+      .string()
+      .regex(/^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+$/)
+      .optional(),
+    evidenceRole: z
+      .enum(["authoritative", "tracking", "supporting"])
+      .optional(),
   })
   .strict()
 
@@ -154,6 +161,25 @@ export const workspaceCapabilityMappingSpecSchema = z
       })
       .strict()
       .optional(),
+    normalization: z
+      .object({
+        model: z.literal("procurement.open-order"),
+        version: z.literal("1.0.0"),
+      })
+      .strict()
+      .optional(),
+    coveragePolicy: z
+      .object({
+        mode: z.literal("all_relevant_sources"),
+        requiredRoles: z
+          .array(z.enum(["authoritative", "tracking", "supporting"]))
+          .min(1)
+          .max(3),
+        outputField: fieldIdentifier,
+        incomplete: z.enum(["block", "warn"]),
+      })
+      .strict()
+      .optional(),
     bounds: z
       .object({
         maximumInputRows: z.number().int().min(1).max(10_000),
@@ -197,6 +223,28 @@ export const workspaceCapabilityMappingSpecSchema = z
           })
         }
       }
+    }
+    for (const [index, dataset] of value.datasets.entries()) {
+      if (Boolean(dataset.businessObject) !== Boolean(dataset.evidenceRole)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["datasets", index],
+          message:
+            "Business object and evidence role must be declared together.",
+        })
+      }
+    }
+    if (
+      value.coveragePolicy &&
+      value.output.fields.some(
+        ({ name }) => name === value.coveragePolicy?.outputField
+      )
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["coveragePolicy", "outputField"],
+        message: "Coverage output field is injected and must not be mapped.",
+      })
     }
   })
 

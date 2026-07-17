@@ -8,11 +8,11 @@ import {
   inspectCliDeviceAuthorization,
   inspectCliSessionRefresh,
   issueSupabaseCliActorSession,
-  loadCliCompany,
   loadCliSessions,
   releaseCliDeviceAuthorization,
   revokeIssuedCliActorSession,
   rotateCliSessionCredentials,
+  selectCliSessionCompany,
   revokeCliSession as revokeCliSessionRpc,
 } from "@/actions/admin/cli-auth"
 import { getAuthSessionId } from "@/lib/mandala/cli-auth"
@@ -22,6 +22,7 @@ import { POST as decideDeviceAuthorization } from "./device-authorizations/decis
 import { POST as inspectDeviceAuthorization } from "./device-authorizations/inspect/route"
 import { POST as exchangeDeviceAuthorization } from "./device-authorizations/token/route"
 import { POST as refreshCliSession } from "./sessions/refresh/route"
+import { PUT as selectCliCompany } from "./sessions/company/route"
 import {
   DELETE as revokeCliSessionRoute,
   GET as listCliSessions,
@@ -36,13 +37,13 @@ vi.mock("@/actions/admin/cli-auth", () => ({
   inspectCliDeviceAuthorization: vi.fn(),
   inspectCliSessionRefresh: vi.fn(),
   issueSupabaseCliActorSession: vi.fn(),
-  loadCliCompany: vi.fn(),
   loadCliSessions: vi.fn(),
   releaseCliDeviceAuthorization: vi.fn(),
   revokeAllCliSessions: vi.fn(),
   revokeCliSession: vi.fn(),
   revokeIssuedCliActorSession: vi.fn(),
   rotateCliSessionCredentials: vi.fn(),
+  selectCliSessionCompany: vi.fn(),
 }))
 vi.mock("@/lib/supabase/request", () => ({ authenticateRequest: vi.fn() }))
 vi.mock("@/lib/mandala/cli-auth", async () => {
@@ -150,7 +151,6 @@ describe("hosted CLI HTTP boundaries", () => {
     const response = await decideDeviceAuthorization(
       request("/api/mandala/cli/device-authorizations/decision", {
         decision: "approve",
-        companyId,
       })
     )
 
@@ -168,7 +168,7 @@ describe("hosted CLI HTTP boundaries", () => {
     const response = await decideDeviceAuthorization(
       request(
         "/api/mandala/cli/device-authorizations/decision",
-        { decision: "approve", companyId },
+        { decision: "approve" },
         "POST",
         { cookie: `mandala-cli-authorization=${"b".repeat(43)}` }
       )
@@ -204,7 +204,6 @@ describe("hosted CLI HTTP boundaries", () => {
     vi.mocked(decideCliDeviceAuthorization).mockResolvedValue({
       data: {
         status: "approved",
-        company: { id: companyId, name: "Example Company" },
       },
       error: null,
     } as never)
@@ -217,7 +216,7 @@ describe("hosted CLI HTTP boundaries", () => {
     const response = await decideDeviceAuthorization(
       request(
         "/api/mandala/cli/device-authorizations/decision",
-        { decision: "approve", companyId },
+        { decision: "approve" },
         "POST",
         { cookie: `mandala-cli-authorization=${"b".repeat(43)}` }
       )
@@ -230,7 +229,7 @@ describe("hosted CLI HTTP boundaries", () => {
         p_browser_token_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
         p_subject_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
         p_decision: "approve",
-        p_company_id: companyId,
+        p_company_id: null,
       })
     )
     expect(response.headers.get("set-cookie")).toContain(
@@ -309,11 +308,7 @@ describe("hosted CLI HTTP boundaries", () => {
       error: null,
     } as never)
     vi.mocked(completeCliDeviceAuthorization).mockResolvedValue({
-      data: { sessionId: cliSessionId, companyId },
-      error: null,
-    } as never)
-    vi.mocked(loadCliCompany).mockResolvedValue({
-      data: { id: companyId, name: "Example Company" },
+      data: { sessionId: cliSessionId, companyId: null },
       error: null,
     } as never)
     vi.mocked(issueSupabaseCliActorSession).mockResolvedValue(
@@ -332,8 +327,8 @@ describe("hosted CLI HTTP boundaries", () => {
     expect(body).toMatchObject({
       status: "authorized",
       sessionId: cliSessionId,
-      company: { id: companyId, name: "Example Company" },
     })
+    expect(body).not.toHaveProperty("company")
     expect(body.accessToken).toMatch(/^mdl_cli_at_[A-Za-z0-9_-]{43}$/)
     expect(body.refreshToken).toMatch(/^mdl_cli_rt_[A-Za-z0-9_-]{43}$/)
     expect(completeCliDeviceAuthorization).toHaveBeenCalledWith(
@@ -360,10 +355,6 @@ describe("hosted CLI HTTP boundaries", () => {
       data: null,
       error: new Error("complete failed"),
     } as never)
-    vi.mocked(loadCliCompany).mockResolvedValue({
-      data: { id: companyId, name: "Example Company" },
-      error: null,
-    } as never)
     vi.mocked(releaseCliDeviceAuthorization).mockResolvedValue({
       data: null,
       error: null,
@@ -388,6 +379,48 @@ describe("hosted CLI HTTP boundaries", () => {
       p_exchange_nonce: exchangeNonce,
     })
     expect(JSON.stringify(await response.json())).not.toContain("mdl_cli_")
+  })
+
+  it("binds a workspace only after the authenticated CLI selects it", async () => {
+    vi.mocked(authenticateRequest).mockResolvedValue({
+      authMode: "bearer",
+      supabase: {},
+      user: { id: userId },
+      cliSession: {
+        managed: true,
+        sessionId: cliSessionId,
+        selectedCompanyId: null,
+        scopes: ["workspace:control"],
+      },
+    } as never)
+    vi.mocked(selectCliSessionCompany).mockResolvedValue({
+      data: {
+        company: {
+          id: companyId,
+          name: "Example Company",
+          role: "owner",
+        },
+      },
+      error: null,
+    } as never)
+
+    const response = await selectCliCompany(
+      request(
+        "/api/mandala/cli/sessions/company",
+        { companyId },
+        "PUT"
+      )
+    )
+
+    expect(response.status).toBe(200)
+    expect(selectCliSessionCompany).toHaveBeenCalledWith({
+      p_actor_user_id: userId,
+      p_cli_session_id: cliSessionId,
+      p_company_id: companyId,
+    })
+    await expect(response.json()).resolves.toEqual({
+      company: { id: companyId, name: "Example Company", role: "owner" },
+    })
   })
 
   it("revokes only the requested CLI session", async () => {
@@ -567,7 +600,7 @@ function exchangeReady() {
     authorizationId,
     exchangeNonce,
     userId,
-    companyId,
+    companyId: null,
     requestedScopes: ["workspace:control"],
     clientName: "Mandala CLI",
     clientVersion: "0.0.0",

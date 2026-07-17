@@ -71,7 +71,7 @@ describe("Mandala control-plane read routes", () => {
     })
   })
 
-  it("projects only the browser-approved company for a managed CLI", async () => {
+  it("lists all accessible companies so the managed CLI can choose one", async () => {
     const otherCompanyId = "20000000-0000-4000-8000-000000000002"
     vi.mocked(authenticateRequest).mockResolvedValueOnce({
       ...auth,
@@ -102,7 +102,10 @@ describe("Mandala control-plane read routes", () => {
     )
 
     await expect(response.json()).resolves.toMatchObject({
-      companies: [{ id: companyId, name: "Approved Company" }],
+      companies: [
+        { id: companyId, name: "Approved Company" },
+        { id: otherCompanyId, name: "Other Company" },
+      ],
     })
   })
 

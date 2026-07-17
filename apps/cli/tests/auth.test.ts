@@ -182,7 +182,7 @@ describe.sequential("PKCE magic-link authentication", () => {
 })
 
 describe("hosted device authorization", () => {
-  it("opens the browser, polls once, and saves the approved workspace", async () => {
+  it("opens the browser, polls once, and saves an unbound user session", async () => {
     vi.useFakeTimers()
     const onAuthorizationRequested = vi.fn()
     const openBrowser = vi.fn().mockResolvedValue(true)
@@ -208,10 +208,6 @@ describe("hosted device authorization", () => {
           refreshToken: "hosted-refresh",
           expiresAt: 2_000_000_000,
           user: { id: userId, email: "user@example.com" },
-          company: {
-            id: "20000000-0000-4000-8000-000000000001",
-            name: "Example Company",
-          },
         })
       ) as unknown as typeof fetch
 
@@ -226,7 +222,6 @@ describe("hosted device authorization", () => {
 
     await expect(login).resolves.toMatchObject({
       refreshMode: "hosted",
-      company: { name: "Example Company" },
     })
     expect(openBrowser).toHaveBeenCalledWith(
       "https://mandala.md/cli/authorize#request=" + "b".repeat(43)
@@ -240,7 +235,7 @@ describe("hosted device authorization", () => {
       accessToken: "hosted-access",
     })
     await expect(store.readConfig()).resolves.toMatchObject({
-      selectedCompany: { name: "Example Company" },
+      selectedCompany: null,
     })
     vi.useRealTimers()
   })

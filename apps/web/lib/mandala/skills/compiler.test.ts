@@ -78,6 +78,100 @@ describe("Skill v1 compiler", () => {
     expect(first.manifest).toEqual(second.manifest)
   })
 
+  it("freezes every suitable read connector under one business capability", async () => {
+    const source = await readFile(skillPath("procurement-reorder"), "utf8")
+    const capabilities = availableCapabilities()
+    const openOrders = capabilities.find(
+      ({ id }) => id === "procurement.open-orders.read"
+    )!
+    const result = compileAgentSkill({
+      source,
+      capabilities: [
+        ...capabilities,
+        { ...openOrders, connectorId: "second-procurement-source" },
+      ],
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(
+      result.manifest.capabilityBindings.filter(
+        ({ alias }) => alias === "open-orders"
+      )
+    ).toHaveLength(2)
+  })
+
+  it("keeps a write action bound to exactly one connector", async () => {
+    const source = await readFile(skillPath("procurement-reorder"), "utf8")
+    const capabilities = availableCapabilities()
+    const write = capabilities.find(
+      ({ id }) => id === "procurement.purchase-order.mock-execute"
+    )!
+    const result = compileAgentSkill({
+      source,
+      capabilities: [
+        ...capabilities,
+        { ...write, connectorId: "second-write-target" },
+      ],
+    })
+
+    expect(result.ok).toBe(false)
+    if (result.ok) return
+    expect(result.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          code: "capability.ambiguous",
+          path: "capabilities.purchase-order-execution",
+        }),
+      ])
+    )
+  })
+
+  it("freezes a separate connector target for every action in a multi-action workflow", async () => {
+    const base = await readFile(skillPath("procurement-reorder"), "utf8")
+    const source = base
+      .replace(
+        "approvals:\n  - action: execute_mock_purchase_order",
+        `approvals:
+  - action: create_mock_purchase_order_draft
+    minimum_role: approver
+    human_required: true
+    warning_acknowledgement: false
+  - action: execute_mock_purchase_order`
+      )
+      .replace(
+        "actions:\n  - id: execute_mock_purchase_order",
+        `actions:
+  - id: create_mock_purchase_order_draft
+    capability: procurement.purchase-order.create-draft
+    mode: mock
+    requires_approval: true
+  - id: execute_mock_purchase_order`
+      )
+    const capabilities = availableCapabilities().map((capability) =>
+      capability.id === "procurement.purchase-order.create-draft"
+        ? { ...capability, connectorId: "erp-draft-connector" }
+        : capability.id === "procurement.purchase-order.mock-execute"
+          ? { ...capability, connectorId: "erp-execution-connector" }
+          : capability
+    )
+    const result = compileAgentSkill({ source, capabilities })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(
+      result.manifest.capabilityBindings
+        .filter(({ access }) => access !== "read")
+        .map(({ alias, connectorId }) => ({ alias, connectorId }))
+    ).toEqual([
+      { alias: "purchase-order-draft", connectorId: "erp-draft-connector" },
+      {
+        alias: "purchase-order-execution",
+        connectorId: "erp-execution-connector",
+      },
+    ])
+  })
+
   it("reports a missing connector capability in plain language", async () => {
     const source = await readFile(skillPath("sales-spike-investigator"), "utf8")
     const result = compileAgentSkill({

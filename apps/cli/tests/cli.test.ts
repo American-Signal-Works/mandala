@@ -1002,6 +1002,13 @@ function fakeApi(overrides: Partial<ControlApi> = {}) {
       throw new Error("Agent rollback is not used by this test.")
     }),
     listCompanies: vi.fn(async () => ({ companies: [] })),
+    selectCompany: vi.fn(async (selectedCompanyId: string) => ({
+      company: {
+        id: selectedCompanyId,
+        name: "Example Company",
+        role: "owner" as const,
+      },
+    })),
     listWorkItems: vi.fn(async () => ({ items: [] })),
     getWorkItem: vi.fn(async () => detail()),
     getWorkItemReview: vi.fn(async () => review()),

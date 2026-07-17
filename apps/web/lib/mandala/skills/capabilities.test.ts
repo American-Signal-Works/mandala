@@ -33,6 +33,41 @@ describe("database-backed compiler capabilities", () => {
       })
     ).toThrow(AgentCapabilityResolutionError)
   })
+
+  it("freezes multiple read grants for the same business requirement", () => {
+    expect(
+      resolveCompiledManifestGrantBindings({
+        manifest: manifest({
+          capabilityBindings: [
+            { ...capability(), alias: "inventory", useInPrompt: true },
+            {
+              ...capability({
+                connectorId: "b0000000-0000-4000-8000-000000000002",
+                installationId: "b0000000-0000-4000-8000-000000000002",
+                grantId: "c0000000-0000-4000-8000-000000000002",
+              }),
+              alias: "inventory",
+              useInPrompt: true,
+            },
+          ],
+        }),
+        capabilities: [
+          capability(),
+          capability({
+            connectorId: "b0000000-0000-4000-8000-000000000002",
+            installationId: "b0000000-0000-4000-8000-000000000002",
+            grantId: "c0000000-0000-4000-8000-000000000002",
+          }),
+        ],
+      })
+    ).toEqual([
+      { requirementKey: "inventory", grantId },
+      {
+        requirementKey: "inventory",
+        grantId: "c0000000-0000-4000-8000-000000000002",
+      },
+    ])
+  })
 })
 
 const installationId = "b0000000-0000-4000-8000-000000000001"
@@ -59,7 +94,9 @@ function capability(
   }
 }
 
-function manifest(): CompiledAgentManifest {
+function manifest(
+  overrides: Partial<CompiledAgentManifest> = {}
+): CompiledAgentManifest {
   return {
     schemaVersion: "mandala.ai/v1",
     compilerVersion: "1.0.0",
@@ -98,5 +135,6 @@ function manifest(): CompiledAgentManifest {
       exceptions: "Exceptions",
       outputQuality: "Quality",
     },
+    ...overrides,
   } as unknown as CompiledAgentManifest
 }

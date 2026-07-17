@@ -756,6 +756,43 @@ describe("interactive TUI", () => {
     ])
   })
 
+  it("opens the workspace picker in the terminal after hosted sign-in", async () => {
+    const execute = fakeExecute({ authenticated: false })
+    const stdout = new CaptureStream()
+    const stderr = new CaptureStream()
+    const prompts: string[] = []
+    const controller = createTuiSessionFactory(
+      { execute },
+      stdout,
+      stderr
+    )({
+      append: (value) => stdout.write(`${value}\n`),
+      ask: async () => null,
+      choose: async (prompt, choices) => {
+        prompts.push(prompt)
+        if (prompt !== "Choose workspace") return null
+        expect(choices.map(({ value }) => value)).toContain(otherCompanyId)
+        return otherCompanyId
+      },
+      clearScreen: () => undefined,
+      onSnapshot: () => undefined,
+      renderOptions: { color: false, width: 100 },
+    })
+
+    await controller.start()
+    await controller.handleLine("/login")
+
+    expect(prompts).toEqual(["Choose workspace"])
+    expect(commandCalls(execute)).toContainEqual(["auth", "login"])
+    expect(commandCalls(execute)).toContainEqual(["company", "list"])
+    expect(commandCalls(execute)).toContainEqual([
+      "company",
+      "use",
+      otherCompanyId,
+    ])
+    expect(stdout.value).toContain("Signed in as user@example.com")
+  })
+
   it("fails an unknown slash command closed", async () => {
     const execute = fakeExecute({ authenticated: false })
     const { stderr } = await session("/not-registered\n/exit\n", execute)
@@ -1935,6 +1972,13 @@ function fakeExecute(
         },
       }
     }
+    if (args[0] === "auth" && args[1] === "login") {
+      authenticated = true
+      return {
+        ok: true,
+        data: { authenticated: true, user: { email: "user@example.com" } },
+      }
+    }
     if (args[0] === "auth" && args[1] === "logout") {
       authenticated = false
       return { ok: true, data: { authenticated: false } }
@@ -2118,6 +2162,7 @@ function agentControlApi(
     disableAgent: unsupported,
     rollbackAgent: unsupported,
     listCompanies: unsupported,
+    selectCompany: unsupported,
     listWorkItems: unsupported,
     getWorkItem: unsupported,
     getWorkItemReview: unsupported,

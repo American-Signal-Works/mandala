@@ -9,6 +9,8 @@ import {
   agentValidateRequestSchema,
   agentValidateResponseSchema,
   companiesResponseSchema,
+  cliSessionCompanySelectionRequestSchema,
+  cliSessionCompanySelectionResponseSchema,
   controlRequestCreateRequestSchema,
   controlRequestCreateResponseSchema,
   controlRequestTransitionRequestSchema,
@@ -122,6 +124,9 @@ export interface ControlApi {
     request: AgentActionRequest
   ): Promise<AgentActionData>
   listCompanies(): Promise<{ companies: CompanySummary[] }>
+  selectCompany(
+    companyId: string
+  ): Promise<{ company: Pick<CompanySummary, "id" | "name" | "role"> }>
   listWorkItems(companyId: string, status?: string): Promise<WorkItemQueueData>
   getWorkItem(companyId: string, itemId: string): Promise<WorkItemDetail>
   getWorkItemReview(
@@ -327,6 +332,19 @@ export class ApiClient implements ControlApi {
 
   listCompanies(): Promise<{ companies: CompanySummary[] }> {
     return this.request("/api/mandala/companies", companiesResponseSchema)
+  }
+
+  selectCompany(
+    companyId: string
+  ): Promise<{ company: Pick<CompanySummary, "id" | "name" | "role"> }> {
+    return this.request(
+      "/api/mandala/cli/sessions/company",
+      cliSessionCompanySelectionResponseSchema,
+      {
+        method: "PUT",
+        body: cliSessionCompanySelectionRequestSchema.parse({ companyId }),
+      }
+    )
   }
 
   listWorkItems(
@@ -578,7 +596,7 @@ export class ApiClient implements ControlApi {
 }
 
 type RequestOptions = {
-  method?: "GET" | "PATCH" | "POST"
+  method?: "GET" | "PATCH" | "POST" | "PUT"
   body?: unknown
   accept?: string
   signal?: AbortSignal

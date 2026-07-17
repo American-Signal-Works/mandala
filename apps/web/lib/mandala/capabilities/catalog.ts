@@ -133,6 +133,8 @@ export const syntheticCommerceCapabilityDefinitions: CapabilityDefinition[] = [
       "purchaseOrders[].quantity",
       "purchaseOrders[].status",
       "purchaseOrders[].expectedAt",
+      "purchaseOrders[].duplicateOpenOrderMatchCount",
+      "purchaseOrders[].openOrderSourceCoverageComplete",
     ],
   }),
   capability({
@@ -185,6 +187,17 @@ export const syntheticCommerceConnectorDefinition: ConnectorDefinition =
       capabilityVersion: definition.version,
       operations: definition.operations,
       schemaDigest: definition.schemaDigest,
+      ...(definition.key === "procurement.open-orders.read"
+        ? {
+            evidenceRoles: [
+              {
+                businessObject: "procurement.purchase-order",
+                role: "authoritative" as const,
+                recordTypes: ["purchase_order"],
+              },
+            ],
+          }
+        : {}),
     })),
   })
 
@@ -199,9 +212,7 @@ export function capabilitySchemaDigest(input: {
   inputSchema: JsonSchemaDocument
   outputSchema: JsonSchemaDocument
 }): string {
-  return createHash("sha256")
-    .update(stableJson(input))
-    .digest("hex")
+  return createHash("sha256").update(stableJson(input)).digest("hex")
 }
 
 function capability(input: {

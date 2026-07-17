@@ -185,6 +185,8 @@ export function generateSyntheticCommerceDataset(input: {
       recentSpikeMultiplier,
       dataFreshnessHours: staleInventory ? 120 : integer(random, 1, 18),
       duplicateOpenOrderUnits,
+      duplicateOpenOrderMatchCount: duplicateOpenOrder ? 1 : 0,
+      openOrderSourceCoverageComplete: true,
       salesSpike,
       inventoryReduced,
     }

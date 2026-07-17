@@ -27,18 +27,18 @@ describe("hosted CLI authorization contracts", () => {
     ).toBe(true)
   })
 
-  it("requires an explicit workspace for approval but not denial", () => {
+  it("keeps browser approval user-scoped and rejects workspace input", () => {
     expect(
       cliDeviceAuthorizationDecisionRequestSchema.safeParse({
         decision: "approve",
       }).success
-    ).toBe(false)
+    ).toBe(true)
     expect(
       cliDeviceAuthorizationDecisionRequestSchema.safeParse({
         decision: "approve",
         companyId,
       }).success
-    ).toBe(true)
+    ).toBe(false)
     expect(
       cliDeviceAuthorizationDecisionRequestSchema.safeParse({
         decision: "deny",
@@ -75,7 +75,6 @@ describe("hosted CLI authorization contracts", () => {
           id: "10000000-0000-4000-8000-000000000001",
           email: "user@example.com",
         },
-        company: { id: companyId, name: "Example" },
         rawDeviceCode: "must-not-pass",
       }).success
     ).toBe(false)

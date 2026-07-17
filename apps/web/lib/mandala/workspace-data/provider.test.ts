@@ -287,7 +287,203 @@ describe("WorkspaceDatasetProvider", () => {
       code: "qualifying_signal_not_found",
     })
   })
+
+  it("accepts a zero-match procurement check only with complete current coverage", async () => {
+    const provider = procurementProvider([
+      coverage("shiphero", "purchase_order", "authoritative", "checked"),
+      coverage("trello", "board_card", "tracking", "checked"),
+    ])
+    const prepared = await provider.prepare({
+      companyId: "company",
+      bindings: [procurementBinding],
+    })
+
+    expect(prepared.projections[0]?.records[0]).toMatchObject({
+      sku: "SKU-1",
+      duplicateOpenOrderMatchCount: 0,
+      openOrderSourceCoverageComplete: true,
+    })
+    expect(prepared.projections[0]?.warnings).toEqual([])
+  })
+
+  it.each([
+    ["unavailable", "unavailable"],
+    ["stale", "stale"],
+  ] as const)(
+    "marks a negative procurement check unsafe when a source is %s",
+    async (_label, status) => {
+      const provider = procurementProvider([
+        coverage("shiphero", "purchase_order", "authoritative", "checked"),
+        coverage("trello", "board_card", "tracking", status),
+      ])
+      const prepared = await provider.prepare({
+        companyId: "company",
+        bindings: [procurementBinding],
+      })
+
+      expect(prepared.projections[0]?.records[0]).toMatchObject({
+        openOrderSourceCoverageComplete: false,
+      })
+      expect(prepared.projections[0]?.warnings).toContain(
+        "Source coverage is incomplete; a negative operational conclusion is not safe."
+      )
+      expect(
+        prepared.projections[0]?.sourceRefs.some(
+          ({ reference }) =>
+            reference.kind === "source_coverage" && reference.status === status
+        )
+      ).toBe(true)
+    }
+  )
 })
+
+const procurementBinding: CompiledCapabilityBinding = {
+  ...binding,
+  id: "procurement.open-orders.read",
+  alias: "open-orders",
+  toolName: "workspace.read.procurement_open_orders_read",
+}
+
+const procurementSpec = {
+  schemaVersion: "mandala.workspace-data/v1" as const,
+  capabilityKey: "procurement.open-orders.read",
+  capabilityVersion: "1.0.0",
+  datasets: [
+    {
+      alias: "anchor",
+      recordType: "inventory_position",
+      entityPath: "/sku",
+      maximumFreshnessHours: 24,
+      required: true,
+    },
+    {
+      alias: "orders",
+      recordType: "purchase_order",
+      rowsPath: "/lines",
+      entityPath: "/sku",
+      maximumFreshnessHours: 168,
+      required: false,
+      businessObject: "procurement.purchase-order",
+      evidenceRole: "authoritative" as const,
+    },
+    {
+      alias: "tracking",
+      recordType: "board_card",
+      entityPath: "/sku",
+      maximumFreshnessHours: 72,
+      required: false,
+      businessObject: "procurement.purchase-order",
+      evidenceRole: "tracking" as const,
+    },
+  ],
+  output: {
+    collection: "purchaseOrders",
+    entityKey: "sku",
+    fields: [
+      field("sku", { op: "first", dataset: "anchor", path: "/sku" }),
+      field("duplicateOpenOrderMatchCount", {
+        op: "literal",
+        value: 0,
+        confirmed: true,
+      }),
+    ],
+  },
+  signal: {
+    id: "procurement-check",
+    all: [
+      {
+        left: "duplicateOpenOrderMatchCount",
+        operator: "gte" as const,
+        right: { value: 0 },
+      },
+    ],
+  },
+  normalization: {
+    model: "procurement.open-order" as const,
+    version: "1.0.0" as const,
+  },
+  coveragePolicy: {
+    mode: "all_relevant_sources" as const,
+    requiredRoles: ["authoritative" as const],
+    outputField: "openOrderSourceCoverageComplete",
+    incomplete: "block" as const,
+  },
+  bounds: {
+    maximumInputRows: 100,
+    maximumOutputRows: 20,
+    maximumOutputBytes: 65_536,
+  },
+} satisfies WorkspaceCapabilityMappingSpec
+
+function procurementProvider(
+  sourceCoverage: Array<{
+    sourceId: string
+    sourceKey: string
+    recordType: string
+    businessObject?: string
+    evidenceRole?: "authoritative" | "tracking" | "supporting"
+    status: "checked" | "unavailable" | "stale" | "schema_drift"
+    recordCount: number
+    checkedAt: string
+    freshestObservedAt: string | null
+  }>
+) {
+  const store: WorkspaceDataStore = {
+    resolveMapping: async () => ({
+      mappingVersionId: "10000000-0000-4000-8000-000000000001",
+      mappingKey: "procurement.open-orders.read",
+      specHash: "b".repeat(64),
+      catalogDigest: "c".repeat(64),
+      spec: procurementSpec,
+    }),
+    loadRecords: async ({ recordType }) =>
+      recordType === "inventory_position"
+        ? [
+            {
+              id: "inventory-record",
+              companyId: "company",
+              sourceId: "shiphero",
+              sourceKey: "shiphero",
+              recordType,
+              externalId: "SKU-1",
+              payload: { sku: "SKU-1" },
+              pulledAt: "2026-07-17T18:00:00.000Z",
+            },
+          ]
+        : [],
+    inspectCoverage: async ({ recordType }) =>
+      recordType === "inventory_position"
+        ? [coverage("shiphero", recordType, undefined, "checked")]
+        : sourceCoverage.filter((result) => result.recordType === recordType),
+  }
+  return new WorkspaceDatasetProvider(
+    store,
+    () => new Date("2026-07-17T19:00:00.000Z")
+  )
+}
+
+function coverage(
+  sourceKey: string,
+  recordType: string,
+  evidenceRole: "authoritative" | "tracking" | "supporting" | undefined,
+  status: "checked" | "unavailable" | "stale" | "schema_drift"
+) {
+  return {
+    sourceId: sourceKey,
+    sourceKey,
+    recordType,
+    ...(evidenceRole
+      ? {
+          businessObject: "procurement.purchase-order",
+          evidenceRole,
+        }
+      : {}),
+    status,
+    recordCount: 0,
+    checkedAt: "2026-07-17T19:00:00.000Z",
+    freshestObservedAt: "2026-07-17T18:00:00.000Z",
+  }
+}
 
 function field(name: string, expression: WorkspaceMappingExpression) {
   return {

@@ -67,6 +67,12 @@ export function revokeAllCliSessions(
   return createAdminClient().rpc("revoke_all_cli_sessions_v1", input)
 }
 
+export function selectCliSessionCompany(
+  input: FunctionArgs<"select_cli_session_company_v1">
+) {
+  return createAdminClient().rpc("select_cli_session_company_v1", input)
+}
+
 export function loadCliSessions(userId: string) {
   return createAdminClient()
     .from("cli_sessions")

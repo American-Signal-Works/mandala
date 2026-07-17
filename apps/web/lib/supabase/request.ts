@@ -34,7 +34,7 @@ const opaqueCliSessionValidationSchema = z
     allowed: z.literal(true),
     sessionId: z.string().uuid(),
     userId: z.string().uuid(),
-    selectedCompanyId: z.string().uuid(),
+    selectedCompanyId: z.string().uuid().nullable(),
     scopes: z.array(z.string().min(1).max(100)).min(1).max(25),
     actorSessionCiphertext: z.string().min(20).max(20_000),
   })

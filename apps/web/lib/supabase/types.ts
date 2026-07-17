@@ -2618,18 +2618,21 @@ export type Database = {
           capability_version_id: string
           connector_version_id: string
           created_at: string
+          evidence_roles: Json
           provider_operation: string
         }
         Insert: {
           capability_version_id: string
           connector_version_id: string
           created_at?: string
+          evidence_roles?: Json
           provider_operation: string
         }
         Update: {
           capability_version_id?: string
           connector_version_id?: string
           created_at?: string
+          evidence_roles?: Json
           provider_operation?: string
         }
         Relationships: [
@@ -5655,6 +5658,7 @@ export type Database = {
           created_at: string
           dataset_alias: string
           expected_schema_hash: string | null
+          expected_schema_hashes: Json
           mapping_version_id: string
           maximum_freshness_hours: number
           record_type: string
@@ -5666,6 +5670,7 @@ export type Database = {
           created_at?: string
           dataset_alias: string
           expected_schema_hash?: string | null
+          expected_schema_hashes?: Json
           mapping_version_id: string
           maximum_freshness_hours?: number
           record_type: string
@@ -5677,6 +5682,7 @@ export type Database = {
           created_at?: string
           dataset_alias?: string
           expected_schema_hash?: string | null
+          expected_schema_hashes?: Json
           mapping_version_id?: string
           maximum_freshness_hours?: number
           record_type?: string
@@ -6752,6 +6758,14 @@ export type Database = {
           p_next_refresh_token_hash: string
           p_refresh_expires_at: string
           p_refresh_token_hash: string
+        }
+        Returns: Json
+      }
+      select_cli_session_company_v1: {
+        Args: {
+          p_actor_user_id: string
+          p_cli_session_id: string
+          p_company_id: string
         }
         Returns: Json
       }

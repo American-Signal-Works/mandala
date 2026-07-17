@@ -86,6 +86,8 @@ rules:
       - vendorMinimumOrderQuantity
       - vendorPackSize
       - duplicateOpenOrderUnits
+      - duplicateOpenOrderMatchCount
+      - openOrderSourceCoverageComplete
       - dataFreshnessHours
   - id: inventory-fresh
     operation: freshness
@@ -100,13 +102,26 @@ rules:
   - id: duplicate-order-safe
     operation: duplicate_check
     quantity:
-      path: agent.selection.duplicateOpenOrderUnits
+      path: agent.selection.duplicateOpenOrderMatchCount
     allowed_maximum: 0
     output: rules.duplicate_order_safe
     outcome:
       when: "false"
       effect: block
       message: An existing open purchase order covers the projected need.
+  - id: open-order-coverage-complete
+    operation: compare
+    condition:
+      left:
+        path: agent.selection.openOrderSourceCoverageComplete
+      operator: eq
+      right:
+        value: true
+    output: rules.open_order_coverage_complete
+    outcome:
+      when: "false"
+      effect: block
+      message: Not every relevant purchase-order source was checked successfully and recently.
   - id: available-inventory
     operation: formula
     expression:
