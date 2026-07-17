@@ -189,7 +189,10 @@ describe("WorkspaceDatasetProvider", () => {
         },
       ],
     }
-    const provider = new WorkspaceDatasetProvider(store)
+    const provider = new WorkspaceDatasetProvider(
+      store,
+      () => new Date("2026-07-16T20:00:00.000Z")
+    )
     await expect(
       provider.prepare({ companyId: "company", bindings: [binding] })
     ).resolves.toBeTruthy()

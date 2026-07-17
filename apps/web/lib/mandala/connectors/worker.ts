@@ -1,4 +1,5 @@
 import {
+  connectorPullResultSchema,
   connectorWorkerOptionsSchema,
   type ConnectorAdapter,
   type ConnectorSyncBatchResult,
@@ -20,29 +21,44 @@ export async function runConnectorSyncBatch(input: {
 }): Promise<ConnectorSyncBatchResult> {
   const options = connectorWorkerOptionsSchema.parse(input.options)
   const now = input.now ?? new Date()
-  const adaptersByKind = new Map(input.adapters.map((adapter) => [adapter.kind, adapter]))
+  const adaptersBySourceKey = new Map(
+    input.adapters.map((adapter) => [adapter.sourceKey, adapter])
+  )
 
   const source = await input.store.claimDueSource({
     now,
-    kinds: options.kinds.filter((kind) => adaptersByKind.has(kind)),
+    sourceKeys: options.sourceKeys.filter((sourceKey) =>
+      adaptersBySourceKey.has(sourceKey)
+    ),
     leaseSeconds: options.leaseSeconds,
   })
   if (!source) return { claimed: false }
 
-  const adapter = adaptersByKind.get(source.kind)
+  const adapter = adaptersBySourceKey.get(source.sourceKey)
   if (!adapter) {
-    await input.store.failSync({ source, error: `no_adapter_for_kind:${source.kind}`, now })
-    return { claimed: true, sourceKey: source.sourceKey, kind: source.kind, error: "no_adapter" }
+    await input.store.failSync({
+      source,
+      error: `no_adapter_for_source:${source.sourceKey}`,
+      now,
+    })
+    return {
+      claimed: true,
+      sourceKey: source.sourceKey,
+      kind: source.kind,
+      error: "no_adapter",
+    }
   }
 
   try {
-    const pull = await adapter.pull({
-      cursor: source.sync.cursor,
-      config: source.config,
-      watermarks: source.sync.watermarks,
-      budget: { maxApiCalls: options.maxApiCalls },
-      now,
-    })
+    const pull = connectorPullResultSchema.parse(
+      await adapter.pull({
+        cursor: source.sync.cursor,
+        config: source.config,
+        watermarks: source.sync.watermarks,
+        budget: { maxApiCalls: options.maxApiCalls },
+        now,
+      })
+    )
 
     const outcome = await input.store.upsertRecords({
       source,
@@ -53,7 +69,11 @@ export async function runConnectorSyncBatch(input: {
     if (pull.nextCursor) {
       await input.store.saveCursor({ source, cursor: pull.nextCursor })
     } else {
-      await input.store.completeSync({ source, now, watermarks: pull.watermarks })
+      await input.store.completeSync({
+        source,
+        now,
+        watermarks: pull.watermarks,
+      })
     }
 
     return {
@@ -68,7 +88,8 @@ export async function runConnectorSyncBatch(input: {
       completed: pull.nextCursor === null,
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "unknown_connector_error"
+    const message =
+      error instanceof Error ? error.message : "unknown_connector_error"
     await input.store.failSync({ source, error: message, now })
     return {
       claimed: true,

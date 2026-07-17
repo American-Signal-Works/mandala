@@ -13,20 +13,39 @@ import type {
 
 const TRELLO_API = "https://api.trello.com/1"
 const CARDS_PAGE = 1000
+const REQUEST_TIMEOUT_MS = 8_000
 
 type TrelloExecutor = (path: string, params?: string) => Promise<unknown>
 
 type TrelloCursor = ConnectorCursor & { phase: "cards"; before: string | null }
 
-export function createTrelloExecutor(key: string, token: string): TrelloExecutor {
+export function createTrelloExecutor(
+  key: string,
+  token: string
+): TrelloExecutor {
   return async (path, params = "") => {
-    const auth = `key=${key}&token=${token}`
-    const response = await fetch(`${TRELLO_API}/${path}?${auth}${params ? `&${params}` : ""}`)
+    // Trello accepts an OAuth-style header. Keep the secret token out of the
+    // URL so request tracing and provider logs cannot capture it in a query.
+    const authorization = `OAuth oauth_consumer_key="${escapeOAuthValue(key)}", oauth_token="${escapeOAuthValue(token)}"`
+    const url = `${TRELLO_API}/${path}${params ? `?${params}` : ""}`
+    let response: Response
+    try {
+      response = await fetch(url, {
+        headers: { Authorization: authorization },
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      })
+    } catch {
+      throw new Error("trello_request_failed")
+    }
     if (!response.ok) {
       throw new Error(`trello_http_${response.status}`)
     }
     return response.json()
   }
+}
+
+function escapeOAuthValue(value: string) {
+  return value.replaceAll("\\", "\\\\").replaceAll('"', '\\"')
 }
 
 type TrelloList = { id: string; name: string }
@@ -51,29 +70,44 @@ type TrelloCard = {
   customFieldItems?: TrelloCardFieldItem[]
 }
 
-export function createTrelloAdapter(options: { execute: TrelloExecutor }): ConnectorAdapter {
+export function createTrelloAdapter(options: {
+  execute: TrelloExecutor
+}): ConnectorAdapter {
   const { execute } = options
 
   return {
-    kind: "trello",
+    sourceKey: "trello",
     async pull(input: ConnectorPullInput): Promise<ConnectorPullResult> {
-      const boardId = typeof input.config.boardId === "string" ? input.config.boardId : null
+      if (input.budget.maxApiCalls < 3) {
+        throw new Error("trello_api_budget_too_small")
+      }
+      const boardId =
+        typeof input.config.boardId === "string" ? input.config.boardId : null
       if (!boardId) throw new Error("trello_board_id_missing")
 
-      const cursor = (input.cursor as TrelloCursor | null) ?? { phase: "cards" as const, before: null }
+      const cursor = (input.cursor as TrelloCursor | null) ?? {
+        phase: "cards" as const,
+        before: null,
+      }
       let apiCalls = 0
 
       // Board metadata is two cheap requests; re-fetching per slice keeps the
       // cursor small and list/field renames current.
-      const lists = (await execute(`boards/${boardId}/lists`, "fields=name&filter=all")) as TrelloList[]
-      const customFields = (await execute(`boards/${boardId}/customFields`)) as TrelloCustomField[]
+      const lists = (await execute(
+        `boards/${boardId}/lists`,
+        "fields=name&filter=all"
+      )) as TrelloList[]
+      const customFields = (await execute(
+        `boards/${boardId}/customFields`
+      )) as TrelloCustomField[]
       apiCalls += 2
 
       const listNameById = new Map(lists.map((list) => [list.id, list.name]))
       const fieldById = new Map(customFields.map((field) => [field.id, field]))
       const optionValueById = new Map<string, string | undefined>()
       for (const field of customFields) {
-        for (const option of field.options ?? []) optionValueById.set(option.id, option.value?.text)
+        for (const option of field.options ?? [])
+          optionValueById.set(option.id, option.value?.text)
       }
 
       const records: ConnectorRecord[] = []
@@ -85,13 +119,18 @@ export function createTrelloAdapter(options: { execute: TrelloExecutor }): Conne
         )) as TrelloCard[]
         apiCalls += 1
         for (const card of page) {
-          records.push(cardRecord(card, listNameById, fieldById, optionValueById))
+          records.push(
+            cardRecord(card, listNameById, fieldById, optionValueById)
+          )
         }
         const first = page[0]
         if (page.length < CARDS_PAGE || !first) {
           return { records, nextCursor: null, apiCalls }
         }
-        before = page.reduce((min, card) => (card.id < min ? card.id : min), first.id)
+        before = page.reduce(
+          (min, card) => (card.id < min ? card.id : min),
+          first.id
+        )
       }
       return { records, nextCursor: { ...cursor, before }, apiCalls }
     },
@@ -130,11 +169,15 @@ function cardRecord(
       list_name: listNameById.get(card.idList) ?? card.idList,
       warehouse: fields["Warehouse"] ?? null,
       order_type: fields["Order Type"] ?? null,
-      order_number: fields["Order Number"] != null ? String(fields["Order Number"]) : null,
+      order_number:
+        fields["Order Number"] != null ? String(fields["Order Number"]) : null,
       po_ship_date: fields["PO Ship Date"] ?? null,
       last_activity: card.dateLastActivity,
       order_quantity: fields["Order Quantity"] ?? null,
-      card_created_at: new Date(parseInt(card.id.slice(0, 8), 16) * 1000).toISOString(),
+      quantity: fields["Order Quantity"] ?? null,
+      card_created_at: new Date(
+        parseInt(card.id.slice(0, 8), 16) * 1000
+      ).toISOString(),
       po_expected_date: fields["PO Expected Date"] ?? null,
       po_received_date: fields["PO Received Date"] ?? null,
       po_confirmed_date: fields["PO Confirmed Date"] ?? null,

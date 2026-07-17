@@ -16,15 +16,28 @@ import { createAdminClient } from "@/lib/supabase/admin"
 export async function runConnectorSync() {
   const adapters: ConnectorAdapter[] = []
   const skipped: string[] = []
-  for (const factory of [createShipheroAdapterFromEnvironment, createTrelloAdapterFromEnvironment]) {
+  for (const { sourceKey, factory } of [
+    {
+      sourceKey: "shiphero",
+      factory: createShipheroAdapterFromEnvironment,
+    },
+    { sourceKey: "trello", factory: createTrelloAdapterFromEnvironment },
+  ]) {
     try {
       adapters.push(factory())
     } catch (error) {
-      skipped.push(error instanceof Error ? error.message : "adapter_unavailable")
+      const safeError =
+        error instanceof Error ? error.message : "adapter_unavailable"
+      skipped.push(safeError)
+      // Keep an unavailable adapter registered so a connected source records
+      // an actionable sync error instead of looking healthy-but-idle forever.
+      adapters.push({
+        sourceKey,
+        pull: async () => {
+          throw new Error(safeError)
+        },
+      })
     }
-  }
-  if (!adapters.length) {
-    return { claimed: false, skippedAdapters: skipped }
   }
 
   const store = new SupabaseConnectorSyncStore(createAdminClient())
@@ -32,9 +45,11 @@ export async function runConnectorSync() {
     store,
     adapters,
     options: {
-      kinds: adapters.map((adapter) => adapter.kind),
+      sourceKeys: adapters.map((adapter) => adapter.sourceKey),
       leaseSeconds: 240,
-      maxApiCalls: 6,
+      // Three calls keeps a worst-case retrying slice inside the route's
+      // 60-second ceiling while still allowing a Trello metadata+cards pull.
+      maxApiCalls: 3,
     },
   })
   return { ...batch, skippedAdapters: skipped.length ? skipped : undefined }

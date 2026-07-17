@@ -6,23 +6,40 @@ import type {
   ConnectorRecord,
 } from "./types"
 
-// ShipHero GraphQL adapter. Pulls in three phases per sync cycle —
-// purchase orders first (that pass also builds the vendor_id -> name map the
-// inventory phase needs for product_vendor rows), then inventory, then sales
-// orders (incremental against the salesSince watermark).
+// ShipHero GraphQL adapter. Pulls vendors first so product/vendor records keep
+// complete names even when a vendor has no recently changed purchase order,
+// followed by purchase orders, inventory, and recent sales orders.
 //
 // ShipHero rate limits on a credit/complexity budget, so every page request
 // is followed by a fixed pause and page sizes stay small — same settings the
 // proven standalone pull scripts converged on.
 
 const SHIPHERO_API = "https://public-api.shiphero.com/graphql"
+const SHIPHERO_REFRESH_API = "https://public-api.shiphero.com/auth/refresh"
 const PAGE_PAUSE_MS = 1500
+const VENDOR_PAGE = 50
 const INVENTORY_PAGE = 50
 const PO_PAGE = 25
 const SALES_PAGE = 20
-// Overlap window re-pulled on every incremental sales sync so late edits to
-// recent orders (cancellations, address holds) are still picked up.
-const SALES_OVERLAP_DAYS = 7
+// Overlap update windows so provider writes that land on a timestamp boundary
+// are re-read. The first sales import only needs the recent demand horizon.
+const UPDATE_OVERLAP_DAYS = 2
+const INITIAL_SALES_LOOKBACK_DAYS = 45
+const REQUEST_TIMEOUT_MS = 6_000
+const MAX_REQUEST_ATTEMPTS = 2
+
+const VENDORS_QUERY = `
+  query Vendors($first: Int!, $after: String) {
+    vendors {
+      request_id
+      complexity
+      data(first: $first, after: $after) {
+        pageInfo { hasNextPage endCursor }
+        edges { node { id name } }
+      }
+    }
+  }
+`
 
 const PRODUCTS_QUERY = `
   query Products($first: Int!, $after: String) {
@@ -53,8 +70,8 @@ const PRODUCTS_QUERY = `
 `
 
 const PURCHASE_ORDERS_QUERY = `
-  query PurchaseOrders($first: Int!, $after: String) {
-    purchase_orders {
+  query PurchaseOrders($first: Int!, $after: String, $updatedFrom: DateTime, $fulfillmentStatus: String) {
+    purchase_orders(updated_from: $updatedFrom, fulfillment_status: $fulfillmentStatus) {
       request_id
       complexity
       data(first: $first, after: $after, sort: "-po_date") {
@@ -69,7 +86,8 @@ const PURCHASE_ORDERS_QUERY = `
             fulfillment_status
             subtotal
             total_price
-            line_items(first: 25) {
+            line_items(first: 100) {
+              pageInfo { hasNextPage }
               edges { node { sku quantity price product_name } }
             }
           }
@@ -80,8 +98,8 @@ const PURCHASE_ORDERS_QUERY = `
 `
 
 const ORDERS_QUERY = `
-  query Orders($first: Int!, $after: String) {
-    orders {
+  query Orders($first: Int!, $after: String, $updatedFrom: ISODateTime, $orderDateFrom: ISODateTime) {
+    orders(updated_from: $updatedFrom, order_date_from: $orderDateFrom) {
       request_id
       complexity
       data(first: $first, after: $after, sort: "-order_date") {
@@ -91,9 +109,11 @@ const ORDERS_QUERY = `
             id
             order_number
             order_date
+            updated_at
             fulfillment_status
             total_price
-            line_items(first: 20) {
+            line_items(first: 100) {
+              pageInfo { hasNextPage }
               edges { node { sku quantity price product_name } }
             }
           }
@@ -103,45 +123,114 @@ const ORDERS_QUERY = `
   }
 `
 
-type GraphqlExecutor = (query: string, variables: Record<string, unknown>) => Promise<unknown>
+type GraphqlExecutor = (
+  query: string,
+  variables: Record<string, unknown>
+) => Promise<unknown>
 
 type ShipheroCursor = ConnectorCursor & {
-  phase: "purchase_orders" | "inventory" | "sales_orders"
+  phase: "vendors" | "purchase_orders" | "inventory" | "sales_orders"
   after: string | null
   vendorNames: Record<string, string>
-  maxSalesOrderDate: string | null
+  cycleStartedAt: string
+  poUpdatedFrom: string | null
+  poInitialStatus: "pending" | null
+  salesUpdatedFrom: string | null
+  salesOrderDateFrom: string | null
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
-export function createShipheroGraphqlExecutor(apiKey: string): GraphqlExecutor {
-  return async (query, variables) => {
-    for (let attempt = 0; attempt < 6; attempt += 1) {
-      const response = await fetch(SHIPHERO_API, {
+type ShipheroCredentials = {
+  accessToken?: string
+  refreshToken?: string
+}
+
+export function createShipheroGraphqlExecutor(
+  credentials: string | ShipheroCredentials
+): GraphqlExecutor {
+  let accessToken =
+    typeof credentials === "string" ? credentials : credentials.accessToken
+  const refreshToken =
+    typeof credentials === "string" ? undefined : credentials.refreshToken
+
+  async function refreshAccessToken() {
+    if (!refreshToken) throw new Error("shiphero_access_token_missing")
+    let response: Response
+    try {
+      response = await fetch(SHIPHERO_REFRESH_API, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${apiKey}`,
-        },
-        body: JSON.stringify({ query, variables }),
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+        signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
       })
+    } catch {
+      throw new Error("shiphero_token_refresh_failed")
+    }
+    if (!response.ok) throw new Error("shiphero_token_refresh_failed")
+    const body = (await response.json()) as { access_token?: unknown }
+    if (typeof body.access_token !== "string" || !body.access_token.trim()) {
+      throw new Error("shiphero_token_refresh_failed")
+    }
+    accessToken = body.access_token.trim()
+    return accessToken
+  }
+
+  return async (query, variables) => {
+    if (!accessToken) await refreshAccessToken()
+    let refreshedAfterUnauthorized = false
+    for (let attempt = 0; attempt < MAX_REQUEST_ATTEMPTS; attempt += 1) {
+      let response: Response
+      try {
+        response = await fetch(SHIPHERO_API, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${accessToken}`,
+          },
+          body: JSON.stringify({ query, variables }),
+          signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+        })
+      } catch {
+        if (attempt + 1 < MAX_REQUEST_ATTEMPTS) {
+          await sleep(1000 * (attempt + 1))
+          continue
+        }
+        throw new Error("shiphero_request_failed")
+      }
+      if (
+        response.status === 401 &&
+        refreshToken &&
+        !refreshedAfterUnauthorized
+      ) {
+        await refreshAccessToken()
+        refreshedAfterUnauthorized = true
+        continue
+      }
       if (response.status === 429) {
-        await sleep(5000 * (attempt + 1))
+        if (attempt + 1 < MAX_REQUEST_ATTEMPTS)
+          await sleep(1000 * (attempt + 1))
         continue
       }
       if (!response.ok) {
         throw new Error(`shiphero_http_${response.status}`)
       }
-      const body = (await response.json()) as { data?: unknown; errors?: Array<{ message?: string }> }
+      const body = (await response.json()) as {
+        data?: unknown
+        errors?: Array<{ message?: string }>
+      }
       const throttled = body.errors?.some((error) =>
         /throttl|credit|rate/i.test(error.message ?? "")
       )
       if (throttled) {
-        await sleep(5000 * (attempt + 1))
+        if (attempt + 1 < MAX_REQUEST_ATTEMPTS)
+          await sleep(1000 * (attempt + 1))
         continue
       }
       if (body.errors?.length) {
-        throw new Error(`shiphero_graphql: ${body.errors[0]?.message ?? "unknown"}`)
+        // Provider messages can contain account-specific data; keep the
+        // persisted/returned worker error deliberately opaque.
+        throw new Error("shiphero_graphql_error")
       }
       return body.data
     }
@@ -149,17 +238,85 @@ export function createShipheroGraphqlExecutor(apiKey: string): GraphqlExecutor {
   }
 }
 
-function initialCursor(watermarks: Record<string, string>): ShipheroCursor {
+function overlapStart(value: string, days: number): string {
+  const parsed = new Date(value)
+  if (Number.isNaN(parsed.getTime())) return value
+  parsed.setUTCDate(parsed.getUTCDate() - days)
+  return parsed.toISOString()
+}
+
+function initialCursor(
+  watermarks: Record<string, string>,
+  now: Date
+): ShipheroCursor {
+  const cycleStartedAt = now.toISOString()
   return {
-    phase: "purchase_orders",
+    phase: "vendors",
     after: null,
     vendorNames: {},
-    maxSalesOrderDate: watermarks.salesSince ?? null,
+    cycleStartedAt,
+    poUpdatedFrom: watermarks.poSince
+      ? overlapStart(watermarks.poSince, UPDATE_OVERLAP_DAYS)
+      : null,
+    poInitialStatus: watermarks.poSince ? null : "pending",
+    salesUpdatedFrom: watermarks.salesSince
+      ? overlapStart(watermarks.salesSince, UPDATE_OVERLAP_DAYS)
+      : null,
+    salesOrderDateFrom: watermarks.salesSince
+      ? null
+      : overlapStart(cycleStartedAt, INITIAL_SALES_LOOKBACK_DAYS),
   }
 }
 
-export function createShipheroAdapter(options: { execute: GraphqlExecutor }): ConnectorAdapter {
+export function createShipheroAdapter(options: {
+  execute: GraphqlExecutor
+}): ConnectorAdapter {
   const { execute } = options
+
+  async function pullVendors(cursor: ShipheroCursor, budget: number) {
+    const records: ConnectorRecord[] = []
+    let after = cursor.after
+    let apiCalls = 0
+    const vendorNames = { ...cursor.vendorNames }
+    while (apiCalls < budget) {
+      const data = (await execute(VENDORS_QUERY, {
+        first: VENDOR_PAGE,
+        after,
+      })) as {
+        vendors: {
+          data: {
+            pageInfo: { hasNextPage: boolean; endCursor: string }
+            edges: Array<{ node: VendorNode }>
+          }
+        }
+      }
+      apiCalls += 1
+      const page = data.vendors.data
+      for (const { node } of page.edges) {
+        if (node.name) vendorNames[node.id] = node.name
+        records.push({
+          recordType: "vendor",
+          externalId: node.id,
+          payload: { name: node.name ?? null },
+        })
+      }
+      if (!page.pageInfo.hasNextPage) {
+        return {
+          records,
+          apiCalls,
+          nextCursor: {
+            ...cursor,
+            phase: "purchase_orders" as const,
+            after: null,
+            vendorNames,
+          },
+        }
+      }
+      after = page.pageInfo.endCursor
+      await sleep(PAGE_PAUSE_MS)
+    }
+    return { records, apiCalls, nextCursor: { ...cursor, after, vendorNames } }
+  }
 
   async function pullPurchaseOrders(cursor: ShipheroCursor, budget: number) {
     const records: ConnectorRecord[] = []
@@ -167,13 +324,24 @@ export function createShipheroAdapter(options: { execute: GraphqlExecutor }): Co
     let apiCalls = 0
     const vendorNames = { ...cursor.vendorNames }
     while (apiCalls < budget) {
-      const data = (await execute(PURCHASE_ORDERS_QUERY, { first: PO_PAGE, after })) as {
-        purchase_orders: { data: { pageInfo: { hasNextPage: boolean; endCursor: string }; edges: Array<{ node: PurchaseOrderNode }> } }
+      const data = (await execute(PURCHASE_ORDERS_QUERY, {
+        first: PO_PAGE,
+        after,
+        updatedFrom: cursor.poUpdatedFrom,
+        fulfillmentStatus: cursor.poInitialStatus,
+      })) as {
+        purchase_orders: {
+          data: {
+            pageInfo: { hasNextPage: boolean; endCursor: string }
+            edges: Array<{ node: PurchaseOrderNode }>
+          }
+        }
       }
       apiCalls += 1
       const page = data.purchase_orders.data
       for (const { node } of page.edges) {
-        if (node.vendor_id && node.vendor?.name) vendorNames[node.vendor_id] = node.vendor.name
+        if (node.vendor_id && node.vendor?.name)
+          vendorNames[node.vendor_id] = node.vendor.name
         records.push(purchaseOrderRecord(node))
         if (node.vendor_id) {
           records.push({
@@ -184,7 +352,16 @@ export function createShipheroAdapter(options: { execute: GraphqlExecutor }): Co
         }
       }
       if (!page.pageInfo.hasNextPage) {
-        return { records, apiCalls, nextCursor: { ...cursor, phase: "inventory" as const, after: null, vendorNames } }
+        return {
+          records,
+          apiCalls,
+          nextCursor: {
+            ...cursor,
+            phase: "inventory" as const,
+            after: null,
+            vendorNames,
+          },
+        }
       }
       after = page.pageInfo.endCursor
       await sleep(PAGE_PAUSE_MS)
@@ -197,8 +374,16 @@ export function createShipheroAdapter(options: { execute: GraphqlExecutor }): Co
     let after = cursor.after
     let apiCalls = 0
     while (apiCalls < budget) {
-      const data = (await execute(PRODUCTS_QUERY, { first: INVENTORY_PAGE, after })) as {
-        products: { data: { pageInfo: { hasNextPage: boolean; endCursor: string }; edges: Array<{ node: ProductNode }> } }
+      const data = (await execute(PRODUCTS_QUERY, {
+        first: INVENTORY_PAGE,
+        after,
+      })) as {
+        products: {
+          data: {
+            pageInfo: { hasNextPage: boolean; endCursor: string }
+            edges: Array<{ node: ProductNode }>
+          }
+        }
       }
       apiCalls += 1
       const page = data.products.data
@@ -235,7 +420,15 @@ export function createShipheroAdapter(options: { execute: GraphqlExecutor }): Co
         }
       }
       if (!page.pageInfo.hasNextPage) {
-        return { records, apiCalls, nextCursor: { ...cursor, phase: "sales_orders" as const, after: null } }
+        return {
+          records,
+          apiCalls,
+          nextCursor: {
+            ...cursor,
+            phase: "sales_orders" as const,
+            after: null,
+          },
+        }
       }
       after = page.pageInfo.endCursor
       await sleep(PAGE_PAUSE_MS)
@@ -243,71 +436,102 @@ export function createShipheroAdapter(options: { execute: GraphqlExecutor }): Co
     return { records, apiCalls, nextCursor: { ...cursor, after } }
   }
 
-  async function pullSalesOrders(cursor: ShipheroCursor, budget: number, salesSince: string | null) {
+  async function pullSalesOrders(cursor: ShipheroCursor, budget: number) {
     const records: ConnectorRecord[] = []
     let after = cursor.after
     let apiCalls = 0
-    let maxSalesOrderDate = cursor.maxSalesOrderDate
-    const cutoff = salesSince ? overlapCutoff(salesSince) : null
     while (apiCalls < budget) {
-      const data = (await execute(ORDERS_QUERY, { first: SALES_PAGE, after })) as {
-        orders: { data: { pageInfo: { hasNextPage: boolean; endCursor: string }; edges: Array<{ node: SalesOrderNode }> } }
+      const data = (await execute(ORDERS_QUERY, {
+        first: SALES_PAGE,
+        after,
+        updatedFrom: cursor.salesUpdatedFrom,
+        orderDateFrom: cursor.salesOrderDateFrom,
+      })) as {
+        orders: {
+          data: {
+            pageInfo: { hasNextPage: boolean; endCursor: string }
+            edges: Array<{ node: SalesOrderNode }>
+          }
+        }
       }
       apiCalls += 1
       const page = data.orders.data
-      let reachedCutoff = false
       for (const { node } of page.edges) {
-        if (node.order_date && (!maxSalesOrderDate || node.order_date > maxSalesOrderDate)) {
-          maxSalesOrderDate = node.order_date
-        }
-        if (cutoff && node.order_date && node.order_date < cutoff) {
-          reachedCutoff = true
-          break
-        }
         records.push(salesOrderRecord(node))
       }
-      if (reachedCutoff || !page.pageInfo.hasNextPage) {
-        return { records, apiCalls, nextCursor: null, maxSalesOrderDate }
+      if (!page.pageInfo.hasNextPage) {
+        return { records, apiCalls, nextCursor: null }
       }
       after = page.pageInfo.endCursor
       await sleep(PAGE_PAUSE_MS)
     }
-    return { records, apiCalls, nextCursor: { ...cursor, after, maxSalesOrderDate }, maxSalesOrderDate }
+    return { records, apiCalls, nextCursor: { ...cursor, after } }
   }
 
   return {
-    kind: "shiphero",
+    sourceKey: "shiphero",
     async pull(input: ConnectorPullInput): Promise<ConnectorPullResult> {
-      const cursor = (input.cursor as ShipheroCursor | null) ?? initialCursor(input.watermarks)
+      const cursor =
+        (input.cursor as ShipheroCursor | null) ??
+        initialCursor(input.watermarks, input.now)
       const budget = input.budget.maxApiCalls
 
+      if (cursor.phase === "vendors") {
+        const result = await pullVendors(cursor, budget)
+        return {
+          records: result.records,
+          nextCursor: result.nextCursor,
+          apiCalls: result.apiCalls,
+        }
+      }
       if (cursor.phase === "purchase_orders") {
         const result = await pullPurchaseOrders(cursor, budget)
-        return { records: result.records, nextCursor: result.nextCursor, apiCalls: result.apiCalls }
+        return {
+          records: result.records,
+          nextCursor: result.nextCursor,
+          apiCalls: result.apiCalls,
+        }
       }
       if (cursor.phase === "inventory") {
         const result = await pullInventory(cursor, budget)
-        return { records: result.records, nextCursor: result.nextCursor, apiCalls: result.apiCalls }
+        return {
+          records: result.records,
+          nextCursor: result.nextCursor,
+          apiCalls: result.apiCalls,
+        }
       }
-      const result = await pullSalesOrders(cursor, budget, input.watermarks.salesSince ?? null)
+      const result = await pullSalesOrders(cursor, budget)
       return {
         records: result.records,
         nextCursor: result.nextCursor,
         apiCalls: result.apiCalls,
-        watermarks: result.maxSalesOrderDate ? { salesSince: result.maxSalesOrderDate } : undefined,
+        watermarks:
+          result.nextCursor === null
+            ? {
+                poSince: cursor.cycleStartedAt,
+                salesSince: cursor.cycleStartedAt,
+              }
+            : undefined,
       }
     },
   }
 }
 
-function overlapCutoff(salesSince: string): string {
-  const parsed = new Date(salesSince)
-  if (Number.isNaN(parsed.getTime())) return salesSince
-  parsed.setUTCDate(parsed.getUTCDate() - SALES_OVERLAP_DAYS)
-  return parsed.toISOString()
+type LineItems = {
+  pageInfo?: { hasNextPage?: boolean }
+  edges?: Array<{
+    node: {
+      sku?: string
+      quantity?: number
+      price?: string | number
+      product_name?: string
+    }
+  }>
 }
-
-type LineItems = { edges?: Array<{ node: { sku?: string; quantity?: number; price?: string | number; product_name?: string } }> }
+type VendorNode = {
+  id: string
+  name?: string
+}
 type PurchaseOrderNode = {
   id: string
   po_number?: string
@@ -322,7 +546,11 @@ type PurchaseOrderNode = {
 type ProductNode = {
   sku: string
   name?: string
-  vendors?: Array<{ vendor_id: string; vendor_sku?: string; price?: string | number }>
+  vendors?: Array<{
+    vendor_id: string
+    vendor_sku?: string
+    price?: string | number
+  }>
   warehouse_products?: Array<{
     warehouse_id: string
     on_hand?: number
@@ -337,6 +565,7 @@ type SalesOrderNode = {
   id: string
   order_number?: string
   order_date?: string
+  updated_at?: string
   fulfillment_status?: string
   total_price?: string | number
   line_items?: LineItems
@@ -352,6 +581,9 @@ function mapLines(lineItems?: LineItems) {
 }
 
 function purchaseOrderRecord(node: PurchaseOrderNode): ConnectorRecord {
+  if (node.line_items?.pageInfo?.hasNextPage) {
+    throw new Error(`shiphero_purchase_order_lines_truncated:${node.id}`)
+  }
   return {
     recordType: "purchase_order",
     externalId: node.id,
@@ -370,6 +602,9 @@ function purchaseOrderRecord(node: PurchaseOrderNode): ConnectorRecord {
 }
 
 function salesOrderRecord(node: SalesOrderNode): ConnectorRecord {
+  if (node.line_items?.pageInfo?.hasNextPage) {
+    throw new Error(`shiphero_sales_order_lines_truncated:${node.id}`)
+  }
   return {
     recordType: "sales_order",
     externalId: node.id,
@@ -385,7 +620,15 @@ function salesOrderRecord(node: SalesOrderNode): ConnectorRecord {
 }
 
 export function createShipheroAdapterFromEnvironment(): ConnectorAdapter {
-  const apiKey = process.env.SHIPHERO_API_KEY?.trim()
-  if (!apiKey) throw new Error("shiphero_api_key_missing")
-  return createShipheroAdapter({ execute: createShipheroGraphqlExecutor(apiKey) })
+  const accessToken =
+    process.env.SHIPHERO_ACCESS_TOKEN?.trim() ||
+    // Compatibility for environments configured from the original PR draft.
+    process.env.SHIPHERO_API_KEY?.trim()
+  const refreshToken = process.env.SHIPHERO_REFRESH_TOKEN?.trim()
+  if (!accessToken && !refreshToken) {
+    throw new Error("shiphero_credentials_missing")
+  }
+  return createShipheroAdapter({
+    execute: createShipheroGraphqlExecutor({ accessToken, refreshToken }),
+  })
 }
