@@ -13,6 +13,7 @@ import type { RuntimeSourceRef, RuntimeState } from "../runtime/state"
 
 const maximumExpressionDepth = 16
 const maximumExpressionOperations = 500
+const maximumSourceRefsPerDatasetEntity = 3
 const unsafeSegments = new Set(["__proto__", "constructor", "prototype"])
 
 export type WorkspaceExternalRecord = {
@@ -190,7 +191,8 @@ export class WorkspaceDatasetProvider implements RuntimeCapabilityProvider {
   ): Promise<WorkspaceProjection> {
     const spec = workspaceCapabilityMappingSpecSchema.parse(binding.spec)
     const datasets = new Map<string, Map<string, NormalizedRow[]>>()
-    const sourceRefs: RuntimeSourceRef[] = []
+    const sourceRefsByEntity = new Map<string, RuntimeSourceRef[]>()
+    const sourceRefCounts = new Map<string, number>()
     let inputRows = 0
 
     for (const dataset of spec.datasets) {
@@ -234,24 +236,31 @@ export class WorkspaceDatasetProvider implements RuntimeCapabilityProvider {
       const normalized = boundedNormalizedRecords.flatMap(({ rows }) => rows)
       inputRows += normalized.length
       datasets.set(dataset.alias, groupRowsByEntity(normalized))
-      for (const { record, rows } of boundedNormalizedRecords.slice(0, 100)) {
+      for (const { record, rows } of boundedNormalizedRecords) {
         const entityValues = unique(rows.map((row) => row.entity)).slice(0, 100)
-        if (entityValues.length === 0) continue
-        sourceRefs.push({
-          capabilityAlias: requirementAlias,
-          connectorId: "mandala.workspace-data",
-          observedAt: record.pulledAt,
-          reference: {
-            canonicalRecordId: record.id,
-            sourceId: record.sourceId,
-            mappingVersionId: binding.mappingVersionId,
-            catalogDigest: binding.catalogDigest,
-            sourceKey: record.sourceKey,
-            recordType: record.recordType,
-            externalId: record.externalId,
-            entityValues,
-          },
-        })
+        for (const entityValue of entityValues) {
+          const countKey = `${dataset.alias}\u0000${entityValue}`
+          const count = sourceRefCounts.get(countKey) ?? 0
+          if (count >= maximumSourceRefsPerDatasetEntity) continue
+          const refs = sourceRefsByEntity.get(entityValue) ?? []
+          refs.push({
+            capabilityAlias: requirementAlias,
+            connectorId: "mandala.workspace-data",
+            observedAt: record.pulledAt,
+            reference: {
+              canonicalRecordId: record.id,
+              sourceId: record.sourceId,
+              mappingVersionId: binding.mappingVersionId,
+              catalogDigest: binding.catalogDigest,
+              sourceKey: record.sourceKey,
+              recordType: record.recordType,
+              externalId: record.externalId,
+              entityValues: [entityValue],
+            },
+          })
+          sourceRefsByEntity.set(entityValue, refs)
+          sourceRefCounts.set(countKey, count + 1)
+        }
       }
     }
 
@@ -295,6 +304,13 @@ export class WorkspaceDatasetProvider implements RuntimeCapabilityProvider {
         "The mapped workspace projection exceeded its configured byte limit."
       )
     }
+    const entityKey = spec.output.entityKey
+    const sourceRefs = records.flatMap((record) => {
+      const entityValue = record[entityKey]
+      return scalarEntity(entityValue)
+        ? (sourceRefsByEntity.get(String(entityValue)) ?? [])
+        : []
+    })
     return { binding: { ...binding, spec }, records, sourceRefs, warnings }
   }
 }

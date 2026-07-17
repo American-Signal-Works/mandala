@@ -41,8 +41,41 @@ describe("Context provider-neutral index worker", () => {
       ])
     )
     expect(provider.add).not.toHaveBeenCalled()
-    expect(repository.claimProcessing).not.toHaveBeenCalled()
+    expect(repository.claimProcessing).toHaveBeenCalledOnce()
     expect(repository.claim).not.toHaveBeenCalled()
+  })
+
+  it("settles provider-accepted work before sending another add batch", async () => {
+    const repository = repositoryFor([])
+    repository.claimProcessing = vi.fn().mockResolvedValue([processingLease()])
+    repository.claimAddBatch = vi
+      .fn()
+      .mockResolvedValue([lease("add", 1), lease("add", 2)])
+    const provider = providerFor()
+    provider.processingStatus = vi.fn().mockResolvedValue({
+      requestId: processingLease().event.id,
+      provider: "supermemory",
+      scope: {
+        companyId: processingLease().companyId,
+        workspaceScopeId: processingLease().companyId,
+      },
+      stableCustomId: processingLease().stableCustomId,
+      status: "complete",
+      checkedAt: now.toISOString(),
+    })
+
+    const summary = await runContextIndexBatch({
+      repository,
+      resolveProvider: createContextIndexProviderResolver([provider]),
+      workerId: "context-worker-1",
+      now,
+    })
+
+    expect(summary).toMatchObject({ claimed: 1, completed: 1 })
+    expect(repository.claimProcessing).toHaveBeenCalledOnce()
+    expect(repository.claimAddBatch).not.toHaveBeenCalled()
+    expect(provider.processingStatus).toHaveBeenCalledOnce()
+    expect(provider.addBatch).not.toHaveBeenCalled()
   })
 
   it("dispatches add, replace, and delete and records strict completions", async () => {

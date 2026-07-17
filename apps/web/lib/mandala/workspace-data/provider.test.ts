@@ -160,6 +160,66 @@ describe("WorkspaceDatasetProvider", () => {
     })
   })
 
+  it("retains source evidence when the selected signal is after the first 100 rows", async () => {
+    const targetId = "r-target"
+    const store: WorkspaceDataStore = {
+      resolveMapping: async () => ({
+        mappingVersionId: "10000000-0000-4000-8000-000000000001",
+        mappingKey: "workspace.records.read",
+        specHash: "b".repeat(64),
+        catalogDigest: "c".repeat(64),
+        spec: {
+          ...spec,
+          bounds: {
+            maximumInputRows: 150,
+            maximumOutputRows: 150,
+            maximumOutputBytes: 65_536,
+          },
+        },
+      }),
+      loadRecords: async () => [
+        ...Array.from({ length: 100 }, (_, index) => ({
+          id: `r-${index}`,
+          companyId: "company",
+          sourceId: "source",
+          sourceKey: "helpdesk",
+          recordType: "support_ticket",
+          externalId: `T-${index}`,
+          payload: { ticket_id: `T-${index}`, severity: 1 },
+          pulledAt: "2026-07-16T19:00:00.000Z",
+        })),
+        {
+          id: targetId,
+          companyId: "company",
+          sourceId: "source",
+          sourceKey: "helpdesk",
+          recordType: "support_ticket",
+          externalId: "T-target",
+          payload: { ticket_id: "T-target", severity: 5 },
+          pulledAt: "2026-07-16T19:00:00.000Z",
+        },
+      ],
+    }
+    const provider = new WorkspaceDatasetProvider(
+      store,
+      () => new Date("2026-07-16T20:00:00.000Z")
+    )
+    await provider.prepare({ companyId: "company", bindings: [binding] })
+
+    const loaded = await provider.load({
+      state: { companyId: "company" } as never,
+      manifest: {} as never,
+      bindings: [binding],
+      allowedTools: [binding.toolName],
+    })
+
+    expect(loaded.sourceRefs).toHaveLength(1)
+    expect(loaded.sourceRefs[0]?.reference).toMatchObject({
+      canonicalRecordId: targetId,
+      entityValues: ["T-target"],
+    })
+  })
+
   it("enforces declared row and byte bounds", async () => {
     const store: WorkspaceDataStore = {
       resolveMapping: async () => ({

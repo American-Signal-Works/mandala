@@ -127,18 +127,6 @@ export async function runContextIndexBatch(input: {
     )
     return contextIndexWorkerSummarySchema.parse(summarize(results))
   }
-  const addBatchLeases = await input.repository.claimAddBatch(claimInput)
-  if (addBatchLeases.length > 0) {
-    const results = await executeAddBatch({
-      repository: input.repository,
-      resolveProvider: input.resolveProvider,
-      workerId: options.workerId,
-      leases: addBatchLeases,
-      concurrency: options.concurrency,
-      now: options.now,
-    })
-    return contextIndexWorkerSummarySchema.parse(summarize(results))
-  }
   const processingLeases = await input.repository.claimProcessing(
     boundedSingleRequestInput
   )
@@ -155,6 +143,21 @@ export async function runContextIndexBatch(input: {
           now: options.now,
         })
     )
+    return contextIndexWorkerSummarySchema.parse(summarize(results))
+  }
+  // Confirm provider-accepted documents before sending another add batch. A
+  // large backfill must not starve polling, or searchable provider documents
+  // remain stuck as locally ineligible `processing` rows indefinitely.
+  const addBatchLeases = await input.repository.claimAddBatch(claimInput)
+  if (addBatchLeases.length > 0) {
+    const results = await executeAddBatch({
+      repository: input.repository,
+      resolveProvider: input.resolveProvider,
+      workerId: options.workerId,
+      leases: addBatchLeases,
+      concurrency: options.concurrency,
+      now: options.now,
+    })
     return contextIndexWorkerSummarySchema.parse(summarize(results))
   }
   const leases = await input.repository.claim(boundedSingleRequestInput)
