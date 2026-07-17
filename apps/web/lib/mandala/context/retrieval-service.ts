@@ -150,11 +150,12 @@ export class SupabaseContextRetrievalRepository implements ContextRetrievalRepos
         .eq("company_id", companyId)
         .in("external_id", entityValues)
         .limit(100)
-      if (error) throw new ContextRetrievalServiceError("ledger_unavailable")
+      if (error)
+        throw new ContextRetrievalServiceError("entity_records_unavailable")
       relatedRecordData = data ?? []
     }
     if (directRecordError) {
-      throw new ContextRetrievalServiceError("ledger_unavailable")
+      throw new ContextRetrievalServiceError("canonical_records_unavailable")
     }
     const canonicalRows = uniqueBy(
       z
@@ -186,9 +187,10 @@ export class SupabaseContextRetrievalRepository implements ContextRetrievalRepos
         .eq("company_id", companyId)
         .in("id", sourceIds),
     ])
-    if (ledgerError || sourceError) {
-      throw new ContextRetrievalServiceError("ledger_unavailable")
-    }
+    if (ledgerError)
+      throw new ContextRetrievalServiceError("index_ledger_unavailable")
+    if (sourceError)
+      throw new ContextRetrievalServiceError("source_registry_unavailable")
 
     const ledgerRows = z.array(ledgerRowSchema).parse(ledgerData ?? [])
     const sourceRows = z.array(sourceRowSchema).parse(sourceData ?? [])
