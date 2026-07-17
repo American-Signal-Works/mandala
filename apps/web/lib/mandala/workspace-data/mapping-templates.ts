@@ -192,6 +192,17 @@ const templates: Record<string, WorkspaceCapabilityMappingSpec> = {
         entityPath: "/sku",
         maximumFreshnessHours: 168,
         required: false,
+        businessObject: "procurement.purchase-order",
+        evidenceRole: "authoritative",
+      },
+      {
+        alias: "tracking",
+        recordType: "board_card",
+        entityPath: "/sku",
+        maximumFreshnessHours: 72,
+        required: false,
+        businessObject: "procurement.purchase-order",
+        evidenceRole: "tracking",
       },
     ],
     output: {
@@ -223,7 +234,18 @@ const templates: Record<string, WorkspaceCapabilityMappingSpec> = {
             },
           ])
         ),
+        field("duplicateOpenOrderMatchCount", literal(0), "internal"),
       ],
+    },
+    normalization: {
+      model: "procurement.open-order",
+      version: "1.0.0",
+    },
+    coveragePolicy: {
+      mode: "all_relevant_sources",
+      requiredRoles: ["authoritative"],
+      outputField: "openOrderSourceCoverageComplete",
+      incomplete: "block",
     },
     bounds,
   },

@@ -32,9 +32,7 @@ export async function runContextIndexMaintenance() {
     "reserve_context_provider_health_v1",
     { p_now: now.toISOString() }
   )
-  const healthReserved = healthReservation.data as
-    | { reserved?: unknown }
-    | null
+  const healthReserved = healthReservation.data as { reserved?: unknown } | null
   if (healthReservation.error || healthReserved?.reserved !== true) {
     throw new Error("context_provider_rate_limited")
   }
@@ -61,10 +59,17 @@ export async function runContextIndexMaintenance() {
     repository,
     resolveProvider: createContextIndexProviderResolver([provider]),
     workerId: `vercel-context-index-${process.env.VERCEL_REGION ?? "local"}`,
-    limit: 3,
+    // Live verification shows 200-document Supermemory batches finish in
+    // roughly 12 seconds. Larger payloads approach the 30-second provider
+    // timeout, while this still preserves high-throughput bulk ingestion.
+    limit: 200,
     leaseSeconds: 120,
-    concurrency: 1,
+    concurrency: 20,
     now,
   })
-  return { preparation, batch, providerOperational: health.status === "healthy" }
+  return {
+    preparation,
+    batch,
+    providerOperational: health.status === "healthy",
+  }
 }

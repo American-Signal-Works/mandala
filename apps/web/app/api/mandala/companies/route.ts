@@ -28,14 +28,8 @@ export async function GET(request: Request) {
       supabase: auth.supabase,
       userId: auth.user.id,
     })
-    const visibleCompanies =
-      auth.cliSession?.managed === true
-        ? companies.filter(
-            (company) => company.id === auth.cliSession?.selectedCompanyId
-          )
-        : companies
     return NextResponse.json(
-      companiesResponseSchema.parse({ companies: visibleCompanies }),
+      companiesResponseSchema.parse({ companies }),
       { headers: { "cache-control": "private, no-store" } }
     )
   } catch {

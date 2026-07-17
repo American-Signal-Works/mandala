@@ -32,7 +32,8 @@ async function run(request: Request, validateBody: boolean) {
     return Response.json(await runContextIndexMaintenance(), {
       headers: privateHeaders,
     })
-  } catch {
+  } catch (error) {
+    console.error("Context index worker failed.", error)
     return Response.json(
       { error: "context_index_worker_failed" },
       { status: 500, headers: privateHeaders }

@@ -1,7 +1,6 @@
 import { z } from "zod"
 
-const capabilityKeyPattern =
-  /^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*){2,}$/
+const capabilityKeyPattern = /^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*){2,}$/
 const connectorKeyPattern = /^[a-z][a-z0-9_]*(?:[.-][a-z0-9_]+)*$/
 const semanticVersionPattern = /^\d+\.\d+\.\d+$/
 const sha256Pattern = /^[0-9a-f]{64}$/
@@ -22,11 +21,7 @@ export const semanticVersionSchema = z
   .max(40)
   .regex(semanticVersionPattern)
 export const schemaDigestSchema = z.string().regex(sha256Pattern)
-export const capabilityOperationSchema = z.enum([
-  "read",
-  "propose",
-  "execute",
-])
+export const capabilityOperationSchema = z.enum(["read", "propose", "execute"])
 export const capabilityKindSchema = z.enum(["dataset", "action"])
 export const dataClassificationSchema = z.enum([
   "internal",
@@ -88,6 +83,20 @@ export const connectorCapabilitySchema = z
     capabilityVersion: semanticVersionSchema,
     operations: z.array(capabilityOperationSchema).min(1),
     schemaDigest: schemaDigestSchema,
+    evidenceRoles: z
+      .array(
+        z
+          .object({
+            businessObject: z
+              .string()
+              .regex(/^[a-z][a-z0-9_-]*(?:\.[a-z][a-z0-9_-]*)+$/),
+            role: z.enum(["authoritative", "tracking", "supporting"]),
+            recordTypes: z.array(z.string().min(1).max(150)).min(1).max(20),
+          })
+          .strict()
+      )
+      .max(20)
+      .optional(),
   })
   .strict()
 
@@ -199,9 +208,7 @@ export type CapabilityActorRole = z.infer<typeof capabilityActorRoleSchema>
 export type CapabilityDefinition = z.infer<typeof capabilityDefinitionSchema>
 export type DataClassification = z.infer<typeof dataClassificationSchema>
 export type ConnectorDefinition = z.infer<typeof connectorDefinitionSchema>
-export type ConnectorInstallation = z.infer<
-  typeof connectorInstallationSchema
->
+export type ConnectorInstallation = z.infer<typeof connectorInstallationSchema>
 export type InstallationCapabilityGrant = z.infer<
   typeof installationCapabilityGrantSchema
 >

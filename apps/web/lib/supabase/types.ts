@@ -2618,18 +2618,21 @@ export type Database = {
           capability_version_id: string
           connector_version_id: string
           created_at: string
+          evidence_roles: Json
           provider_operation: string
         }
         Insert: {
           capability_version_id: string
           connector_version_id: string
           created_at?: string
+          evidence_roles?: Json
           provider_operation: string
         }
         Update: {
           capability_version_id?: string
           connector_version_id?: string
           created_at?: string
+          evidence_roles?: Json
           provider_operation?: string
         }
         Relationships: [
@@ -5655,6 +5658,7 @@ export type Database = {
           created_at: string
           dataset_alias: string
           expected_schema_hash: string | null
+          expected_schema_hashes: Json
           mapping_version_id: string
           maximum_freshness_hours: number
           record_type: string
@@ -5666,6 +5670,7 @@ export type Database = {
           created_at?: string
           dataset_alias: string
           expected_schema_hash?: string | null
+          expected_schema_hashes?: Json
           mapping_version_id: string
           maximum_freshness_hours?: number
           record_type: string
@@ -5677,6 +5682,7 @@ export type Database = {
           created_at?: string
           dataset_alias?: string
           expected_schema_hash?: string | null
+          expected_schema_hashes?: Json
           mapping_version_id?: string
           maximum_freshness_hours?: number
           record_type?: string
@@ -5968,6 +5974,15 @@ export type Database = {
         }
         Returns: Json
       }
+      claim_context_index_add_batch_v1: {
+        Args: {
+          p_lease_seconds?: number
+          p_limit?: number
+          p_now?: string
+          p_worker_id: string
+        }
+        Returns: Json
+      }
       claim_context_index_processing_v1: {
         Args: {
           p_lease_seconds?: number
@@ -6234,6 +6249,24 @@ export type Database = {
       get_context_index_status_v1: {
         Args: { p_company_id: string }
         Returns: Json
+      }
+      get_context_retrieval_ledger_v1: {
+        Args: {
+          p_canonical_record_ids: string[]
+          p_company_id: string
+        }
+        Returns: {
+          canonical_record_id: string
+          canonical_version: string
+          content_hash: string
+          policy_hash: string
+          policy_version: number
+          provider_document_id: string
+          record_type: string
+          source_key: string
+          stable_custom_id: string
+          status: string
+        }[]
       }
       get_my_profile_identity: { Args: never; Returns: Json }
       get_registered_agent_execution_context_v1: {
@@ -6725,6 +6758,14 @@ export type Database = {
           p_next_refresh_token_hash: string
           p_refresh_expires_at: string
           p_refresh_token_hash: string
+        }
+        Returns: Json
+      }
+      select_cli_session_company_v1: {
+        Args: {
+          p_actor_user_id: string
+          p_cli_session_id: string
+          p_company_id: string
         }
         Returns: Json
       }

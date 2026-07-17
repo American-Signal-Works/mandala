@@ -149,6 +149,8 @@ export async function runWorkspaceSandboxGoldenPath(input: {
               assumptions: result.evidence.assumptions,
               sourceCapabilities: setup.manifest.evidence.source_capabilities,
               sourceRefs: result.evidence.sourceRefs,
+              operationalContext:
+                result.contextPacket?.operationalContext ?? null,
             },
           }
         : null,

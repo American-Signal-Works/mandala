@@ -113,7 +113,7 @@ export async function prepareWorkspaceAgent(input: {
     await db
       .from<CatalogRow>("workspace_data_catalogs")
       .select(
-        "source_key, record_type, record_count, freshest_observed_at, profile_status"
+        "source_key, record_type, record_count, freshest_observed_at, profile_status, schema_hash"
       )
       .eq("company_id", input.companyId)
   ).filter(({ profile_status }) => profile_status !== "detached")
@@ -548,6 +548,7 @@ type CatalogRow = {
   record_count: number | string
   freshest_observed_at: string | null
   profile_status: string
+  schema_hash: string | null
 }
 
 function resolveDatasetSources(
@@ -571,13 +572,9 @@ function resolveDatasetSources(
         }
         return dataset
       }
-      if (matches.length > 1) {
-        throw new WorkspaceSetupError(
-          "mapping_dataset_ambiguous",
-          `Dataset ${dataset.alias} matches more than one imported source. Choose a source explicitly before binding it.`
-        )
-      }
-      return { ...dataset, sourceKey: matches[0]!.source_key }
+      return matches.length === 1
+        ? { ...dataset, sourceKey: matches[0]!.source_key }
+        : dataset
     }),
   }
 }

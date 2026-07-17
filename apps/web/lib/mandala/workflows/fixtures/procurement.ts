@@ -30,6 +30,8 @@ export type ProcurementSkuSnapshot = {
   recentSpikeMultiplier: number
   dataFreshnessHours: number
   duplicateOpenOrderUnits: number
+  duplicateOpenOrderMatchCount: number
+  openOrderSourceCoverageComplete: boolean
 }
 
 export type ProcurementFixtureScenario = {
@@ -67,6 +69,8 @@ export const procurementFixtureScenarios: Record<
       recentSpikeMultiplier: 1.08,
       dataFreshnessHours: 4,
       duplicateOpenOrderUnits: 0,
+      duplicateOpenOrderMatchCount: 0,
+      openOrderSourceCoverageComplete: true,
     },
   },
   sales_spike_warning: {
@@ -92,6 +96,8 @@ export const procurementFixtureScenarios: Record<
       recentSpikeMultiplier: 1.9,
       dataFreshnessHours: 5,
       duplicateOpenOrderUnits: 0,
+      duplicateOpenOrderMatchCount: 0,
+      openOrderSourceCoverageComplete: true,
     },
   },
   duplicate_open_order: {
@@ -117,6 +123,8 @@ export const procurementFixtureScenarios: Record<
       recentSpikeMultiplier: 1.02,
       dataFreshnessHours: 6,
       duplicateOpenOrderUnits: 140,
+      duplicateOpenOrderMatchCount: 1,
+      openOrderSourceCoverageComplete: true,
     },
   },
   stale_inventory: {
@@ -142,6 +150,8 @@ export const procurementFixtureScenarios: Record<
       recentSpikeMultiplier: 1.04,
       dataFreshnessHours: 176,
       duplicateOpenOrderUnits: 0,
+      duplicateOpenOrderMatchCount: 0,
+      openOrderSourceCoverageComplete: true,
     },
   },
   no_action: {
@@ -167,6 +177,8 @@ export const procurementFixtureScenarios: Record<
       recentSpikeMultiplier: 0.98,
       dataFreshnessHours: 3,
       duplicateOpenOrderUnits: 0,
+      duplicateOpenOrderMatchCount: 0,
+      openOrderSourceCoverageComplete: true,
     },
   },
   edit_reorder: {
@@ -193,6 +205,8 @@ export const procurementFixtureScenarios: Record<
       recentSpikeMultiplier: 1.04,
       dataFreshnessHours: 3,
       duplicateOpenOrderUnits: 0,
+      duplicateOpenOrderMatchCount: 0,
+      openOrderSourceCoverageComplete: true,
     },
   },
   reject_reorder: {
@@ -219,6 +233,8 @@ export const procurementFixtureScenarios: Record<
       recentSpikeMultiplier: 1.02,
       dataFreshnessHours: 4,
       duplicateOpenOrderUnits: 0,
+      duplicateOpenOrderMatchCount: 0,
+      openOrderSourceCoverageComplete: true,
     },
   },
 }

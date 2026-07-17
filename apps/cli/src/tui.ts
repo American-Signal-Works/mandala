@@ -703,6 +703,7 @@ class TuiSession {
     )
     this.clearState()
     await this.showHeader()
+    await this.showCompanies(true)
   }
 
   private async logout(): Promise<void> {
@@ -3712,7 +3713,7 @@ function deviceAuthorizationWaitingMessage(request: {
   browserOpened: boolean
 }) {
   return request.browserOpened
-    ? "A browser window was opened for Mandala sign-in. Sign in with Microsoft, Google, or your email magic link, then choose a workspace. Mandala will continue automatically. Press Escape to cancel."
+    ? "A browser window was opened for Mandala sign-in. Sign in with Microsoft, Google, or your email magic link. Mandala will continue automatically, then let you choose a workspace here. Press Escape to cancel."
     : "Mandala could not open the browser sign-in page."
 }
 

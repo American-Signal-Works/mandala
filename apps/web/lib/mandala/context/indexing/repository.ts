@@ -41,6 +41,12 @@ export interface ContextIndexRepository {
     leaseSeconds: number
     now: string
   }): Promise<ContextIndexLease[]>
+  claimAddBatch(input: {
+    workerId: string
+    limit: number
+    leaseSeconds: number
+    now: string
+  }): Promise<ContextIndexLease[]>
   claimCleanup(input: {
     workerId: string
     limit: number

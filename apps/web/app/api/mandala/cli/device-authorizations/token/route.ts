@@ -9,7 +9,6 @@ import {
   claimCliDeviceAuthorization,
   completeCliDeviceAuthorization,
   issueSupabaseCliActorSession,
-  loadCliCompany,
   releaseCliDeviceAuthorization,
   revokeIssuedCliActorSession,
 } from "@/actions/admin/cli-auth"
@@ -28,7 +27,7 @@ export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
 
 const completedExchangeSchema = z
-  .object({ sessionId: z.string().uuid(), companyId: z.string().uuid() })
+  .object({ sessionId: z.string().uuid(), companyId: z.null() })
   .strict()
 
 export async function POST(request: Request) {
@@ -58,18 +57,13 @@ export async function POST(request: Request) {
     const accessToken = createCliAccessToken()
     const refreshToken = createCliRefreshToken()
     const expiries = cliCredentialExpiries()
-    const [actorSession, companyResult] = await Promise.all([
-      issueSupabaseCliActorSession(claim.data.userId),
-      loadCliCompany(claim.data.companyId),
-    ])
+    const actorSession = await issueSupabaseCliActorSession(claim.data.userId)
     issuedActorAccessToken = actorSession.access_token
     const user = actorSession.user
     if (
-      user.id !== claim.data.userId ||
-      companyResult.error ||
-      !companyResult.data
+      user.id !== claim.data.userId
     ) {
-      throw new Error("cli_company_unavailable")
+      throw new Error("cli_user_unavailable")
     }
 
     const actorAuthSessionId = await getAuthSessionId(actorSession)
@@ -99,7 +93,6 @@ export async function POST(request: Request) {
           id: user.id,
           email: user.email ?? null,
         },
-        company: companyResult.data,
       })
     )
   } catch {

@@ -40,8 +40,10 @@ describe("ServerContextRetriever", () => {
 
   it("builds server-owned filters and revalidates every provider citation", async () => {
     const provider = providerFor()
+    const repository = repositoryFor()
+    repository.loadEligibleRecords = vi.fn(repository.loadEligibleRecords)
     const retriever = new ServerContextRetriever(
-      repositoryFor(),
+      repository,
       provider,
       true,
       () => new Date("2026-07-16T13:00:00.000Z")
@@ -50,6 +52,11 @@ describe("ServerContextRetriever", () => {
     const result = await retriever.retrieve(runtimeInput(true))
 
     expect(provider.retrieve).toHaveBeenCalledOnce()
+    expect(repository.loadEligibleRecords).toHaveBeenCalledWith(
+      expect.objectContaining({
+        candidates: [expect.objectContaining({ entityValues: ["T-42"] })],
+      })
+    )
     const request = vi.mocked(provider.retrieve).mock.calls[0]![0]
     expect(request).toMatchObject({
       provider: "supermemory",
@@ -360,6 +367,7 @@ function runtimeInput(sandboxEnabled: boolean): RuntimeContextRetrievalInput {
             sourceKey: "helpdesk",
             recordType: "support_ticket",
             externalId: "T-42",
+            entityValues: ["T-42"],
           },
         },
       ],

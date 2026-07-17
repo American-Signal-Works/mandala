@@ -347,14 +347,18 @@ async function handleCompany(
         "company_not_found",
         "That company is not available to the signed-in user."
       )
+    const selected = await input.getApi().selectCompany(company.id)
     const config = await input.store.readConfig()
     await input.store.writeConfig({
       ...config,
       mode: "sandbox",
-      selectedCompany: { id: company.id, name: company.name },
+      selectedCompany: {
+        id: selected.company.id,
+        name: selected.company.name,
+      },
     })
     return {
-      company: { id: company.id, name: company.name, role: company.role },
+      company: selected.company,
       mode: "sandbox",
     }
   }

@@ -18,6 +18,11 @@ export type CompilerCapability = {
   granted: boolean
   schemaCompatible?: boolean
   modelAllowedPaths?: string[]
+  evidenceRoles?: Array<{
+    businessObject: string
+    role: "authoritative" | "tracking" | "supporting"
+    recordTypes: string[]
+  }>
 }
 
 export type CompiledCapabilityBinding = CompilerCapability & {
@@ -153,22 +158,28 @@ export function compileAgentSkill(input: {
       })
       continue
     }
-    if (promptAllowed.length > 1) {
+    if (requirement.access !== "read" && promptAllowed.length > 1) {
       diagnostics.push({
         severity: "error",
         code: "capability.ambiguous",
         path: `capabilities.${requirement.as}`,
         message: `More than one connector can satisfy ${requirement.id}.`,
-        resolution: "Choose one connector binding for this capability.",
+        resolution:
+          "Choose one connector binding for each proposed or executed action.",
       })
       continue
     }
-    const candidate = promptAllowed[0]!
-    bindings.push({
-      ...candidate,
-      alias: requirement.as,
-      useInPrompt: requirement.use_in_prompt,
-    })
+    for (const candidate of [...promptAllowed].sort((left, right) =>
+      `${left.connectorId}:${left.toolName}`.localeCompare(
+        `${right.connectorId}:${right.toolName}`
+      )
+    )) {
+      bindings.push({
+        ...candidate,
+        alias: requirement.as,
+        useInPrompt: requirement.use_in_prompt,
+      })
+    }
   }
 
   for (const action of parsed.value.skill.actions) {
@@ -193,19 +204,21 @@ export function compileAgentSkill(input: {
 
   const sourceDigest = digest(input.source.replace(/\r\n/g, "\n").trim())
   const skill = parsed.value.skill
-  const readTools = bindings
-    .filter((binding) => binding.access === "read" && binding.useInPrompt)
-    .map((binding) => binding.toolName)
-    .sort()
+  const readTools = unique(
+    bindings
+      .filter((binding) => binding.access === "read" && binding.useInPrompt)
+      .map((binding) => binding.toolName)
+  ).sort()
   const graph: CompiledAgentManifest["graph"] = [
     node("resolve_bindings", "resolve_bindings", [], true),
     node(
       "load_data",
       "load_data",
-      bindings
-        .filter((binding) => binding.access === "read")
-        .map((binding) => binding.toolName)
-        .sort(),
+      unique(
+        bindings
+          .filter((binding) => binding.access === "read")
+          .map((binding) => binding.toolName)
+      ).sort(),
       true
     ),
     node("validate", "validate", [], true),
@@ -230,7 +243,9 @@ export function compileAgentSkill(input: {
     identity: skill.metadata,
     workflow: skill.workflow,
     capabilityBindings: bindings.sort((left, right) =>
-      left.alias.localeCompare(right.alias)
+      `${left.alias}:${left.connectorId}:${left.toolName}`.localeCompare(
+        `${right.alias}:${right.connectorId}:${right.toolName}`
+      )
     ),
     graph,
     rules: skill.rules,
@@ -276,4 +291,8 @@ function stableStringify(value: unknown): string {
       .join(",")}}`
   }
   return JSON.stringify(value)
+}
+
+function unique(values: string[]): string[] {
+  return [...new Set(values)]
 }

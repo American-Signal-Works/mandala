@@ -4,11 +4,13 @@ import {
   type WorkspaceCapabilityMappingSpec,
 } from "@workspace/control-plane"
 import type { WorkflowSupabaseClient } from "../workflows"
+import { connectorAccessSchema } from "../connectors"
 import {
   WorkspaceDataProviderError,
   type WorkspaceDataStore,
   type WorkspaceExternalRecord,
   type WorkspaceMappingBinding,
+  type WorkspaceSourceCoverage,
 } from "./provider"
 import { asWorkspaceDatabase, dataOrThrow, rowsOrThrow } from "./database"
 
@@ -37,6 +39,7 @@ const datasetRowSchema = z
       .string()
       .regex(/^[a-f0-9]{64}$/)
       .nullable(),
+    expected_schema_hashes: z.array(z.string().regex(/^[a-f0-9]{64}$/)),
     maximum_freshness_hours: z.number().int().positive(),
     required: z.boolean(),
   })
@@ -58,6 +61,9 @@ const sourceRowSchema = z
     id: z.string().uuid(),
     source_key: z.string(),
     sync_status: z.enum(["idle", "syncing", "error"]),
+    config: z.record(z.string(), z.unknown()),
+    last_synced_at: z.string().datetime({ offset: true }).nullable(),
+    last_sync_error: z.string().nullable(),
   })
   .passthrough()
 const externalRecordSchema = z
@@ -127,7 +133,7 @@ export class SupabaseWorkspaceDataStore implements WorkspaceDataStore {
           await this.db
             .from("workspace_capability_mapping_datasets")
             .select(
-              "dataset_alias, source_key, record_type, expected_schema_hash, maximum_freshness_hours, required"
+              "dataset_alias, source_key, record_type, expected_schema_hash, expected_schema_hashes, maximum_freshness_hours, required"
             )
             .eq("company_id", input.companyId)
             .eq("mapping_version_id", mapping.id)
@@ -143,13 +149,7 @@ export class SupabaseWorkspaceDataStore implements WorkspaceDataStore {
         .eq("record_type", dataset.record_type)
       if (dataset.source_key) query = query.eq("source_key", dataset.source_key)
       const catalogs = z.array(catalogRowSchema).parse(rowsOrThrow(await query))
-      if (!dataset.source_key && catalogs.length > 1) {
-        throw new WorkspaceDataProviderError(
-          "mapping_dataset_ambiguous",
-          `Dataset ${dataset.dataset_alias} now matches more than one imported source.`
-        )
-      }
-      if (dataset.expected_schema_hash === null) {
+      if (dataset.expected_schema_hashes.length === 0) {
         if (
           catalogs.some(({ profile_status }) => profile_status !== "detached")
         ) {
@@ -160,26 +160,20 @@ export class SupabaseWorkspaceDataStore implements WorkspaceDataStore {
         }
         continue
       }
-      const current = catalogs.find(
-        (catalog) =>
-          catalog.profile_status === "ready" &&
-          catalog.schema_hash === dataset.expected_schema_hash
+      const current = catalogs.filter(
+        (catalog) => catalog.profile_status !== "detached"
       )
-      if (!current) {
+      if (
+        (dataset.required && current.length === 0) ||
+        current.some(
+          (catalog) =>
+            catalog.profile_status !== "ready" ||
+            !dataset.expected_schema_hashes.includes(catalog.schema_hash ?? "")
+        )
+      ) {
         throw new WorkspaceDataProviderError(
           "mapping_schema_drift",
           `Dataset ${dataset.dataset_alias} no longer matches its frozen schema.`
-        )
-      }
-      const freshnessAge = current.freshest_observed_at
-        ? (this.now().getTime() -
-            new Date(current.freshest_observed_at).getTime()) /
-          3_600_000
-        : Number.POSITIVE_INFINITY
-      if (dataset.required && freshnessAge > dataset.maximum_freshness_hours) {
-        throw new WorkspaceDataProviderError(
-          "mapping_dataset_stale",
-          `Dataset ${dataset.dataset_alias} is older than its freshness policy.`
         )
       }
     }
@@ -200,7 +194,9 @@ export class SupabaseWorkspaceDataStore implements WorkspaceDataStore {
   }): Promise<WorkspaceExternalRecord[]> {
     let sourceQuery = this.db
       .from("external_sources")
-      .select("id, source_key, sync_status")
+      .select(
+        "id, source_key, sync_status, config, last_synced_at, last_sync_error"
+      )
       .eq("company_id", input.companyId)
     if (input.sourceKey)
       sourceQuery = sourceQuery.eq("source_key", input.sourceKey)
@@ -208,14 +204,12 @@ export class SupabaseWorkspaceDataStore implements WorkspaceDataStore {
       .array(sourceRowSchema)
       .parse(rowsOrThrow(await sourceQuery))
     if (sources.length === 0) return []
-    if (sources.some(({ sync_status }) => sync_status === "error")) {
-      throw new WorkspaceDataProviderError(
-        "workspace_source_unhealthy",
-        "A mapped workspace source is in an error state. Repair its sync before running the skill."
-      )
-    }
+    const healthySources = sources.filter(
+      (source) => source.sync_status === "idle" && hasReadAccess(source.config)
+    )
+    if (healthySources.length === 0) return []
     const sourceById = new Map(
-      sources.map((source) => [source.id, source.source_key])
+      healthySources.map((source) => [source.id, source.source_key])
     )
     const rows = z.array(externalRecordSchema).parse(
       rowsOrThrow(
@@ -228,7 +222,7 @@ export class SupabaseWorkspaceDataStore implements WorkspaceDataStore {
           .eq("record_type", input.recordType)
           .in(
             "source_id",
-            sources.map(({ id }) => id)
+            healthySources.map(({ id }) => id)
           )
           .order("pulled_at", { ascending: false })
           .limit(input.limit)
@@ -245,4 +239,125 @@ export class SupabaseWorkspaceDataStore implements WorkspaceDataStore {
       pulledAt: row.pulled_at,
     }))
   }
+
+  async inspectCoverage(input: {
+    companyId: string
+    sourceKey?: string
+    recordType: string
+    businessObject?: string
+    evidenceRole?: "authoritative" | "tracking" | "supporting"
+    maximumFreshnessHours: number
+  }): Promise<WorkspaceSourceCoverage[]> {
+    let sourceQuery = this.db
+      .from("external_sources")
+      .select(
+        "id, source_key, sync_status, config, last_synced_at, last_sync_error"
+      )
+      .eq("company_id", input.companyId)
+    if (input.sourceKey)
+      sourceQuery = sourceQuery.eq("source_key", input.sourceKey)
+    const sources = z
+      .array(sourceRowSchema)
+      .parse(rowsOrThrow(await sourceQuery))
+
+    let catalogQuery = this.db
+      .from("workspace_data_catalogs")
+      .select(
+        "source_id, source_key, record_type, record_count, schema_hash, profile_status, freshest_observed_at"
+      )
+      .eq("company_id", input.companyId)
+      .eq("record_type", input.recordType)
+    if (input.sourceKey)
+      catalogQuery = catalogQuery.eq("source_key", input.sourceKey)
+    const catalogs = z
+      .array(
+        catalogRowSchema.extend({
+          source_id: z.string().uuid(),
+          record_count: z.coerce.number().int().nonnegative(),
+        })
+      )
+      .parse(rowsOrThrow(await catalogQuery))
+    const catalogBySource = new Map(
+      catalogs.map((catalog) => [catalog.source_id, catalog])
+    )
+    const relevant = sources.filter(
+      (source) =>
+        Boolean(input.sourceKey) ||
+        catalogBySource.has(source.id) ||
+        advertisesEvidenceRole(source.config, input)
+    )
+    const checkedAt = this.now().toISOString()
+    return relevant.map((source) => {
+      const catalog = catalogBySource.get(source.id)
+      const freshestObservedAt =
+        catalog?.freshest_observed_at ?? source.last_synced_at
+      const freshnessHours = freshestObservedAt
+        ? (this.now().getTime() - new Date(freshestObservedAt).getTime()) /
+          3_600_000
+        : Number.POSITIVE_INFINITY
+      const status: WorkspaceSourceCoverage["status"] =
+        !hasReadAccess(source.config) || source.sync_status !== "idle"
+          ? "unavailable"
+          : catalog?.profile_status === "drifted"
+            ? "schema_drift"
+            : freshnessHours > input.maximumFreshnessHours
+              ? "stale"
+              : "checked"
+      return {
+        sourceId: source.id,
+        sourceKey: source.source_key,
+        recordType: input.recordType,
+        businessObject: input.businessObject,
+        evidenceRole: input.evidenceRole,
+        status,
+        recordCount: catalog?.record_count ?? 0,
+        checkedAt,
+        freshestObservedAt,
+        ...(status === "unavailable"
+          ? {
+              error: !hasReadAccess(source.config)
+                ? "Source is not connected with read permission."
+                : (source.last_sync_error ??
+                  (source.sync_status === "syncing"
+                    ? "Source sync is still running."
+                    : "Source sync is unavailable.")),
+            }
+          : {}),
+      }
+    })
+  }
+}
+
+function hasReadAccess(config: Record<string, unknown>): boolean {
+  const access = connectorAccessSchema.safeParse(config.access ?? {})
+  return (
+    access.success &&
+    access.data.status === "connected" &&
+    access.data.permissions.read
+  )
+}
+
+function advertisesEvidenceRole(
+  config: Record<string, unknown>,
+  input: {
+    recordType: string
+    businessObject?: string
+    evidenceRole?: "authoritative" | "tracking" | "supporting"
+  }
+): boolean {
+  if (!input.businessObject || !input.evidenceRole) return false
+  const roles = config.businessEvidenceRoles
+  if (!Array.isArray(roles)) return false
+  return roles.some(
+    (role) =>
+      isRecord(role) &&
+      role.businessObject === input.businessObject &&
+      role.role === input.evidenceRole &&
+      Array.isArray(role.recordTypes) &&
+      role.recordTypes.includes(input.recordType)
+  )
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value)
 }

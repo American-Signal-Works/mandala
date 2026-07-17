@@ -73,10 +73,18 @@ export class OffContextProvider
     )
   }
 
-  async add(document: ContextIndexDocument): Promise<ContextIndexOperationResult> {
+  async add(
+    document: ContextIndexDocument
+  ): Promise<ContextIndexOperationResult> {
     const parsed = contextIndexDocumentSchema.parse(document)
     assertOffProvider(parsed.provider)
     return this.disabledOperation(parsed.requestId, "add")
+  }
+
+  async addBatch(
+    documents: readonly ContextIndexDocument[]
+  ): Promise<readonly ContextIndexOperationResult[]> {
+    return Promise.all(documents.map((document) => this.add(document)))
   }
 
   async replace(
@@ -99,7 +107,9 @@ export class OffContextProvider
     return this.disabledOperation(parsed.requestId, "delete")
   }
 
-  async list(request: ContextIndexListRequest): Promise<ContextIndexListResult> {
+  async list(
+    request: ContextIndexListRequest
+  ): Promise<ContextIndexListResult> {
     const parsed = contextIndexListRequestSchema.parse(request)
     assertOffProvider(parsed.provider)
     return deepFreeze(
@@ -158,8 +168,9 @@ export class ContextProviderNotOperationalError extends Error {
 
 const offContextProvider = new OffContextProvider()
 
-export function resolveContextProvider(provider: "off" | "supermemory"):
-  | OffContextProvider {
+export function resolveContextProvider(
+  provider: "off" | "supermemory"
+): OffContextProvider {
   if (provider === "off") return offContextProvider
   throw new ContextProviderNotOperationalError(provider)
 }

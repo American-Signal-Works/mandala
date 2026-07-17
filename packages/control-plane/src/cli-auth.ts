@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { companyRoleSchema } from "./schemas.js"
 
 export const cliAuthorizationScopeSchema = z.literal("workspace:control")
 const cliTimestampSchema = z.string().datetime({ offset: true })
@@ -56,29 +57,12 @@ export const cliDeviceAuthorizationInspectionSchema = z
 export const cliDeviceAuthorizationDecisionRequestSchema = z
   .object({
     decision: z.enum(["approve", "deny"]),
-    companyId: z.string().uuid().optional(),
   })
   .strict()
-  .superRefine((value, context) => {
-    if (value.decision === "approve" && !value.companyId) {
-      context.addIssue({
-        code: z.ZodIssueCode.custom,
-        path: ["companyId"],
-        message: "A workspace is required for approval.",
-      })
-    }
-  })
 
 export const cliDeviceAuthorizationDecisionResponseSchema = z
   .object({
     status: z.enum(["approved", "denied"]),
-    company: z
-      .object({
-        id: z.string().uuid(),
-        name: z.string().min(1).max(200),
-      })
-      .strict()
-      .optional(),
   })
   .strict()
 
@@ -112,10 +96,20 @@ const cliDeviceAuthorizationAuthorizedResponseSchema = z
         email: z.string().email().nullable(),
       })
       .strict(),
+  })
+  .strict()
+
+export const cliSessionCompanySelectionRequestSchema = z
+  .object({ companyId: z.string().uuid() })
+  .strict()
+
+export const cliSessionCompanySelectionResponseSchema = z
+  .object({
     company: z
       .object({
         id: z.string().uuid(),
         name: z.string().min(1).max(200),
+        role: companyRoleSchema,
       })
       .strict(),
   })

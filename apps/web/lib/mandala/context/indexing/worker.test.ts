@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest"
 import type {
   ContextIndexLease,
+  ContextIndexDocument,
   ContextIndexOperation,
   ContextIndexProvider,
 } from "@workspace/control-plane"
@@ -16,6 +17,104 @@ import {
 const now = new Date("2026-07-17T03:00:00.000Z")
 
 describe("Context provider-neutral index worker", () => {
+  it("sends claimed additions through one provider batch request", async () => {
+    const leases = [lease("add", 1), lease("add", 2), lease("add", 3)]
+    const repository = repositoryFor([])
+    repository.claimAddBatch = vi.fn().mockResolvedValue(leases)
+    const provider = providerFor()
+
+    const summary = await runContextIndexBatch({
+      repository,
+      resolveProvider: createContextIndexProviderResolver([provider]),
+      workerId: "context-worker-1",
+      limit: 600,
+      now,
+    })
+
+    expect(summary).toMatchObject({ claimed: 3, completed: 3 })
+    expect(provider.addBatch).toHaveBeenCalledOnce()
+    expect(provider.addBatch).toHaveBeenCalledWith(
+      expect.arrayContaining([
+        expect.objectContaining({ requestId: leases[0]!.event.id }),
+        expect.objectContaining({ requestId: leases[1]!.event.id }),
+        expect.objectContaining({ requestId: leases[2]!.event.id }),
+      ])
+    )
+    expect(provider.add).not.toHaveBeenCalled()
+    expect(repository.claimProcessing).toHaveBeenCalledOnce()
+    expect(repository.claim).not.toHaveBeenCalled()
+  })
+
+  it("settles provider-accepted work before sending another add batch", async () => {
+    const repository = repositoryFor([])
+    repository.claimProcessing = vi.fn().mockResolvedValue([processingLease()])
+    repository.claimAddBatch = vi
+      .fn()
+      .mockResolvedValue([lease("add", 1), lease("add", 2)])
+    const provider = providerFor()
+    provider.processingStatus = vi.fn().mockResolvedValue({
+      requestId: processingLease().event.id,
+      provider: "supermemory",
+      scope: {
+        companyId: processingLease().companyId,
+        workspaceScopeId: processingLease().companyId,
+      },
+      stableCustomId: processingLease().stableCustomId,
+      status: "complete",
+      checkedAt: now.toISOString(),
+    })
+
+    const summary = await runContextIndexBatch({
+      repository,
+      resolveProvider: createContextIndexProviderResolver([provider]),
+      workerId: "context-worker-1",
+      now,
+    })
+
+    expect(summary).toMatchObject({ claimed: 1, completed: 1 })
+    expect(repository.claimProcessing).toHaveBeenCalledOnce()
+    expect(repository.claimAddBatch).not.toHaveBeenCalled()
+    expect(provider.processingStatus).toHaveBeenCalledOnce()
+    expect(provider.addBatch).not.toHaveBeenCalled()
+  })
+
+  it("reconciles accepted work through one bounded provider status batch", async () => {
+    const leases = Array.from({ length: 101 }, (_, index) =>
+      processingLease(index + 1)
+    )
+    const repository = repositoryFor([])
+    repository.claimProcessing = vi.fn().mockResolvedValue(leases)
+    const provider = providerFor()
+    provider.processingStatusBatch = vi.fn(
+      async (
+        inputs: Parameters<
+          NonNullable<ContextIndexProvider["processingStatusBatch"]>
+        >[0]
+      ) =>
+        inputs.map((input) => ({
+          requestId: input.requestId,
+          provider: "supermemory" as const,
+          scope: input.scope,
+          stableCustomId: input.stableCustomId,
+          status: "complete" as const,
+          checkedAt: now.toISOString(),
+        }))
+    )
+
+    const summary = await runContextIndexBatch({
+      repository,
+      resolveProvider: createContextIndexProviderResolver([provider]),
+      workerId: "context-worker-1",
+      limit: 200,
+      now,
+    })
+
+    expect(summary).toMatchObject({ claimed: 101, completed: 101 })
+    expect(provider.processingStatusBatch).toHaveBeenCalledTimes(2)
+    expect(provider.processingStatus).not.toHaveBeenCalled()
+    expect(repository.complete).toHaveBeenCalledTimes(101)
+  })
+
   it("dispatches add, replace, and delete and records strict completions", async () => {
     const leases = [lease("add", 1), lease("replace", 2), lease("delete", 3)]
     const repository = repositoryFor(leases)
@@ -342,6 +441,7 @@ function repositoryFor(leases: ContextIndexLease[]): ContextIndexRepository {
     reconcile: vi.fn(),
     claimProcessing: vi.fn().mockResolvedValue([]),
     claimCleanup: vi.fn().mockResolvedValue([]),
+    claimAddBatch: vi.fn().mockResolvedValue([]),
     claim: vi.fn().mockResolvedValue(leases),
     accept: vi.fn().mockResolvedValue(undefined),
     deferProcessing: vi.fn().mockResolvedValue("awaiting_provider"),
@@ -355,6 +455,11 @@ function providerFor(): ContextIndexProvider {
   return {
     provider: "supermemory",
     add: vi.fn(async (document) => completeResult(document.requestId, "add")),
+    addBatch: vi.fn(async (documents) =>
+      documents.map((document: ContextIndexDocument) =>
+        completeResult(document.requestId, "add")
+      )
+    ),
     replace: vi.fn(async (_providerDocumentId, document) =>
       completeResult(document.requestId, "replace")
     ),
@@ -367,18 +472,19 @@ function providerFor(): ContextIndexProvider {
   }
 }
 
-function processingLease() {
+function processingLease(ordinal = 1) {
+  const suffix = ordinal.toString().padStart(12, "0")
   return {
-    leaseId: "71000000-0000-4000-8000-000000000001",
+    leaseId: `71000000-0000-4000-8000-${suffix}`,
     leasedUntil: "2026-07-17T03:02:00.000Z",
     event: {
-      id: "31000000-0000-4000-8000-000000000001",
+      id: `31000000-0000-4000-8000-${suffix}`,
       operation: "add" as const,
     },
     companyId: "20000000-0000-4000-8000-000000000001",
     provider: "supermemory" as const,
-    stableCustomId: `ctx_${"1".repeat(64)}`,
-    providerDocumentId: "provider-doc-1",
+    stableCustomId: `ctx_${ordinal.toString(16).padStart(64, "0")}`,
+    providerDocumentId: `provider-doc-${ordinal}`,
     expectedContentHash: "a".repeat(64),
     pollAttempt: 1,
     maximumPollAttempts: 120,

@@ -49,7 +49,15 @@ const canonicalRowSchema = z
     id: UUID,
     source_id: UUID,
     record_type: SAFE_KEY,
+    external_id: SAFE_REFERENCE,
     pulled_at: z.string().datetime({ offset: true }),
+  })
+  .strict()
+
+const sourceRowSchema = z
+  .object({
+    id: UUID,
+    source_key: SAFE_KEY,
   })
   .strict()
 
@@ -69,6 +77,7 @@ export type ContextRetrievalCandidate = Readonly<{
   sourceKey: string
   recordType: string
   externalId: string | null
+  entityValues: readonly string[]
 }>
 
 export type EligibleContextRecord = Readonly<{
@@ -122,33 +131,63 @@ export class SupabaseContextRetrievalRepository implements ContextRetrievalRepos
     )
     const canonicalIds = [...candidateById.keys()]
     if (canonicalIds.length === 0) return []
+    const entityValues = unique(
+      input.candidates.flatMap((candidate) => candidate.entityValues)
+    ).slice(0, 100)
+
+    const { data: directRecordData, error: directRecordError } =
+      await this.supabase
+        .from("external_records")
+        .select("id, source_id, record_type, external_id, pulled_at")
+        .eq("company_id", companyId)
+        .in("id", canonicalIds)
+        .limit(100)
+    let relatedRecordData: unknown[] = []
+    if (entityValues.length > 0) {
+      const { data, error } = await this.supabase
+        .from("external_records")
+        .select("id, source_id, record_type, external_id, pulled_at")
+        .eq("company_id", companyId)
+        .in("external_id", entityValues)
+        .limit(100)
+      if (error)
+        throw new ContextRetrievalServiceError("entity_records_unavailable")
+      relatedRecordData = data ?? []
+    }
+    if (directRecordError) {
+      throw new ContextRetrievalServiceError("canonical_records_unavailable")
+    }
+    const canonicalRows = uniqueBy(
+      z
+        .array(canonicalRowSchema)
+        .parse([...(directRecordData ?? []), ...relatedRecordData]),
+      (row) => row.id
+    )
+    const eligibleCanonicalIds = canonicalRows.map((row) => row.id)
+    if (eligibleCanonicalIds.length === 0) return []
+    const sourceIds = unique(canonicalRows.map((row) => row.source_id))
 
     const [
       { data: ledgerData, error: ledgerError },
-      { data: recordData, error: recordError },
+      { data: sourceData, error: sourceError },
     ] = await Promise.all([
+      this.supabase.rpc("get_context_retrieval_ledger_v1", {
+        p_company_id: companyId,
+        p_canonical_record_ids: eligibleCanonicalIds,
+      }),
       this.supabase
-        .from("context_index_ledger")
-        .select(
-          "canonical_record_id, source_key, record_type, canonical_version, policy_version, policy_hash, content_hash, stable_custom_id, provider_document_id, status"
-        )
+        .from("external_sources")
+        .select("id, source_key")
         .eq("company_id", companyId)
-        .eq("provider", "supermemory")
-        .eq("status", "indexed")
-        .in("canonical_record_id", canonicalIds)
-        .not("provider_document_id", "is", null),
-      this.supabase
-        .from("external_records")
-        .select("id, source_id, record_type, pulled_at")
-        .eq("company_id", companyId)
-        .in("id", canonicalIds),
+        .in("id", sourceIds),
     ])
-    if (ledgerError || recordError) {
-      throw new ContextRetrievalServiceError("ledger_unavailable")
-    }
+    if (ledgerError)
+      throw new ContextRetrievalServiceError("index_ledger_unavailable")
+    if (sourceError)
+      throw new ContextRetrievalServiceError("source_registry_unavailable")
 
     const ledgerRows = z.array(ledgerRowSchema).parse(ledgerData ?? [])
-    const canonicalRows = z.array(canonicalRowSchema).parse(recordData ?? [])
+    const sourceRows = z.array(sourceRowSchema).parse(sourceData ?? [])
     const sourceKeys = unique(ledgerRows.map((row) => row.source_key))
     const recordTypes = unique(ledgerRows.map((row) => row.record_type))
     if (sourceKeys.length === 0 || recordTypes.length === 0) return []
@@ -175,21 +214,30 @@ export class SupabaseContextRetrievalRepository implements ContextRetrievalRepos
         activePolicyByScope.set(scope, policy)
     }
     const canonicalById = new Map(canonicalRows.map((row) => [row.id, row]))
+    const sourceById = new Map(sourceRows.map((row) => [row.id, row]))
+    const relatedEntityValues = new Set(entityValues)
 
     return ledgerRows.flatMap((ledger): EligibleContextRecord[] => {
       const candidate = candidateById.get(ledger.canonical_record_id)
       const canonical = canonicalById.get(ledger.canonical_record_id)
+      const source = canonical ? sourceById.get(canonical.source_id) : undefined
       const activePolicy = activePolicyByScope.get(
         `${ledger.source_key}\u0000${ledger.record_type}`
       )
+      const entityRelated =
+        canonical !== undefined &&
+        relatedEntityValues.has(canonical.external_id)
       if (
-        !candidate ||
+        (!candidate && !entityRelated) ||
         !canonical ||
+        !source ||
         !activePolicy?.indexing_enabled ||
         activePolicy.policy_version !== ledger.policy_version ||
-        candidate.sourceId !== canonical.source_id ||
-        candidate.sourceKey !== ledger.source_key ||
-        candidate.recordType !== ledger.record_type ||
+        source.source_key !== ledger.source_key ||
+        (candidate !== undefined &&
+          (candidate.sourceId !== canonical.source_id ||
+            candidate.sourceKey !== ledger.source_key ||
+            candidate.recordType !== ledger.record_type)) ||
         canonical.record_type !== ledger.record_type
       ) {
         return []
@@ -245,7 +293,11 @@ export class ServerContextRetriever implements RuntimeContextRetriever {
     let settings: z.infer<typeof storedSettingsSchema>
     try {
       settings = await this.repository.readSettings(companyId)
-    } catch {
+    } catch (error) {
+      console.error(
+        "Context retrieval settings lookup failed.",
+        safeRetrievalErrorCode(error)
+      )
       return fallbackResult({
         provider: "supermemory",
         status: "unavailable",
@@ -292,7 +344,11 @@ export class ServerContextRetriever implements RuntimeContextRetriever {
         companyId,
         candidates,
       })
-    } catch {
+    } catch (error) {
+      console.error(
+        "Context retrieval eligibility lookup failed.",
+        safeRetrievalErrorCode(error)
+      )
       return fallbackResult({
         provider: "supermemory",
         status: "unavailable",
@@ -411,6 +467,10 @@ function extractCandidates(
         sourceKey: SAFE_KEY,
         recordType: SAFE_KEY,
         externalId: SAFE_REFERENCE.optional(),
+        entityValues: z
+          .array(z.union([z.string(), z.number()]))
+          .max(100)
+          .optional(),
       })
       .passthrough()
       .safeParse(reference)
@@ -421,12 +481,31 @@ function extractCandidates(
       sourceKey: parsed.data.sourceKey,
       recordType: parsed.data.recordType,
       externalId: parsed.data.externalId ?? null,
+      entityValues: unique(parsed.data.entityValues?.map(String) ?? []),
     })
     if (candidates.size >= 100) break
   }
   return [...candidates.values()].sort((left, right) =>
     left.canonicalRecordId.localeCompare(right.canonicalRecordId)
   )
+}
+
+function uniqueBy<T>(values: readonly T[], keyFor: (value: T) => string): T[] {
+  const seen = new Set<string>()
+  return values.filter((value) => {
+    const key = keyFor(value)
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+}
+
+function safeRetrievalErrorCode(error: unknown): string {
+  return error instanceof ContextRetrievalServiceError
+    ? error.code
+    : error instanceof z.ZodError
+      ? "invalid_repository_response"
+      : "unknown_retrieval_error"
 }
 
 function buildQuery(input: RuntimeContextRetrievalInput): string {

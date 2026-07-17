@@ -30,6 +30,7 @@ import {
 
 const SUPERMEMORY_API_ORIGIN = "https://api.supermemory.ai"
 const MAX_PROVIDER_RESPONSE_BYTES = 2_000_000
+const PROVIDER_BATCH_CHUNK_SIZE = 25
 const SAFE_PROVIDER_REFERENCE = z.string().trim().min(1).max(500)
 const STABLE_CUSTOM_ID = z.string().regex(/^ctx_[0-9a-f]{64}$/)
 const TIMESTAMP = z.string().datetime({ offset: true })
@@ -85,6 +86,26 @@ const addOrUpdateResponseSchema = z
   })
   .passthrough()
 
+const batchAddResponseSchema = z
+  .object({
+    results: z
+      .array(
+        z
+          .object({
+            id: SAFE_PROVIDER_REFERENCE.optional(),
+            status: z.string().trim().min(1).max(100),
+            error: z.string().max(1_000).optional(),
+            details: z.string().max(2_000).optional(),
+          })
+          .passthrough()
+      )
+      .min(1)
+      .max(600),
+    failed: z.number().int().nonnegative().max(600),
+    success: z.number().int().nonnegative().max(600),
+  })
+  .passthrough()
+
 const documentListResponseSchema = z
   .object({
     memories: z
@@ -114,6 +135,43 @@ const documentStatusResponseSchema = z
     status: z.string().trim().min(1).max(100),
   })
   .passthrough()
+
+const documentBatchStatusListResponseSchema = z
+  .object({
+    memories: z
+      .array(
+        z
+          .object({
+            id: SAFE_PROVIDER_REFERENCE,
+            customId: STABLE_CUSTOM_ID,
+            containerTags: z.array(SAFE_PROVIDER_REFERENCE),
+            status: z.string().trim().min(1).max(100),
+          })
+          .passthrough()
+      )
+      .max(100),
+    pagination: z
+      .object({
+        currentPage: z.number().int().positive(),
+        totalPages: z.number().int().nonnegative(),
+      })
+      .passthrough(),
+  })
+  .passthrough()
+
+const processingStatusBatchInputSchema = z
+  .array(
+    z
+      .object({
+        requestId: UUID,
+        scope: contextTenantScopeSchema,
+        stableCustomId: STABLE_CUSTOM_ID,
+        providerDocumentId: SAFE_PROVIDER_REFERENCE,
+      })
+      .strict()
+  )
+  .min(1)
+  .max(100)
 
 const scalarMetadataSchema = z.union([
   z.string().max(1_000),
@@ -305,6 +363,32 @@ export class SupermemoryContextProvider
     )
   }
 
+  async addBatch(
+    documents: readonly ContextIndexDocument[]
+  ): Promise<readonly ContextIndexOperationResult[]> {
+    const parsedDocuments = z
+      .array(contextIndexDocumentSchema)
+      .min(1)
+      .max(600)
+      .parse(documents)
+    for (const document of parsedDocuments) assertIndexDocumentScope(document)
+    const chunks = chunkValues(parsedDocuments, PROVIDER_BATCH_CHUNK_SIZE)
+    const chunkResults = await Promise.all(
+      chunks.map(async (chunk) => {
+        const response = await this.request({
+          method: "POST",
+          path: "/v3/documents/batch",
+          timeoutMs: 30_000,
+          body: {
+            documents: chunk.map(documentWriteBody),
+          },
+        })
+        return parseBatchAddResponse(chunk, response.data, this.now())
+      })
+    )
+    return deepFreeze(chunkResults.flat())
+  }
+
   async replace(
     providerDocumentId: string,
     document: ContextIndexDocument
@@ -469,6 +553,94 @@ export class SupermemoryContextProvider
     )
   }
 
+  async processingStatusBatch(
+    inputs: readonly {
+      readonly requestId: string
+      readonly scope: ContextTenantScope
+      readonly stableCustomId: string
+      readonly providerDocumentId: string
+    }[]
+  ): Promise<readonly ContextIndexProcessingStatus[]> {
+    const parsedInputs = processingStatusBatchInputSchema.parse(inputs)
+    const scope = parsedInputs[0]!.scope
+    if (
+      parsedInputs.some(
+        (input) =>
+          input.scope.companyId !== scope.companyId ||
+          input.scope.workspaceScopeId !== scope.workspaceScopeId
+      )
+    ) {
+      throw new SupermemoryProviderError("provider_scope_mismatch", "failed")
+    }
+
+    const response = await this.request({
+      method: "POST",
+      path: "/v3/documents/list",
+      timeoutMs: 10_000,
+      body: {
+        containerTags: [containerTagFor(scope)],
+        includeContent: false,
+        limit: 100,
+        page: 1,
+        filters: {
+          OR: parsedInputs.map((input) => ({
+            key: "stable_custom_id",
+            value: input.stableCustomId,
+            negate: false,
+          })),
+        },
+      },
+    })
+    const result = documentBatchStatusListResponseSchema.safeParse(
+      response.data
+    )
+    const expectedContainer = containerTagFor(scope)
+    if (
+      !result.success ||
+      result.data.pagination.currentPage !== 1 ||
+      result.data.pagination.totalPages > 1 ||
+      result.data.memories.some(
+        (document) =>
+          document.containerTags.length !== 1 ||
+          document.containerTags[0] !== expectedContainer
+      )
+    ) {
+      throw new SupermemoryProviderError(
+        "provider_response_malformed",
+        "failed"
+      )
+    }
+
+    const documentsByCustomId = new Map(
+      result.data.memories.map((document) => [document.customId, document])
+    )
+    if (documentsByCustomId.size !== result.data.memories.length) {
+      throw new SupermemoryProviderError(
+        "provider_response_malformed",
+        "failed"
+      )
+    }
+    return deepFreeze(
+      parsedInputs.map((input) => {
+        const document = documentsByCustomId.get(input.stableCustomId)
+        if (!document || document.id !== input.providerDocumentId) {
+          throw new SupermemoryProviderError(
+            "provider_response_malformed",
+            "failed"
+          )
+        }
+        return contextIndexProcessingStatusSchema.parse({
+          requestId: input.requestId,
+          provider: "supermemory",
+          scope: input.scope,
+          stableCustomId: input.stableCustomId,
+          status: mapProcessingStatus(document.status),
+          checkedAt: this.now().toISOString(),
+        })
+      })
+    )
+  }
+
   private async request(input: ProviderRequest): Promise<ProviderResponse> {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), input.timeoutMs)
@@ -569,10 +741,12 @@ export function createSupermemoryIndexProvider(
   return Object.freeze({
     provider: provider.provider,
     add: provider.add.bind(provider),
+    addBatch: provider.addBatch.bind(provider),
     replace: provider.replace.bind(provider),
     delete: provider.delete.bind(provider),
     list: provider.list.bind(provider),
     processingStatus: provider.processingStatus.bind(provider),
+    processingStatusBatch: provider.processingStatusBatch.bind(provider),
     health: provider.health.bind(provider),
   })
 }
@@ -872,6 +1046,90 @@ function indexOperationResult(
     estimatedCostMicrounits: 0,
     completedAt: now.toISOString(),
   })
+}
+
+function batchIndexOperationResult(
+  document: z.output<typeof contextIndexDocumentSchema>,
+  providerResult: z.output<typeof batchAddResponseSchema>["results"][number],
+  now: Date
+): ContextIndexOperationResult {
+  const status = providerResult.status.toLowerCase()
+  const failed = status === "failed" || providerResult.error !== undefined
+  if (!failed && providerResult.id === undefined) {
+    throw new SupermemoryProviderError("provider_response_malformed", "failed")
+  }
+  if (
+    !failed &&
+    ![
+      "queued",
+      "extracting",
+      "chunking",
+      "embedding",
+      "processing",
+      "done",
+      "complete",
+    ].includes(status)
+  ) {
+    throw new SupermemoryProviderError("provider_response_malformed", "failed")
+  }
+  return contextIndexOperationResultSchema.parse({
+    requestId: document.requestId,
+    provider: "supermemory",
+    operation: "add",
+    status: failed
+      ? "failed"
+      : status === "done" || status === "complete"
+        ? "complete"
+        : "accepted",
+    providerDocumentId: providerResult.id ?? null,
+    receipt: null,
+    estimatedCostMicrounits: 0,
+    completedAt: now.toISOString(),
+  })
+}
+
+function parseBatchAddResponse(
+  documents: readonly z.output<typeof contextIndexDocumentSchema>[],
+  data: unknown,
+  now: Date
+): ContextIndexOperationResult[] {
+  const parsedResponse = batchAddResponseSchema.safeParse(data)
+  if (
+    !parsedResponse.success ||
+    parsedResponse.data.results.length !== documents.length ||
+    parsedResponse.data.success + parsedResponse.data.failed !==
+      documents.length
+  ) {
+    throw new SupermemoryProviderError(
+      "provider_response_malformed",
+      "failed",
+      parsedResponse.success ? undefined : { cause: parsedResponse.error }
+    )
+  }
+  const results = parsedResponse.data.results.map((providerResult, index) =>
+    batchIndexOperationResult(documents[index]!, providerResult, now)
+  )
+  const successfulResults = results.filter(
+    (result) => result.status === "accepted" || result.status === "complete"
+  ).length
+  if (
+    successfulResults !== parsedResponse.data.success ||
+    results.length - successfulResults !== parsedResponse.data.failed
+  ) {
+    throw new SupermemoryProviderError("provider_response_malformed", "failed")
+  }
+  return results
+}
+
+function chunkValues<Value>(
+  values: readonly Value[],
+  size: number
+): readonly (readonly Value[])[] {
+  const chunks: Value[][] = []
+  for (let index = 0; index < values.length; index += size) {
+    chunks.push(values.slice(index, index + size))
+  }
+  return chunks
 }
 
 function parseWriteResponse(data: unknown) {

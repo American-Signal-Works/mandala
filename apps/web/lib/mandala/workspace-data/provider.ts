@@ -10,9 +10,14 @@ import type {
 } from "../skills/compiler"
 import type { RuntimeCapabilityProvider } from "../runtime/graph"
 import type { RuntimeSourceRef, RuntimeState } from "../runtime/state"
+import {
+  normalizeProcurementOpenOrders,
+  type ProcurementEvidenceRole,
+} from "./normalizers/procurement-open-orders"
 
 const maximumExpressionDepth = 16
 const maximumExpressionOperations = 500
+const maximumSourceRefsPerDatasetEntity = 3
 const unsafeSegments = new Set(["__proto__", "constructor", "prototype"])
 
 export type WorkspaceExternalRecord = {
@@ -34,6 +39,19 @@ export type WorkspaceMappingBinding = {
   spec: WorkspaceCapabilityMappingSpec
 }
 
+export type WorkspaceSourceCoverage = {
+  sourceId: string
+  sourceKey: string
+  recordType: string
+  businessObject?: string
+  evidenceRole?: ProcurementEvidenceRole
+  status: "checked" | "unavailable" | "stale" | "schema_drift"
+  recordCount: number
+  checkedAt: string
+  freshestObservedAt: string | null
+  error?: string
+}
+
 export type WorkspaceDataStore = {
   resolveMapping(input: {
     companyId: string
@@ -47,6 +65,14 @@ export type WorkspaceDataStore = {
     recordType: string
     limit: number
   }): Promise<WorkspaceExternalRecord[]>
+  inspectCoverage?(input: {
+    companyId: string
+    sourceKey?: string
+    recordType: string
+    businessObject?: string
+    evidenceRole?: ProcurementEvidenceRole
+    maximumFreshnessHours: number
+  }): Promise<WorkspaceSourceCoverage[]>
 }
 
 export type WorkspaceSignal = {
@@ -63,6 +89,8 @@ export type WorkspaceProjection = {
   records: Record<string, unknown>[]
   sourceRefs: RuntimeSourceRef[]
   warnings: string[]
+  coverage: WorkspaceSourceCoverage[]
+  coverageComplete: boolean
 }
 
 export class WorkspaceDataProviderError extends Error {
@@ -168,6 +196,7 @@ export class WorkspaceDatasetProvider implements RuntimeCapabilityProvider {
       }
       sourceRefs.push(
         ...projection.sourceRefs.filter((sourceRef) => {
+          if (sourceRef.reference.kind === "source_coverage") return true
           const entityValues = sourceRef.reference.entityValues
           return (
             Array.isArray(entityValues) &&
@@ -190,7 +219,13 @@ export class WorkspaceDatasetProvider implements RuntimeCapabilityProvider {
   ): Promise<WorkspaceProjection> {
     const spec = workspaceCapabilityMappingSpecSchema.parse(binding.spec)
     const datasets = new Map<string, Map<string, NormalizedRow[]>>()
-    const sourceRefs: RuntimeSourceRef[] = []
+    const rawRecords = new Map<string, WorkspaceExternalRecord[]>()
+    const coverage: WorkspaceSourceCoverage[] = []
+    const sourceRefsByEntity = new Map<string, RuntimeSourceRef[]>()
+    const sourceRefCounts = new Map<string, number>()
+    const sourceRefLimit = spec.normalization
+      ? spec.bounds.maximumInputRows
+      : maximumSourceRefsPerDatasetEntity
     let inputRows = 0
 
     for (const dataset of spec.datasets) {
@@ -214,10 +249,22 @@ export class WorkspaceDatasetProvider implements RuntimeCapabilityProvider {
         recordType: dataset.recordType,
         limit: remaining,
       })
-      if (dataset.required && records.length === 0) {
+      rawRecords.set(dataset.alias, records)
+      const datasetCoverage = this.store.inspectCoverage
+        ? await this.store.inspectCoverage({
+            companyId,
+            sourceKey: dataset.sourceKey,
+            recordType: dataset.recordType,
+            businessObject: dataset.businessObject,
+            evidenceRole: dataset.evidenceRole,
+            maximumFreshnessHours: dataset.maximumFreshnessHours,
+          })
+        : inferCoverage(records, dataset, this.now().toISOString())
+      coverage.push(...datasetCoverage)
+      if (dataset.required && datasetCoverage.length === 0) {
         throw new WorkspaceDataProviderError(
-          "required_dataset_empty",
-          `Required dataset ${dataset.alias} returned no rows.`
+          "required_dataset_unavailable",
+          `Required dataset ${dataset.alias} has no configured source.`
         )
       }
       const normalizedRecords = records.map((record) => ({
@@ -234,24 +281,31 @@ export class WorkspaceDatasetProvider implements RuntimeCapabilityProvider {
       const normalized = boundedNormalizedRecords.flatMap(({ rows }) => rows)
       inputRows += normalized.length
       datasets.set(dataset.alias, groupRowsByEntity(normalized))
-      for (const { record, rows } of boundedNormalizedRecords.slice(0, 100)) {
+      for (const { record, rows } of boundedNormalizedRecords) {
         const entityValues = unique(rows.map((row) => row.entity)).slice(0, 100)
-        if (entityValues.length === 0) continue
-        sourceRefs.push({
-          capabilityAlias: requirementAlias,
-          connectorId: "mandala.workspace-data",
-          observedAt: record.pulledAt,
-          reference: {
-            canonicalRecordId: record.id,
-            sourceId: record.sourceId,
-            mappingVersionId: binding.mappingVersionId,
-            catalogDigest: binding.catalogDigest,
-            sourceKey: record.sourceKey,
-            recordType: record.recordType,
-            externalId: record.externalId,
-            entityValues,
-          },
-        })
+        for (const entityValue of entityValues) {
+          const countKey = `${dataset.alias}\u0000${entityValue}`
+          const count = sourceRefCounts.get(countKey) ?? 0
+          if (count >= sourceRefLimit) continue
+          const refs = sourceRefsByEntity.get(entityValue) ?? []
+          refs.push({
+            capabilityAlias: requirementAlias,
+            connectorId: "mandala.workspace-data",
+            observedAt: record.pulledAt,
+            reference: {
+              canonicalRecordId: record.id,
+              sourceId: record.sourceId,
+              mappingVersionId: binding.mappingVersionId,
+              catalogDigest: binding.catalogDigest,
+              sourceKey: record.sourceKey,
+              recordType: record.recordType,
+              externalId: record.externalId,
+              entityValues: [entityValue],
+            },
+          })
+          sourceRefsByEntity.set(entityValue, refs)
+          sourceRefCounts.set(countKey, count + 1)
+        }
       }
     }
 
@@ -260,6 +314,27 @@ export class WorkspaceDatasetProvider implements RuntimeCapabilityProvider {
     )
     const records: Record<string, unknown>[] = []
     const warnings: string[] = []
+    const coverageComplete = evaluateCoverage(spec, coverage)
+    if (spec.coveragePolicy && !coverageComplete) {
+      warnings.push(
+        "Source coverage is incomplete; a negative operational conclusion is not safe."
+      )
+    }
+    const normalizedOpenOrders =
+      spec.normalization?.model === "procurement.open-order"
+        ? normalizeProcurementOpenOrders(
+            spec.datasets.flatMap((dataset) =>
+              dataset.evidenceRole
+                ? [
+                    {
+                      role: dataset.evidenceRole,
+                      records: rawRecords.get(dataset.alias) ?? [],
+                    },
+                  ]
+                : []
+            )
+          )
+        : null
     for (const entity of entities) {
       if (records.length >= spec.bounds.maximumOutputRows) break
       const output: Record<string, unknown> = {}
@@ -285,6 +360,17 @@ export class WorkspaceDatasetProvider implements RuntimeCapabilityProvider {
         }
         output[field.name] = value
       }
+      if (normalizedOpenOrders) {
+        const openOrders = normalizedOpenOrders.get(entity) ?? []
+        output.duplicateOpenOrderUnits = openOrders.reduce(
+          (total, order) => total + order.quantity,
+          0
+        )
+        output.duplicateOpenOrderMatchCount = openOrders.length
+      }
+      if (spec.coveragePolicy) {
+        output[spec.coveragePolicy.outputField] = coverageComplete
+      }
       if (valid) records.push(output)
     }
 
@@ -295,8 +381,85 @@ export class WorkspaceDatasetProvider implements RuntimeCapabilityProvider {
         "The mapped workspace projection exceeded its configured byte limit."
       )
     }
-    return { binding: { ...binding, spec }, records, sourceRefs, warnings }
+    const entityKey = spec.output.entityKey
+    const sourceRefs = records.flatMap((record) => {
+      const entityValue = record[entityKey]
+      return scalarEntity(entityValue)
+        ? (sourceRefsByEntity.get(String(entityValue)) ?? [])
+        : []
+    })
+    if (spec.coveragePolicy) {
+      sourceRefs.push(
+        ...coverage.map((result) => ({
+          capabilityAlias: requirementAlias,
+          connectorId: result.sourceId,
+          observedAt: result.checkedAt,
+          reference: {
+            kind: "source_coverage",
+            mappingVersionId: binding.mappingVersionId,
+            catalogDigest: binding.catalogDigest,
+            sourceKey: result.sourceKey,
+            recordType: result.recordType,
+            businessObject: result.businessObject,
+            evidenceRole: result.evidenceRole,
+            status: result.status,
+            recordCount: result.recordCount,
+            freshestObservedAt: result.freshestObservedAt,
+            error: result.error,
+          },
+        }))
+      )
+    }
+    return {
+      binding: { ...binding, spec },
+      records,
+      sourceRefs,
+      warnings,
+      coverage,
+      coverageComplete,
+    }
   }
+}
+
+function inferCoverage(
+  records: readonly WorkspaceExternalRecord[],
+  dataset: WorkspaceCapabilityMappingSpec["datasets"][number],
+  checkedAt: string
+): WorkspaceSourceCoverage[] {
+  const bySource = new Map<string, WorkspaceExternalRecord[]>()
+  for (const record of records) {
+    const current = bySource.get(record.sourceId) ?? []
+    current.push(record)
+    bySource.set(record.sourceId, current)
+  }
+  return [...bySource.values()].map((sourceRecords) => ({
+    sourceId: sourceRecords[0]!.sourceId,
+    sourceKey: sourceRecords[0]!.sourceKey,
+    recordType: dataset.recordType,
+    businessObject: dataset.businessObject,
+    evidenceRole: dataset.evidenceRole,
+    status: "checked",
+    recordCount: sourceRecords.length,
+    checkedAt,
+    freshestObservedAt: sourceRecords
+      .map(({ pulledAt }) => pulledAt)
+      .sort()
+      .at(-1)!,
+  }))
+}
+
+function evaluateCoverage(
+  spec: WorkspaceCapabilityMappingSpec,
+  coverage: readonly WorkspaceSourceCoverage[]
+): boolean {
+  if (!spec.coveragePolicy) return true
+  const relevant = coverage.filter(({ evidenceRole }) => Boolean(evidenceRole))
+  if (relevant.some(({ status }) => status !== "checked")) return false
+  return spec.coveragePolicy.requiredRoles.every((role) =>
+    relevant.some(
+      (result) => result.evidenceRole === role && result.status === "checked"
+    )
+  )
 }
 
 export function detectWorkspaceSignal(

@@ -394,6 +394,10 @@ class LocalFakeIndexProvider implements ContextIndexProvider {
     return this.result(document, "add", `fake-${document.canonicalRecordId}`)
   }
 
+  async addBatch(documents: readonly ContextIndexDocument[]) {
+    return Promise.all(documents.map((document) => this.add(document)))
+  }
+
   async replace(_providerDocumentId: string, document: ContextIndexDocument) {
     return this.result(
       document,
