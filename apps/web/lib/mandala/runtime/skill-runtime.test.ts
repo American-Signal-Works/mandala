@@ -8,6 +8,10 @@ import {
   getProcurementFixtureScenario,
 } from "../workflows"
 import { createGenericWorkflowRuntime } from "./graph"
+import {
+  TEST_CONTEXT_COMPANY_ID,
+  testContextRetriever,
+} from "./context-test-support"
 
 const loadSkill = (id: string) =>
   readFile(resolve(process.cwd(), "../../skills", id, "SKILL.md"), "utf8")
@@ -26,19 +30,24 @@ describe("real Skill v1 files on the generic runtime", () => {
     const runtime = createGenericWorkflowRuntime({
       manifest: compiled.manifest,
       dependencies: {
+        contextRetriever: testContextRetriever(),
         capabilityProvider: {
           load: async ({ bindings }) => ({
             data: Object.fromEntries(
               bindings
                 .filter((binding) => binding.access === "read")
-                .map((binding) => [binding.alias, { snapshot: scenario.sourceSnapshotId }])
+                .map((binding) => [
+                  binding.alias,
+                  { snapshot: scenario.sourceSnapshotId },
+                ])
             ),
             sourceRefs: [],
           }),
         },
         agentJudgment: async () => ({
           proposal: { selection: scenario.sku },
-          rationale: "Fresh inventory is below its reorder point with no duplicate open order.",
+          rationale:
+            "Fresh inventory is below its reorder point with no duplicate open order.",
           confidence: 0.86,
           warnings: [],
           context: {},
@@ -58,7 +67,7 @@ describe("real Skill v1 files on the generic runtime", () => {
     })
 
     const started = await runtime.start({
-      companyId: "company-clean",
+      companyId: TEST_CONTEXT_COMPANY_ID,
       actorId: "user-clean",
       workflowDefinitionId: "workflow-clean",
       workflowRunId: "run-clean",
@@ -102,17 +111,22 @@ describe("real Skill v1 files on the generic runtime", () => {
     const runtime = createGenericWorkflowRuntime({
       manifest: compiled.manifest,
       dependencies: {
+        contextRetriever: testContextRetriever(),
         capabilityProvider: {
           load: async ({ bindings }) => ({
             data: Object.fromEntries(
-              bindings.map((binding) => [binding.alias, { dataset: dataset.summary.digest }])
+              bindings.map((binding) => [
+                binding.alias,
+                { dataset: dataset.summary.digest },
+              ])
             ),
             sourceRefs: [],
           }),
         },
         agentJudgment: async () => ({
           proposal: { selection: selected },
-          rationale: "A recent promotion aligns with the daily sales increase, but durability is uncertain.",
+          rationale:
+            "A recent promotion aligns with the daily sales increase, but durability is uncertain.",
           confidence: 0.75,
           warnings: [],
           context: {},
@@ -127,7 +141,7 @@ describe("real Skill v1 files on the generic runtime", () => {
     })
 
     const result = await runtime.start({
-      companyId: "company-spike",
+      companyId: TEST_CONTEXT_COMPANY_ID,
       actorId: "user-spike",
       workflowDefinitionId: "workflow-spike",
       workflowRunId: "run-spike",

@@ -374,8 +374,10 @@ describe("Context control-plane contracts", () => {
 
     const citation = {
       providerReference: "provider-doc-1",
+      providerDocumentId: "provider-document-1",
       stableCustomId: "workspace-record-1",
       canonicalRecordId: requestId,
+      canonicalRecordVersion: "version-1",
       sourceId: "40000000-0000-4000-8000-000000000001",
       sourceKey: "erpnext",
       recordType: "purchase_order",
@@ -385,6 +387,7 @@ describe("Context control-plane contracts", () => {
       sourceObservedAt: timestamp,
       freshness: "fresh" as const,
       contentHash: "c".repeat(64),
+      policyHash: "d".repeat(64),
     }
     const excerpt = "bounded evidence"
     const result = {

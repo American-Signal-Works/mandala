@@ -69,6 +69,7 @@ function sanitize(value: unknown): unknown {
 
 function isBlockedKey(key: string): boolean {
   const normalized = key.toLowerCase().replace(/[^a-z0-9]/g, "")
+  if (normalized === "tokenestimate") return false
   return blockedKeyFragments.some((fragment) => normalized.includes(fragment))
 }
 

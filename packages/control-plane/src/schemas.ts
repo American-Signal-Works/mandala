@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { contextPacketProvenanceSchema } from "./context.js"
 
 export type JsonPrimitive = boolean | null | number | string
 export type JsonValue =
@@ -479,6 +480,7 @@ const contextPacketSchema = z
     sources: z.array(jsonObjectSchema),
     facts: jsonObjectSchema,
     memoryRefs: z.array(jsonObjectSchema),
+    operationalContext: contextPacketProvenanceSchema.nullable().optional(),
     freshnessState: z.enum(["fresh", "stale", "unknown"]),
     warnings: z.array(z.string()),
     createdAt: isoTimestampSchema,

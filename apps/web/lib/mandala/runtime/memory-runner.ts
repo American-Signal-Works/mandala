@@ -21,6 +21,7 @@ import {
   type RuntimeActionHandler,
   type RuntimeAgentJudgmentHandler,
   type RuntimeCapabilityProvider,
+  type RuntimeContextRetriever,
 } from "./graph"
 import type {
   RuntimeCheckpointCorrelation,
@@ -30,10 +31,7 @@ import type {
   RuntimeState,
   RuntimeTrigger,
 } from "./state"
-import {
-  resolveRuntimeSandboxEnabled,
-  runtimeOperatingMode,
-} from "./state"
+import { resolveRuntimeSandboxEnabled, runtimeOperatingMode } from "./state"
 
 export type CompiledMemoryRunInput = {
   store: WorkflowMemoryStore
@@ -43,6 +41,7 @@ export type CompiledMemoryRunInput = {
   workflowDefinitionId?: string
   trigger: RuntimeTrigger
   capabilityProvider: RuntimeCapabilityProvider
+  contextRetriever: RuntimeContextRetriever
   agentJudgment: RuntimeAgentJudgmentHandler
   actionHandler?: RuntimeActionHandler
   checkpointer?: BaseCheckpointSaver
@@ -82,6 +81,7 @@ export async function runCompiledWorkflowInMemory(
     checkpointer: input.checkpointer,
     dependencies: {
       capabilityProvider: input.capabilityProvider,
+      contextRetriever: input.contextRetriever,
       agentJudgment: input.agentJudgment,
       actionHandler: input.actionHandler,
       reviewPersister: async ({ state }) => {
@@ -316,6 +316,7 @@ function persistReviewRecords(input: {
       context: {},
     },
     memoryRefs: [],
+    operationalContext: input.state.contextRetrieval?.provenance,
     freshnessState,
     warnings: [...input.state.warnings],
     createdAt: input.createdAt,
@@ -358,9 +359,16 @@ function persistReviewRecords(input: {
     sourceRefs: sourceRecords(input.state.sourceRefs),
     assumptions: [...review.evidence.assumptions],
     warnings: [...input.state.warnings],
-    evidence: review.evidence.requirements.map((requirement) => ({
-      requirement,
-    })),
+    evidence: [
+      ...review.evidence.requirements.map((requirement) => ({ requirement })),
+      ...(input.state.contextRetrieval?.provenance.citations.map(
+        (citation) => ({
+          kind: "operational_context_citation",
+          untrustedEvidence: true,
+          citation,
+        })
+      ) ?? []),
+    ],
     createdAt: input.createdAt,
   }
   const draft = review.draft

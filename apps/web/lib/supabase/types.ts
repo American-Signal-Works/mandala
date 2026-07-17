@@ -4530,6 +4530,7 @@ export type Database = {
           freshness_state: string
           id: string
           memory_refs: Json
+          operational_context: Json | null
           sources: Json
           warnings: Json
           workflow_item_id: string
@@ -4542,6 +4543,7 @@ export type Database = {
           freshness_state: string
           id?: string
           memory_refs?: Json
+          operational_context?: Json | null
           sources?: Json
           warnings?: Json
           workflow_item_id: string
@@ -4554,6 +4556,7 @@ export type Database = {
           freshness_state?: string
           id?: string
           memory_refs?: Json
+          operational_context?: Json | null
           sources?: Json
           warnings?: Json
           workflow_item_id?: string
@@ -6097,6 +6100,10 @@ export type Database = {
       }
       get_sandbox_workspace_snapshot_v1: {
         Args: { p_candidate_limit?: number; p_company_id: string }
+        Returns: Json
+      }
+      get_workflow_context_provenance_v1: {
+        Args: { p_company_id: string; p_context_packet_id: string }
         Returns: Json
       }
       get_workflow_review_v1: {

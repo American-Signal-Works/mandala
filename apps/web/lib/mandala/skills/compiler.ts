@@ -39,6 +39,7 @@ export type CompiledAgentManifest = {
       | "resolve_bindings"
       | "load_data"
       | "validate"
+      | "retrieve_context"
       | "agent_judgment"
       | "apply_rules"
       | "project_records"
@@ -208,6 +209,7 @@ export function compileAgentSkill(input: {
       true
     ),
     node("validate", "validate", [], true),
+    node("retrieve_context", "retrieve_context", [], true),
     node("agent_judgment", "agent_judgment", readTools, false),
     node("apply_rules", "apply_rules", [], true),
     node("project_records", "project_records", [], true),

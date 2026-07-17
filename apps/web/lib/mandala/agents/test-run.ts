@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto"
 import type { BaseCheckpointSaver } from "@langchain/langgraph"
 import type { AgentTestRunRequest } from "@workspace/control-plane"
 import { deriveControlInputHash } from "../control-plane/input-hash"
+import { createDisabledContextRetriever } from "../context/retrieval-service"
 import { getProductionWorkflowCheckpointer } from "../runtime/checkpointer"
 import { runCompiledWorkflowInMemory } from "../runtime/memory-runner"
 import { applyDeterministicRules } from "../runtime/primitives"
@@ -138,6 +139,7 @@ export async function runSyntheticAgentTest(input: {
     workflowDefinitionId: workflow.id,
     trigger,
     capabilityProvider,
+    contextRetriever: createDisabledContextRetriever(),
     agentJudgment: async () => judgment.value,
     skillMarkdown: workflow.skillMarkdown,
     now,

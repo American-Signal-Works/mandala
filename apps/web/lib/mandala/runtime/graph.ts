@@ -7,6 +7,11 @@ import {
   interrupt,
   type BaseCheckpointSaver,
 } from "@langchain/langgraph"
+import {
+  contextRetrievalResultSchema,
+  type ContextPacketProvenance,
+  type ContextRetrievalResult,
+} from "@workspace/control-plane"
 import type {
   CompiledAgentManifest,
   CompiledCapabilityBinding,
@@ -60,9 +65,45 @@ export type RuntimeAgentJudgmentHandler = (input: {
     | "warnings"
   >
   modelData: Record<string, unknown>
+  operationalContext: RuntimeOperationalContext
   manifest: CompiledAgentManifest
   allowedTools: readonly string[]
 }) => Promise<RuntimeAgentJudgment>
+
+export type RuntimeOperationalContext = Readonly<{
+  untrustedEvidence: true
+  provenance: ContextPacketProvenance
+  items: ContextRetrievalResult["items"]
+}>
+
+export type RuntimeContextRetrievalInput = Readonly<{
+  run: Readonly<
+    Pick<
+      RuntimeState,
+      | "companyId"
+      | "workflowDefinitionId"
+      | "workflowRunId"
+      | "manifestDigest"
+      | "mode"
+      | "sandboxEnabled"
+      | "operatingMode"
+      | "trigger"
+    >
+  >
+  workflow: Readonly<{
+    identityId: string
+    workflowType: string
+    sourceDigest: string
+  }>
+  canonical: Readonly<{
+    data: RuntimeState["data"]
+    sourceRefs: RuntimeState["sourceRefs"]
+  }>
+}>
+
+export type RuntimeContextRetriever = Readonly<{
+  retrieve(input: RuntimeContextRetrievalInput): Promise<ContextRetrievalResult>
+}>
 
 export type RuntimeReviewPersister = (input: {
   state: RuntimeState
@@ -83,6 +124,7 @@ export type RuntimeAuditHandler = (input: {
 
 export type RuntimeDependencies = {
   capabilityProvider: RuntimeCapabilityProvider
+  contextRetriever: RuntimeContextRetriever
   agentJudgment: RuntimeAgentJudgmentHandler
   reviewPersister: RuntimeReviewPersister
   actionHandler?: RuntimeActionHandler
@@ -166,7 +208,54 @@ export function createRuntimeHandlerRegistry(input: {
       }
       return { status: "validated" }
     },
+    retrieve_context: async (state) => {
+      const retrieved = contextRetrievalResultSchema.parse(
+        await dependencies.contextRetriever.retrieve({
+          run: {
+            companyId: state.companyId,
+            workflowDefinitionId: state.workflowDefinitionId,
+            workflowRunId: state.workflowRunId,
+            manifestDigest: state.manifestDigest,
+            mode: state.mode,
+            sandboxEnabled: resolveRuntimeSandboxEnabled(state),
+            operatingMode: runtimeOperatingMode(
+              resolveRuntimeSandboxEnabled(state)
+            ),
+            trigger: state.trigger,
+          },
+          workflow: {
+            identityId: manifest.identity.id,
+            workflowType: manifest.workflow.type,
+            sourceDigest: manifest.sourceDigest,
+          },
+          canonical: {
+            data: state.data,
+            sourceRefs: state.sourceRefs,
+          },
+        })
+      )
+      if (
+        retrieved.provenance.scope.companyId !== state.companyId ||
+        retrieved.provenance.scope.workspaceScopeId !== state.companyId
+      ) {
+        return {
+          status: "blocked",
+          errors: ["Operational Context scope does not match this workspace."],
+        }
+      }
+      return {
+        contextRetrieval: retrieved,
+        warnings: state.warnings.concat(retrievalWarnings(retrieved)),
+        status: "context_retrieved",
+      }
+    },
     agent_judgment: async (state) => {
+      if (!state.contextRetrieval) {
+        return {
+          status: "blocked",
+          errors: ["Operational Context retrieval is missing."],
+        }
+      }
       const judgment = await dependencies.agentJudgment({
         run: {
           companyId: state.companyId,
@@ -185,6 +274,11 @@ export function createRuntimeHandlerRegistry(input: {
           data: state.data,
           bindings: manifest.capabilityBindings,
         }),
+        operationalContext: {
+          untrustedEvidence: true,
+          provenance: state.contextRetrieval.provenance,
+          items: state.contextRetrieval.items,
+        },
         manifest,
         allowedTools: toolsFor("agent_judgment"),
       })
@@ -393,6 +487,7 @@ export function createGenericWorkflowRuntime(input: {
     .addNode("resolve_bindings", handlers.resolve_bindings)
     .addNode("load_data", handlers.load_data)
     .addNode("validate", handlers.validate)
+    .addNode("retrieve_context", handlers.retrieve_context)
     .addNode("agent_judgment", handlers.agent_judgment)
     .addNode("apply_rules", handlers.apply_rules)
     .addNode("project_records", handlers.project_records)
@@ -406,7 +501,14 @@ export function createGenericWorkflowRuntime(input: {
       "audit",
     ])
     .addEdge("load_data", "validate")
-    .addConditionalEdges("validate", routeBlocked, ["agent_judgment", "audit"])
+    .addConditionalEdges("validate", routeBlocked, [
+      "retrieve_context",
+      "audit",
+    ])
+    .addConditionalEdges("retrieve_context", routeBlocked, [
+      "agent_judgment",
+      "audit",
+    ])
     .addEdge("agent_judgment", "apply_rules")
     .addConditionalEdges("apply_rules", routeBlocked, [
       "project_records",
@@ -537,12 +639,14 @@ function routeBlocked(
 ):
   | "audit"
   | "load_data"
+  | "retrieve_context"
   | "agent_judgment"
   | "project_records"
   | "persist_review" {
   if (isBlocked(state.status)) return "audit"
   if (state.status === "bindings_resolved") return "load_data"
-  if (state.status === "validated") return "agent_judgment"
+  if (state.status === "validated") return "retrieve_context"
+  if (state.status === "context_retrieved") return "agent_judgment"
   if (state.status === "rules_applied") return "project_records"
   return "persist_review"
 }
@@ -575,8 +679,39 @@ function defaultAuditEvent(state: RuntimeState): RuntimeAuditEvent {
       workflowRunId: state.workflowRunId,
       status: state.status,
       errorCount: state.errors.length,
+      operationalContext: state.contextRetrieval
+        ? {
+            provider: state.contextRetrieval.provenance.provider,
+            status: state.contextRetrieval.provenance.status,
+            requestId: state.contextRetrieval.provenance.requestId,
+            resultCount: state.contextRetrieval.provenance.resultCount,
+            fallbackReason: state.contextRetrieval.provenance.fallbackReason,
+            indexSnapshotMarker:
+              state.contextRetrieval.provenance.indexSnapshotMarker,
+          }
+        : null,
     },
   }
+}
+
+function retrievalWarnings(result: ContextRetrievalResult): string[] {
+  const { status, fallbackReason } = result.provenance
+  if (status === "disabled" || status === "complete" || status === "empty") {
+    return []
+  }
+  const reason =
+    fallbackReason === "timeout"
+      ? "timed out"
+      : fallbackReason === "provider_unavailable"
+        ? "was unavailable"
+        : fallbackReason === "bounds_exceeded"
+          ? "reached its evidence bounds"
+          : fallbackReason === "policy_rejected"
+            ? "was rejected by local policy"
+            : "failed"
+  return [
+    `Operational Context ${reason}; canonical capability data remains authoritative.`,
+  ]
 }
 
 function assertSupportedManifest(manifest: CompiledAgentManifest): void {
@@ -595,6 +730,7 @@ function assertSupportedManifest(manifest: CompiledAgentManifest): void {
     "resolve_bindings",
     "load_data",
     "validate",
+    "retrieve_context",
     "agent_judgment",
     "apply_rules",
     "project_records",

@@ -15,7 +15,7 @@ const draftId = "37000000-0000-0000-0000-000000000001"
 
 describe("controlled workflow RPC adapters", () => {
   it("builds the legacy CLI detail shape from the controlled review RPC", async () => {
-    const rpc = vi.fn().mockResolvedValue({
+    const rpc = vi.fn().mockResolvedValueOnce({
       data: {
         item: {
           id: itemId,
@@ -75,6 +75,113 @@ describe("controlled workflow RPC adapters", () => {
       "get_workflow_review_v1",
       expect.objectContaining({ p_workflow_item_id: itemId })
     )
+  })
+
+  it("loads persisted operational citations without exposing retrieved excerpts", async () => {
+    const contextPacketId = "32000000-0000-0000-0000-000000000001"
+    const citation = {
+      providerReference: "provider-search-result-1",
+      providerDocumentId: "provider-document-1",
+      stableCustomId: `ctx_${"a".repeat(64)}`,
+      canonicalRecordId: "22000000-0000-4000-8000-000000000001",
+      canonicalRecordVersion: "version-1",
+      sourceId: "23000000-0000-4000-8000-000000000001",
+      sourceKey: "helpdesk",
+      recordType: "support_ticket",
+      rank: 1,
+      score: 0.91,
+      providerUpdatedAt: "2026-07-16T12:30:00.000Z",
+      sourceObservedAt: "2026-07-16T12:00:00.000Z",
+      freshness: "fresh" as const,
+      contentHash: "b".repeat(64),
+      policyHash: "f".repeat(64),
+    }
+    const operationalContext = {
+      provider: "supermemory" as const,
+      status: "complete" as const,
+      requestId: "24000000-0000-4000-8000-000000000001",
+      scope: { companyId, workspaceScopeId: companyId },
+      queryHash: "c".repeat(64),
+      filterHash: "d".repeat(64),
+      policyVersion: 3,
+      bounds: {
+        maximumResults: 5,
+        maximumCharacters: 12_000,
+        maximumTokens: 4_000,
+        maximumAgeHours: 8_760,
+        minimumConfidence: 0,
+        timeoutMs: 2_000,
+      },
+      resultCount: 1,
+      characterCount: 52,
+      tokenEstimate: 13,
+      latencyMs: 14,
+      fallbackReason: null,
+      indexSnapshotMarker: `idx_${"e".repeat(64)}`,
+      citations: [citation],
+    }
+    const rpc = vi
+      .fn()
+      .mockResolvedValueOnce({
+        data: {
+          item: {
+            id: itemId,
+            workflowRunId: "31000000-0000-0000-0000-000000000001",
+            itemKey: "fixture-item",
+            itemType: "po_review",
+            title: "Review fixture PO",
+            status: "active",
+            priority: 50,
+            sourceType: "fixture",
+            ownerRole: "approver",
+            assigneeId: null,
+            dueAt: null,
+            draft: null,
+            nextActions: ["approve"],
+            createdAt: "2026-07-14T17:00:00.000Z",
+            updatedAt: "2026-07-14T18:00:00.000Z",
+          },
+          recordSnapshot: {
+            contextPacketId,
+            sources: [{ source: "helpdesk" }],
+            facts: { ticket: "T-42" },
+            freshnessState: "fresh",
+            warnings: [],
+            capturedAt: "2026-07-16T13:00:00.000Z",
+          },
+          recommendation: null,
+          evidence: null,
+          draft: null,
+          policy: {
+            minimumRole: "approver",
+            requireHumanApproval: true,
+            requireWarningAcknowledgement: false,
+          },
+          reviewState: "ready",
+          version: "a".repeat(64),
+          availableActions: ["approve"],
+          activity: { items: [], nextPage: null },
+        },
+        error: null,
+      })
+      .mockResolvedValueOnce({ data: operationalContext, error: null })
+
+    const detail = await getWorkflowItemDetail({
+      supabase: { rpc } as unknown as WorkflowSupabaseClient,
+      companyId,
+      itemId,
+    })
+
+    expect(rpc).toHaveBeenNthCalledWith(
+      2,
+      "get_workflow_context_provenance_v1",
+      {
+        p_company_id: companyId,
+        p_context_packet_id: contextPacketId,
+      }
+    )
+    expect(detail.contextPacket?.operationalContext).toEqual(operationalContext)
+    expect(JSON.stringify(detail)).not.toContain("similar approved resolution")
   })
 
   it("adds a versioned manager-safe confidence explanation to a review", async () => {

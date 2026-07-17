@@ -62,4 +62,42 @@ describe("public control-plane projection", () => {
       auditEvents: [{ payload: { Safe: true }, trace: {} }],
     })
   })
+
+  it("preserves bounded operational citations while removing private fields", () => {
+    const projected = sanitizeLegacyItemDetail({
+      contextPacket: {
+        memoryRefs: [{ id: "private" }],
+        operationalContext: {
+          provider: "supermemory",
+          status: "complete",
+          tokenEstimate: 13,
+          citations: [
+            {
+              providerReference: "provider-search-result-1",
+              canonicalRecordId: "22000000-0000-4000-8000-000000000001",
+              rawTrace: "private",
+            },
+          ],
+          apiToken: "private",
+        },
+      },
+    })
+
+    expect(projected).toEqual({
+      contextPacket: {
+        memoryRefs: [],
+        operationalContext: {
+          provider: "supermemory",
+          status: "complete",
+          tokenEstimate: 13,
+          citations: [
+            {
+              providerReference: "provider-search-result-1",
+              canonicalRecordId: "22000000-0000-4000-8000-000000000001",
+            },
+          ],
+        },
+      },
+    })
+  })
 })

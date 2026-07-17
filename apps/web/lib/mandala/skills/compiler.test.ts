@@ -42,6 +42,21 @@ describe("Skill v1 compiler", () => {
       if (!result.ok) return
       expect(result.manifest.identity.id).toBe(name)
       expect(result.manifest.graph[0]?.handler).toBe("resolve_bindings")
+      expect(result.manifest.graph.map((node) => node.handler)).toEqual(
+        expect.arrayContaining([
+          "validate",
+          "retrieve_context",
+          "agent_judgment",
+        ])
+      )
+      expect(
+        result.manifest.graph.findIndex(
+          (node) => node.handler === "retrieve_context"
+        )
+      ).toBe(
+        result.manifest.graph.findIndex((node) => node.handler === "validate") +
+          1
+      )
       expect(result.manifest.graph.at(-1)?.handler).toBe("audit")
       expect(result.manifest.sourceDigest).toMatch(/^[0-9a-f]{64}$/)
       expect(result.manifest.manifestDigest).toMatch(/^[0-9a-f]{64}$/)

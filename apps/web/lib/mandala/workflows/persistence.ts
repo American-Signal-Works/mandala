@@ -547,13 +547,19 @@ function mapItem(record: WorkflowItemRecord): Record<string, unknown> {
 function mapContextPacket(
   record: WorkflowContextPacketRecord
 ): Record<string, unknown> {
+  const facts = record.operationalContext
+    ? {
+        ...record.facts,
+        __mandalaOperationalContextV1: record.operationalContext,
+      }
+    : record.facts
   return {
     id: record.id,
     company_id: record.companyId,
     workflow_run_id: record.workflowRunId,
     workflow_item_id: record.workflowItemId,
     sources: record.sources,
-    facts: record.facts,
+    facts,
     memory_refs: record.memoryRefs,
     freshness_state: record.freshnessState,
     warnings: record.warnings,
