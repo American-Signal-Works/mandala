@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(72);
+SELECT plan(79);
 
 -- Structure, RLS, and public surface.
 SELECT has_table('public', 'context_index_operation_controls', 'operation controls exist');
@@ -23,6 +23,7 @@ SELECT has_function('public', 'complete_context_index_work_v1', ARRAY['text','uu
 SELECT has_function('public', 'fail_context_index_work_v1', ARRAY['text','uuid','text','text','timestamp with time zone'], 'failure RPC exists');
 SELECT has_function('public', 'reconcile_context_index_work_v1', ARRAY['uuid','text','integer','timestamp with time zone'], 'reconciliation RPC exists');
 SELECT has_function('public', 'get_context_index_status_v1', ARRAY['uuid'], 'safe status RPC exists');
+SELECT has_function('public', 'get_context_retrieval_ledger_v1', ARRAY['uuid','uuid[]'], 'bounded retrieval ledger RPC exists');
 
 SELECT is(has_function_privilege('anon', 'public.claim_context_index_work_v1(text,integer,integer,timestamp with time zone)', 'EXECUTE'), false, 'anonymous cannot claim work');
 SELECT is(has_function_privilege('authenticated', 'public.claim_context_index_work_v1(text,integer,integer,timestamp with time zone)', 'EXECUTE'), false, 'members cannot claim work');
@@ -31,6 +32,10 @@ SELECT is(has_function_privilege('anon', 'public.claim_context_index_add_batch_v
 SELECT is(has_function_privilege('authenticated', 'public.claim_context_index_add_batch_v1(text,integer,integer,timestamp with time zone)', 'EXECUTE'), false, 'members cannot claim batch work');
 SELECT is(has_function_privilege('service_role', 'public.claim_context_index_add_batch_v1(text,integer,integer,timestamp with time zone)', 'EXECUTE'), true, 'service role may claim checked batch work');
 SELECT is(has_function_privilege('authenticated', 'public.get_context_index_status_v1(uuid)', 'EXECUTE'), true, 'members may call safe status RPC');
+SELECT is(has_function_privilege('anon', 'public.get_context_retrieval_ledger_v1(uuid,uuid[])', 'EXECUTE'), false, 'anonymous cannot read retrieval ledger evidence');
+SELECT is(has_function_privilege('authenticated', 'public.get_context_retrieval_ledger_v1(uuid,uuid[])', 'EXECUTE'), false, 'members cannot read retrieval ledger evidence');
+SELECT is(has_function_privilege('service_role', 'public.get_context_retrieval_ledger_v1(uuid,uuid[])', 'EXECUTE'), true, 'service role may call bounded retrieval ledger RPC');
+SELECT is(has_table_privilege('service_role', 'public.context_index_ledger', 'SELECT'), false, 'service role still cannot read the ledger table directly');
 SELECT is(has_table_privilege('authenticated', 'public.context_index_outbox', 'SELECT'), false, 'members cannot read raw outbox rows');
 SELECT is(has_table_privilege('service_role', 'public.context_index_outbox', 'UPDATE'), false, 'service role cannot bypass worker RPCs');
 SELECT is(
@@ -178,6 +183,22 @@ SELECT is(
   'completed', 'fake provider completion persists exact ledger evidence'
 );
 SELECT is((SELECT status FROM public.context_index_ledger WHERE canonical_record_id = 'e4000000-0000-4000-8000-000000000003'), 'indexed', 'ledger records confirmed provider indexing');
+SELECT is(
+  (SELECT count(*)::integer FROM public.get_context_retrieval_ledger_v1(
+    'e2000000-0000-4000-8000-000000000001',
+    ARRAY['e4000000-0000-4000-8000-000000000003'::uuid]
+  )),
+  1,
+  'bounded retrieval returns the requested indexed row for the exact tenant'
+);
+SELECT is(
+  (SELECT count(*)::integer FROM public.get_context_retrieval_ledger_v1(
+    'e2000000-0000-4000-8000-000000000002',
+    ARRAY['e4000000-0000-4000-8000-000000000003'::uuid]
+  )),
+  0,
+  'bounded retrieval cannot cross tenant boundaries'
+);
 
 SELECT set_config('request.jwt.claim.sub', 'e1000000-0000-4000-8000-000000000001', true);
 SELECT set_config('request.jwt.claims', '{"sub":"e1000000-0000-4000-8000-000000000001","role":"authenticated"}', true);

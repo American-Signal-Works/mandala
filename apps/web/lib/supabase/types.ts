@@ -6244,6 +6244,24 @@ export type Database = {
         Args: { p_company_id: string }
         Returns: Json
       }
+      get_context_retrieval_ledger_v1: {
+        Args: {
+          p_canonical_record_ids: string[]
+          p_company_id: string
+        }
+        Returns: {
+          canonical_record_id: string
+          canonical_version: string
+          content_hash: string
+          policy_hash: string
+          policy_version: number
+          provider_document_id: string
+          record_type: string
+          source_key: string
+          stable_custom_id: string
+          status: string
+        }[]
+      }
       get_my_profile_identity: { Args: never; Returns: Json }
       get_registered_agent_execution_context_v1: {
         Args: {

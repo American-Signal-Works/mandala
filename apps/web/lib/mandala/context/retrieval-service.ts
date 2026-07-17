@@ -171,16 +171,10 @@ export class SupabaseContextRetrievalRepository implements ContextRetrievalRepos
       { data: ledgerData, error: ledgerError },
       { data: sourceData, error: sourceError },
     ] = await Promise.all([
-      this.supabase
-        .from("context_index_ledger")
-        .select(
-          "canonical_record_id, source_key, record_type, canonical_version, policy_version, policy_hash, content_hash, stable_custom_id, provider_document_id, status"
-        )
-        .eq("company_id", companyId)
-        .eq("provider", "supermemory")
-        .eq("status", "indexed")
-        .in("canonical_record_id", eligibleCanonicalIds)
-        .not("provider_document_id", "is", null),
+      this.supabase.rpc("get_context_retrieval_ledger_v1", {
+        p_company_id: companyId,
+        p_canonical_record_ids: eligibleCanonicalIds,
+      }),
       this.supabase
         .from("external_sources")
         .select("id, source_key")
