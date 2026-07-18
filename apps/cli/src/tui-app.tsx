@@ -1257,12 +1257,13 @@ function CommandPalette(input: {
         const selected = index === input.selectedIndex
         const command = definition.command.padEnd(commandWidth)
         const startsGroup =
-          index === 0 || input.commands[index - 1]?.group !== definition.group
+          visibleIndex === 0 ||
+          input.commands[index - 1]?.group !== definition.group
         return (
           <Box
             flexDirection="column"
             key={definition.command}
-            marginTop={startsGroup && index !== start ? 1 : 0}
+            marginTop={startsGroup && visibleIndex !== 0 ? 1 : 0}
           >
             {startsGroup ? <Text bold>{definition.group}</Text> : null}
             <Text
@@ -1313,7 +1314,7 @@ export function matchingCommands(
   const suggestionOrder = new Map(
     matches.map((definition, index) => [definition.command, index])
   )
-  return matches
+  const ranked = matches
     .sort((left, right) => {
       const relevance = matchRank(left, query) - matchRank(right, query)
       return (
@@ -1326,6 +1327,20 @@ export function matchingCommands(
       )
     })
     .slice(0, 12)
+  const rankedIndex = new Map(
+    ranked.map((definition, index) => [definition.command, index])
+  )
+  const groupIndex = new Map<string, number>()
+  ranked.forEach((definition, index) => {
+    if (!groupIndex.has(definition.group))
+      groupIndex.set(definition.group, index)
+  })
+  return [...ranked].sort(
+    (left, right) =>
+      (groupIndex.get(left.group) ?? 0) - (groupIndex.get(right.group) ?? 0) ||
+      (rankedIndex.get(left.command) ?? 0) -
+        (rankedIndex.get(right.command) ?? 0)
+  )
 }
 
 function choicePageSize(height: number): number {
