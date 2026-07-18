@@ -36,6 +36,7 @@ import {
   authenticateRequest,
   hasCliWorkspaceScope,
 } from "@/lib/supabase/request"
+import { createAdminClient } from "@/lib/supabase/admin"
 import { createServerModelUsageRecorder } from "@/actions/admin/provider-usage"
 
 export const runtime = "nodejs"
@@ -88,7 +89,11 @@ export async function POST(request: Request) {
       isOpenPurchaseOrderCountQuestion(parsed.data.input)
     ) {
       const answer = await answerWorkspaceQuestion({
-        supabase: auth.supabase,
+        // Membership and CLI workspace scope are verified above. Connector
+        // configuration remains server-only, so this bounded company-scoped
+        // coverage check uses the admin client instead of widening table
+        // grants to the authenticated role.
+        supabase: createAdminClient(),
         companyId: parsed.data.companyId,
         question: parsed.data.input,
       })
@@ -237,6 +242,10 @@ export async function POST(request: Request) {
         }
       )
     }
+    console.error("Mandala contextual chat failed.", {
+      name: error instanceof Error ? error.name : "UnknownError",
+      message: error instanceof Error ? error.message : String(error),
+    })
     return NextResponse.json(
       { error: "contextual_chat_failed" },
       {
