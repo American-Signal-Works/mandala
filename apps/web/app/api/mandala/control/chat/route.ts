@@ -21,10 +21,7 @@ import {
   ConversationalParserUnavailableError,
   parseConversationalControlInput,
 } from "@/lib/mandala/control-plane/conversational-parser"
-import {
-  answerWorkspaceQuestion,
-  isOpenPurchaseOrderCountQuestion,
-} from "@/lib/mandala/control-plane/workspace-question"
+import { isOpenPurchaseOrderCountQuestion } from "@/lib/mandala/control-plane/workspace-question"
 import {
   ControlPlaneQueryError,
   getWorkflowItemDetail,
@@ -36,8 +33,8 @@ import {
   authenticateRequest,
   hasCliWorkspaceScope,
 } from "@/lib/supabase/request"
-import { createAdminClient } from "@/lib/supabase/admin"
 import { createServerModelUsageRecorder } from "@/actions/admin/provider-usage"
+import { answerServerWorkspaceQuestion } from "@/actions/admin/workspace-question"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -88,12 +85,7 @@ export async function POST(request: Request) {
       !parsed.data.selectedItemId &&
       isOpenPurchaseOrderCountQuestion(parsed.data.input)
     ) {
-      const answer = await answerWorkspaceQuestion({
-        // Membership and CLI workspace scope are verified above. Connector
-        // configuration remains server-only, so this bounded company-scoped
-        // coverage check uses the admin client instead of widening table
-        // grants to the authenticated role.
-        supabase: createAdminClient(),
+      const answer = await answerServerWorkspaceQuestion({
         companyId: parsed.data.companyId,
         question: parsed.data.input,
       })
