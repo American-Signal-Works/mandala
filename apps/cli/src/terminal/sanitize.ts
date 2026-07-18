@@ -50,6 +50,15 @@ export function sanitizeTerminalText(value: string): string {
   return result
 }
 
+export function formatErrorSentence(value: string): string {
+  const sentence = sanitizeTerminalText(value)
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[.!?]+\s+(?=[A-Z])/g, "; ")
+  if (!sentence) return "The command failed."
+  return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`
+}
+
 function skipEscapeSequence(value: string, index: number): number {
   const next = value.charCodeAt(index + 1)
   if (Number.isNaN(next)) return value.length

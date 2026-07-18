@@ -39,9 +39,9 @@ import {
 import { getApiUrl, type RuntimeEnvironment } from "./environment.js"
 import { CliError, asCliError } from "./errors.js"
 import { registeredFixtureScenarios } from "./fixtures.js"
-import { writeFailure, writeSuccess } from "./output.js"
+import { redactSecretText, writeFailure, writeSuccess } from "./output.js"
 import { createRuntimeSecureStore, SecureStore } from "./persistence.js"
-import { renderHumanResult } from "./terminal/index.js"
+import { formatErrorSentence, renderHumanResult } from "./terminal/index.js"
 
 type LoginFunction = typeof loginWithDeviceAuthorization
 type LocalLoginFunction = typeof loginWithMagicLink
@@ -105,14 +105,9 @@ export async function runCli(
     return 0
   }
   if (!json) {
-    const rendered = renderHumanResult(
-      { error: { code: result.error.code, message: result.error.message } },
-      {
-        width: (stderr as Writable & { columns?: number }).columns,
-        title: "Error",
-      }
+    stderr.write(
+      `${formatErrorSentence(redactSecretText(result.error.message))}\n`
     )
-    stderr.write(rendered.endsWith("\n") ? rendered : `${rendered}\n`)
     return result.error.exitCode
   }
   return writeFailure(output, result.error)

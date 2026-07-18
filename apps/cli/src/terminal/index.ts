@@ -22,4 +22,4 @@ export {
   type ReviewWorkspaceTabId,
   type TerminalHeaderContext,
 } from "./human.js"
-export { sanitizeTerminalText } from "./sanitize.js"
+export { formatErrorSentence, sanitizeTerminalText } from "./sanitize.js"

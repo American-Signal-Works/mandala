@@ -42,6 +42,7 @@ import {
   renderDraftPreview,
   renderEvidenceSummary,
   renderExecutionResult,
+  formatErrorSentence,
   renderHeader,
   renderHumanResult,
   renderInbox,
@@ -1770,7 +1771,7 @@ class TuiSession {
       }
       if (result.error.code === "api_unavailable") {
         this.write(
-          singleSentenceError(unavailableMutationMessage(action)),
+          formatErrorSentence(unavailableMutationMessage(action)),
           "error"
         )
         return false
@@ -2482,7 +2483,7 @@ class TuiSession {
 
   private writeError(error: CliError): void {
     this.write(
-      singleSentenceError(actionableErrorMessage(error) ?? error.message),
+      formatErrorSentence(actionableErrorMessage(error) ?? error.message),
       "error"
     )
   }
@@ -3630,15 +3631,6 @@ function actionableErrorMessage(error: CliError): string | undefined {
     return `${error.message} Open the relevant list again to refresh its row numbers.`
   }
   return undefined
-}
-
-function singleSentenceError(value: string): string {
-  const sentence = sanitizeTerminalText(value)
-    .replace(/\s+/g, " ")
-    .trim()
-    .replace(/[.!?]+\s+(?=[A-Z])/g, "; ")
-  if (!sentence) return "The command failed."
-  return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`
 }
 
 function unavailableMutationMessage(action: MutationAction): string {
