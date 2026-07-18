@@ -22,6 +22,10 @@ import {
   parseConversationalControlInput,
 } from "@/lib/mandala/control-plane/conversational-parser"
 import {
+  answerWorkspaceQuestion,
+  isOpenPurchaseOrderCountQuestion,
+} from "@/lib/mandala/control-plane/workspace-question"
+import {
   ControlPlaneQueryError,
   getWorkflowItemDetail,
   getWorkflowReview,
@@ -78,6 +82,32 @@ export async function POST(request: Request) {
           })
         ).version
       )
+
+    if (
+      !parsed.data.selectedItemId &&
+      isOpenPurchaseOrderCountQuestion(parsed.data.input)
+    ) {
+      const answer = await answerWorkspaceQuestion({
+        supabase: auth.supabase,
+        companyId: parsed.data.companyId,
+        question: parsed.data.input,
+      })
+      if (answer) {
+        return NextResponse.json(
+          contextualChatResponseSchema.parse({
+            route: "question",
+            message: answer,
+            companyId: parsed.data.companyId,
+            selectedItemId: null,
+            reviewVersion: null,
+            command: null,
+            confirmationRequired: false,
+            mutated: false,
+          }),
+          { headers: { "cache-control": "private, no-store" } }
+        )
+      }
+    }
 
     if (
       acceptsContextualStream(request) &&

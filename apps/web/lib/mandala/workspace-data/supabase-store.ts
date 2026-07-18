@@ -211,23 +211,32 @@ export class SupabaseWorkspaceDataStore implements WorkspaceDataStore {
     const sourceById = new Map(
       healthySources.map((source) => [source.id, source.source_key])
     )
-    const rows = z.array(externalRecordSchema).parse(
-      rowsOrThrow(
-        await this.db
-          .from("external_records")
-          .select(
-            "id, company_id, source_id, record_type, external_id, payload, pulled_at"
-          )
-          .eq("company_id", input.companyId)
-          .eq("record_type", input.recordType)
-          .in(
-            "source_id",
-            healthySources.map(({ id }) => id)
-          )
-          .order("pulled_at", { ascending: false })
-          .limit(input.limit)
+    const rows: z.infer<typeof externalRecordSchema>[] = []
+    const pageSize = 1_000
+    while (rows.length < input.limit) {
+      const remaining = input.limit - rows.length
+      const requested = Math.min(pageSize, remaining)
+      const page = z.array(externalRecordSchema).parse(
+        rowsOrThrow(
+          await this.db
+            .from("external_records")
+            .select(
+              "id, company_id, source_id, record_type, external_id, payload, pulled_at"
+            )
+            .eq("company_id", input.companyId)
+            .eq("record_type", input.recordType)
+            .in(
+              "source_id",
+              healthySources.map(({ id }) => id)
+            )
+            .order("pulled_at", { ascending: false })
+            .order("id", { ascending: true })
+            .range(rows.length, rows.length + requested - 1)
+        )
       )
-    )
+      rows.push(...page)
+      if (page.length < requested) break
+    }
     return rows.map((row) => ({
       id: row.id,
       companyId: row.company_id,

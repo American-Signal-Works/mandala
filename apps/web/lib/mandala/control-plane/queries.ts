@@ -311,7 +311,10 @@ async function callJsonRpc(
     functionName: string,
     functionArgs: Record<string, unknown>
   ) => Promise<JsonRpcResult>
-  return rpc(name, args)
+  // Supabase's RPC implementation reads the REST client from `this`. Calling
+  // an extracted function works with simple test doubles but fails in the
+  // real client with "Cannot read properties of undefined (reading 'rest')".
+  return rpc.call(supabase, name, args)
 }
 
 function throwControlPlaneRpcError(
