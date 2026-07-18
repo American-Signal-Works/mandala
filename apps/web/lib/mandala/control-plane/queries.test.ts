@@ -300,11 +300,41 @@ describe("controlled workflow RPC adapters", () => {
         priorities: [50],
         sourceTypes: ["fixture"],
         ownerRoles: ["approver"],
-        assigneeIds: [],
         sort: { key: "priority", direction: "desc" },
         limit: 25,
         snapshotId: "3e000000-0000-0000-0000-000000000001",
         position: 25,
+      },
+    })
+  })
+
+  it("omits empty queue filters from the database request", async () => {
+    const rpc = vi.fn().mockResolvedValue({
+      data: { items: [], nextPage: null },
+      error: null,
+    })
+
+    await listWorkflowQueue({
+      supabase: { rpc } as unknown as WorkflowSupabaseClient,
+      query: {
+        companyId,
+        statuses: ["active", "blocked", "approved"],
+        itemTypes: [],
+        priorities: [],
+        sourceTypes: [],
+        ownerRoles: [],
+        assigneeIds: [],
+        sort: { key: "priority", direction: "desc" },
+        limit: 50,
+      },
+    })
+
+    expect(rpc).toHaveBeenCalledWith("list_workflow_queue_v1", {
+      p_company_id: companyId,
+      p_query: {
+        statuses: ["active", "blocked", "approved"],
+        sort: { key: "priority", direction: "desc" },
+        limit: 50,
       },
     })
   })

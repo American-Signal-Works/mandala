@@ -43,7 +43,6 @@ import {
   renderEvidenceSummary,
   renderExecutionResult,
   renderHeader,
-  renderHomeSummary,
   renderHumanResult,
   renderInbox,
   renderProcurementReview,
@@ -121,6 +120,7 @@ type ContextualConversationResult = {
 
 type WorkspaceHeaderSettings = {
   contextStatus: string
+  sandboxEnabled?: boolean
   sandboxStatus: string
 }
 
@@ -241,6 +241,7 @@ class TuiSession {
   private currentCompanyId?: string
   private currentCompanyName?: string
   private currentEnvironment?: string
+  private currentSandboxEnabled?: boolean
   private currentUserEmail?: string
   private authAbort?: AbortController
   private operationAbort?: AbortController
@@ -321,6 +322,7 @@ class TuiSession {
             this.loadWorkspaceHeaderSettings(),
           ])
         : [undefined, undefined]
+    this.updateWorkspaceSettings(settings)
     if (inbox?.error && isAuthenticationError(inbox.error)) {
       this.writeSignedOutState(inbox.error)
       return
@@ -333,10 +335,7 @@ class TuiSession {
     )
     if (inbox?.error) {
       this.writeError(inbox.error)
-      this.writeHomeSummary(undefined, context.data)
-      return
     }
-    this.writeHomeSummary(inbox, context.data)
   }
 
   async handleLine(line: string): Promise<void> {
@@ -1770,7 +1769,10 @@ class TuiSession {
         return false
       }
       if (result.error.code === "api_unavailable") {
-        this.write(`Error\n${unavailableMutationMessage(action)}`, "error")
+        this.write(
+          singleSentenceError(unavailableMutationMessage(action)),
+          "error"
+        )
         return false
       }
       if (action === "approve") {
@@ -1820,7 +1822,9 @@ class TuiSession {
       previousStatus,
       refreshedDetail,
     })
-    await this.showInboxSummary()
+    // A mutation can reorder or remove rows. Require the user to reopen the
+    // relevant list before a numeric row target can be used again.
+    this.itemRows.clear()
     return true
   }
 
@@ -2109,6 +2113,10 @@ class TuiSession {
         ? workspaceSettingsSummary(updated, this.renderOptions)
         : renderHumanResult(result.data, this.renderOptions)
     )
+    if (typeof updated?.sandboxEnabled === "boolean") {
+      this.currentSandboxEnabled = updated.sandboxEnabled
+      this.notifySnapshot()
+    }
   }
 
   private async showHeader(): Promise<void> {
@@ -2127,6 +2135,7 @@ class TuiSession {
             this.loadWorkspaceHeaderSettings(),
           ])
         : [undefined, undefined]
+    this.updateWorkspaceSettings(settings)
     if (inbox?.error && isAuthenticationError(inbox.error)) {
       this.writeSignedOutState(inbox.error)
       return
@@ -2139,27 +2148,13 @@ class TuiSession {
     )
     if (inbox?.error) {
       this.writeError(inbox.error)
-      this.writeHomeSummary(undefined, result.data)
-      return
     }
-    this.writeHomeSummary(inbox, result.data)
   }
 
   private writeSignedOutState(error: CliError): void {
     this.clearState()
     this.write(renderHeader({ mode: "sandbox" }, this.renderOptions))
     this.writeError(error)
-    this.write(
-      renderHomeSummary(
-        {
-          context: { authenticated: false },
-          items: [],
-          itemCount: 0,
-          mode: "sandbox",
-        },
-        this.renderOptions
-      )
-    )
   }
 
   private showHelp(): void {
@@ -2190,25 +2185,6 @@ class TuiSession {
         )
         .join("\n\n")
     )
-  }
-
-  private async showInboxSummary(): Promise<void> {
-    const view = getSlashCommand("/inbox")?.view
-    if (!view) return
-    // A mutation can reorder or remove rows. Require a newly rendered list
-    // before a numeric target can be used again, even if refresh fails.
-    this.itemRows.clear()
-    const result = await this.runCommand([...view.backendArgs])
-    if (!result.ok) {
-      this.writeError(result.error)
-      return
-    }
-    const items = filterWorkItems(result.data, view)
-    this.writeHomeSummary({
-      items,
-      itemCount: items.length,
-      warningCount: countItemsWithWarnings(items),
-    })
   }
 
   private async loadInbox(): Promise<{
@@ -2257,8 +2233,16 @@ class TuiSession {
             : "Supermemory (not ready)"
     return {
       contextStatus,
+      sandboxEnabled,
       sandboxStatus: sandboxEnabled ? "On" : "Off",
     }
+  }
+
+  private updateWorkspaceSettings(
+    settings: WorkspaceHeaderSettings | undefined
+  ): void {
+    this.currentSandboxEnabled = settings?.sandboxEnabled
+    this.notifySnapshot()
   }
 
   private updateCompanyFromContext(value: unknown): void {
@@ -2295,6 +2279,7 @@ class TuiSession {
     this.companyRows.clear()
     this.fixtureRows.clear()
     this.itemRows.clear()
+    this.currentSandboxEnabled = undefined
     this.notifySnapshot()
   }
 
@@ -2306,35 +2291,13 @@ class TuiSession {
         : this.currentCompanyId
           ? "Open inbox"
           : "Sign in",
+      sandboxEnabled: this.currentSandboxEnabled,
       selectedItem: this.selectedItem,
       userEmail: this.currentUserEmail,
       workspace: this.currentCompanyName
         ? { id: this.currentCompanyId, name: this.currentCompanyName }
         : undefined,
     })
-  }
-
-  private writeHomeSummary(
-    inbox?: {
-      items?: unknown[]
-      itemCount?: number
-      warningCount?: number
-    },
-    context?: unknown
-  ): void {
-    this.write(
-      renderHomeSummary(
-        {
-          context,
-          mode: this.currentEnvironment ?? "sandbox",
-          items: inbox?.items ?? [],
-          itemCount: inbox?.itemCount ?? 0,
-          warningCount: inbox?.warningCount ?? 0,
-          workspaceName: this.currentCompanyName ?? null,
-        },
-        this.renderOptions
-      )
-    )
   }
 
   private writeItemOverview(detail: WorkItemDetail): void {
@@ -2518,16 +2481,8 @@ class TuiSession {
   }
 
   private writeError(error: CliError): void {
-    const actionable = actionableErrorMessage(error)
-    if (actionable) {
-      this.write(`Error\n${actionable}`, "error")
-      return
-    }
     this.write(
-      renderHumanResult(
-        { error: { code: error.code, message: error.message } },
-        this.renderOptions
-      ),
+      singleSentenceError(actionableErrorMessage(error) ?? error.message),
       "error"
     )
   }
@@ -3675,6 +3630,15 @@ function actionableErrorMessage(error: CliError): string | undefined {
     return `${error.message} Open the relevant list again to refresh its row numbers.`
   }
   return undefined
+}
+
+function singleSentenceError(value: string): string {
+  const sentence = sanitizeTerminalText(value)
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[.!?]+\s+(?=[A-Z])/g, "; ")
+  if (!sentence) return "The command failed."
+  return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`
 }
 
 function unavailableMutationMessage(action: MutationAction): string {

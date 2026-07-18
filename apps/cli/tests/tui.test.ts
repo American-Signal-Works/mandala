@@ -711,8 +711,8 @@ describe("interactive TUI", () => {
     expect(stderr.value).toContain("sign-in expired or was revoked")
     expect(stderr.value).toContain("/login")
     expect(stderr.value).not.toContain("| Field")
-    expect(stdout.value).toContain("Next action")
-    expect(stdout.value).toContain("Sign in with /login")
+    expect(stdout.value).not.toContain("Home")
+    expect(stdout.value).not.toContain("Next action")
   })
 
   it("explains the seeded local account after an unknown-email login", async () => {
@@ -799,7 +799,10 @@ describe("interactive TUI", () => {
 
     expect(execute).toHaveBeenCalledTimes(1)
     expect(execute).toHaveBeenCalledWith(["context"], expect.any(Object))
-    expect(stderr.value).toContain("unknown_slash_command")
+    expect(stderr.value.trim()).toBe(
+      "Unknown slash command; Type / to browse available commands."
+    )
+    expect(stderr.value).not.toContain("| Field")
   })
 
   it("keeps a bare slash as a transient palette trigger", async () => {
@@ -811,15 +814,14 @@ describe("interactive TUI", () => {
     expect(stderr.value).not.toContain("unknown_slash_command")
   })
 
-  it("starts signed-in users on a useful home summary", async () => {
+  it("starts signed-in users without a redundant home summary", async () => {
     const execute = fakeExecute()
     const { stdout } = await session("/exit\n", execute)
 
-    expect(stdout.value).toContain("Home")
-    expect(stdout.value).toContain("Workspace")
     expect(stdout.value).toContain("Example Company")
-    expect(stdout.value).toContain("Active work")
-    expect(stdout.value).toContain("Open the inbox to review work")
+    expect(stdout.value).not.toContain("Home")
+    expect(stdout.value).not.toContain("Active work")
+    expect(stdout.value).not.toContain("Next action")
     expect(stdout.value).toContain("Context: Off")
     expect(stdout.value).toContain("Sandbox: On")
     expect(commandCalls(execute).slice(0, 2)).toEqual([
@@ -829,7 +831,7 @@ describe("interactive TUI", () => {
     expect(commandCalls(execute)).toContainEqual(["context", "status"])
   })
 
-  it("keeps home available when workspace settings status cannot load", async () => {
+  it("keeps the header available when workspace settings status cannot load", async () => {
     const base = fakeExecute()
     const execute = vi.fn(async (args: string[]): Promise<CliCommandResult> => {
       if (args[0] === "context" && args[1] === "status") {
@@ -846,8 +848,8 @@ describe("interactive TUI", () => {
 
     const { stdout } = await session("/exit\n", execute)
 
-    expect(stdout.value).toContain("Home")
-    expect(stdout.value).toContain("Active work")
+    expect(stdout.value).not.toContain("Home")
+    expect(stdout.value).not.toContain("Active work")
     expect(stdout.value).toContain("Context: Unavailable")
     expect(stdout.value).toContain("Sandbox: Unavailable")
   })
@@ -897,7 +899,7 @@ describe("interactive TUI", () => {
     expect(stdout.value).toContain("Review workspace")
     expect(stdout.value).toContain("Review reorder request")
     expect(stdout.value).toContain("Why it exists")
-    expect(stdout.value).toContain("Next action")
+    expect(stdout.value).toContain("Actions")
     expect(stdout.value).not.toContain("Context Packet")
     expect(stdout.value).not.toContain("Audit Events")
   })
@@ -1048,7 +1050,8 @@ describe("interactive TUI", () => {
   it("groups help and only shows actions valid for the current selection", async () => {
     const execute = fakeExecute()
     const before = await session("/help\n/exit\n", execute)
-    expect(before.stdout.value).toContain("Review work")
+    expect(before.stdout.value).toContain("Inbox")
+    expect(before.stdout.value).not.toContain("Review work")
     expect(before.stdout.value).not.toContain("/approve")
 
     const after = await session(
@@ -1175,7 +1178,8 @@ describe("interactive TUI", () => {
     expect(stdout.value).toContain("Decision recorded · APPROVE")
     expect(stdout.value).toContain("Approval was recorded")
     expect(stdout.value).toContain("use /execute to retry")
-    expect(stderr.value).toContain("execution_failed")
+    expect(stderr.value.trim()).toBe("The mock execution failed.")
+    expect(stderr.value).not.toContain("| Field")
   })
 
   it("reports one certain no-change error when approval cannot connect", async () => {

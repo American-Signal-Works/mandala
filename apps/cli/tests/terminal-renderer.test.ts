@@ -7,7 +7,6 @@ import {
   renderEvidenceSummary,
   renderExecutionResult,
   renderHeader,
-  renderHomeSummary,
   renderHumanResult,
   renderInbox,
   renderInboxItemOverview,
@@ -94,8 +93,8 @@ describe("terminal renderer", () => {
     expect(output).toContain(draftId)
   })
 
-  it("fits nested data at 40, 80, and 120 columns without truncating values", () => {
-    for (const width of [40, 80, 120]) {
+  it("fits nested data from 40 through 200 columns without truncating values", () => {
+    for (const width of [40, 80, 120, 200]) {
       const output = renderHumanResult(
         {
           deeplyNested: {
@@ -113,6 +112,27 @@ describe("terminal renderer", () => {
       expect(output).toContain("Type")
       expect(output).not.toContain("...")
     }
+  })
+
+  it("uses wide terminal space instead of capping tables at 120 columns", () => {
+    const output = renderHumanResult(
+      [
+        {
+          code: "SKU-123",
+          description:
+            "A deliberately descriptive inventory item that benefits from a wide terminal",
+          quantity: 24,
+          vendor: "Acme Supply",
+        },
+      ],
+      { title: "Inventory", width: 200 }
+    )
+    const widestLine = Math.max(
+      ...output.split("\n").map((line) => line.length)
+    )
+
+    expect(widestLine).toBeGreaterThan(120)
+    expect(widestLine).toBeLessThanOrEqual(200)
   })
 
   it("renders uniform record arrays as generated grids", () => {
@@ -330,25 +350,6 @@ describe("terminal renderer", () => {
     (width) => {
       const detail = productDetail()
       const outputs = [
-        renderHomeSummary(
-          {
-            context: {
-              companyName: "Mandala Local Demo",
-              mode: "mock",
-            },
-            items: [
-              detail.item,
-              {
-                title: "Old completed work",
-                status: "resolved",
-                type: "Status",
-              },
-            ],
-            itemCount: 1,
-            warningCount: 2,
-          },
-          { width }
-        ),
         renderInbox(
           { items: [detail.item, { title: "Done", status: "resolved" }] },
           { width }
@@ -367,17 +368,16 @@ describe("terminal renderer", () => {
           true
         )
       }
-      expect(outputs[0]).toContain("Workspace")
-      expect(outputs[1]).toContain("1 active")
-      expect(outputs[1]).not.toContain("Done")
-      expect(outputs[2]).toContain("Why it exists")
-      expect(outputs[3]).toContain("Current stock")
-      expect(outputs[4]).toContain("Memory provenance")
-      expect(outputs[4]).toContain("Canonical citations")
-      expect(outputs[4]).toContain("providerReference")
-      expect(outputs[5]).toContain("APPROVE")
-      expect(outputs[6]).toContain("MOCK ONLY")
-      expect(outputs[7]).toContain("audit-marker")
+      expect(outputs[0]).toContain("1 active")
+      expect(outputs[0]).not.toContain("Done")
+      expect(outputs[1]).toContain("Why it exists")
+      expect(outputs[2]).toContain("Current stock")
+      expect(outputs[3]).toContain("Memory provenance")
+      expect(outputs[3]).toContain("Canonical citations")
+      expect(outputs[3]).toContain("providerReference")
+      expect(outputs[4]).toContain("APPROVE")
+      expect(outputs[5]).toContain("MOCK ONLY")
+      expect(outputs[6]).toContain("audit-marker")
     }
   )
 
@@ -609,7 +609,6 @@ describe("terminal renderer", () => {
       rawToken: secret,
     }
     const outputs = [
-      renderHomeSummary(input),
       renderInbox(input),
       renderInboxItemOverview(input),
       renderProcurementReview(input),

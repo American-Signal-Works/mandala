@@ -417,75 +417,6 @@ export function renderInboxSummary(
   return wrapTerminalText(`${itemText}${warningText}  /inbox`, width)
 }
 
-/** A compact, product-shaped home view. The complete diagnostic renderer remains
- * available through renderHumanResult for callers that need every field. */
-export function renderHomeSummary(
-  input: unknown,
-  options: HumanRenderOptions | number = {}
-): string {
-  const { width, value } = productInput(input, options)
-  const source = recordOrEmpty(value)
-  const context = recordOrEmpty(source.context)
-  const items = arrayAt(source, ["items"])
-  const active = countAt(source, ["itemCount", "activeCount"], items.length)
-  const urgent = countAt(
-    source,
-    ["urgentCount"],
-    countMatching(items, isUrgent)
-  )
-  const blocked = countAt(
-    source,
-    ["blockedCount"],
-    countMatching(items, isBlocked)
-  )
-  const warnings = countAt(
-    source,
-    ["warningCount"],
-    countMatching(items, itemHasWarnings)
-  )
-  const categories = summarizeCategories(items)
-  const authenticated =
-    read(context, ["authenticated"]) ?? read(source, ["authenticated"])
-  const workspace = firstValue(context, source, [
-    "workspaceName",
-    "companyName",
-    "workspace",
-    "company",
-  ])
-
-  return renderProductSections(
-    resolvedTitle(options, "Home"),
-    [
-      ["Workspace", workspace],
-      [
-        "Mode",
-        environmentLabel(
-          valueText(
-            firstValue(context, source, ["mode", "environment"]),
-            "Unknown"
-          )
-        ),
-      ],
-      ["Active work", active],
-      ["Urgent", urgent],
-      ["Blocked", blocked],
-      ["With warnings", warnings],
-      ["Needs attention", categories],
-      [
-        "Next action",
-        authenticated === false
-          ? "Sign in with /login"
-          : workspace === undefined || workspace === null
-            ? "Choose a workspace with /companies, then /company 1"
-            : active > 0
-              ? "Open the inbox to review work"
-              : "Ask Mandala or refresh the inbox",
-      ],
-    ],
-    width
-  )
-}
-
 /** Concise active-inbox projection. Unknown item fields remain available through
  * renderHumanResult rather than being silently discarded from diagnostic output. */
 export function renderInbox(
@@ -1807,17 +1738,6 @@ function arrayAt(record: unknown, keys: readonly string[]): unknown[] {
   return Array.isArray(value) ? value : []
 }
 
-function countAt(
-  record: unknown,
-  keys: readonly string[],
-  fallback: number
-): number {
-  const value = read(record, keys)
-  return typeof value === "number" && Number.isFinite(value)
-    ? Math.max(0, Math.floor(value))
-    : fallback
-}
-
 function valueText(value: unknown, fallback = ""): string {
   if (value === undefined || value === null || value === "") return fallback
   if (typeof value === "string") return sanitizeTerminalText(value) || fallback
@@ -1890,21 +1810,6 @@ function isBlocked(item: unknown): boolean {
 function isResolved(item: unknown): boolean {
   const state = valueText(read(item, ["status", "state", "resolutionState"]))
   return /^(resolved|completed|closed|dismissed|archived)$/i.test(state)
-}
-
-function summarizeCategories(items: readonly unknown[]): string {
-  if (items.length === 0) return "None"
-  const counts = new Map<string, number>()
-  for (const item of items) {
-    const category = valueText(
-      read(item, ["type", "itemType", "workType", "category"]),
-      "Review"
-    )
-    counts.set(category, (counts.get(category) ?? 0) + 1)
-  }
-  return [...counts.entries()]
-    .map(([name, count]) => `${name} ${count}`)
-    .join(" · ")
 }
 
 function inboxRows(item: unknown): ProductRow[] {
