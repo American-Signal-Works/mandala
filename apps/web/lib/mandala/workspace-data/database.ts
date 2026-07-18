@@ -11,6 +11,7 @@ export type WorkspaceQuery<T> = PromiseLike<WorkspaceDatabaseResult<T[]>> & {
   in(column: string, values: readonly unknown[]): WorkspaceQuery<T>
   order(column: string, options?: Record<string, unknown>): WorkspaceQuery<T>
   limit(count: number): WorkspaceQuery<T>
+  range(from: number, to: number): WorkspaceQuery<T>
   single(): PromiseLike<WorkspaceDatabaseResult<T>>
   maybeSingle(): PromiseLike<WorkspaceDatabaseResult<T>>
 }

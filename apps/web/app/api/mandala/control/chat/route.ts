@@ -21,6 +21,7 @@ import {
   ConversationalParserUnavailableError,
   parseConversationalControlInput,
 } from "@/lib/mandala/control-plane/conversational-parser"
+import { isOpenPurchaseOrderCountQuestion } from "@/lib/mandala/control-plane/workspace-question"
 import {
   ControlPlaneQueryError,
   getWorkflowItemDetail,
@@ -33,6 +34,7 @@ import {
   hasCliWorkspaceScope,
 } from "@/lib/supabase/request"
 import { createServerModelUsageRecorder } from "@/actions/admin/provider-usage"
+import { answerServerWorkspaceQuestion } from "@/actions/admin/workspace-question"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -78,6 +80,31 @@ export async function POST(request: Request) {
           })
         ).version
       )
+
+    if (
+      !parsed.data.selectedItemId &&
+      isOpenPurchaseOrderCountQuestion(parsed.data.input)
+    ) {
+      const answer = await answerServerWorkspaceQuestion({
+        companyId: parsed.data.companyId,
+        question: parsed.data.input,
+      })
+      if (answer) {
+        return NextResponse.json(
+          contextualChatResponseSchema.parse({
+            route: "question",
+            message: answer,
+            companyId: parsed.data.companyId,
+            selectedItemId: null,
+            reviewVersion: null,
+            command: null,
+            confirmationRequired: false,
+            mutated: false,
+          }),
+          { headers: { "cache-control": "private, no-store" } }
+        )
+      }
+    }
 
     if (
       acceptsContextualStream(request) &&
@@ -207,6 +234,10 @@ export async function POST(request: Request) {
         }
       )
     }
+    console.error("Mandala contextual chat failed.", {
+      name: error instanceof Error ? error.name : "UnknownError",
+      message: error instanceof Error ? error.message : String(error),
+    })
     return NextResponse.json(
       { error: "contextual_chat_failed" },
       {

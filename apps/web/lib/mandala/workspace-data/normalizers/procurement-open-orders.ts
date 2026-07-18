@@ -24,6 +24,39 @@ export type CanonicalOpenOrder = {
   }>
 }
 
+export type CanonicalOpenOrderObject = {
+  key: string
+  roles: ProcurementEvidenceRole[]
+  sources: CanonicalOpenOrder["sources"]
+}
+
+export function normalizeProcurementOpenOrderObjects(
+  datasets: readonly ProcurementOpenOrderDataset[]
+): CanonicalOpenOrderObject[] {
+  const canonical = new Map<string, CanonicalOpenOrderObject>()
+
+  for (const dataset of datasets) {
+    for (const record of dataset.records) {
+      const candidate = objectCandidate(record, dataset.role)
+      if (!candidate) continue
+      const existing = canonical.get(candidate.key)
+      if (!existing) {
+        canonical.set(candidate.key, candidate)
+        continue
+      }
+      existing.roles = unique([...existing.roles, ...candidate.roles])
+      existing.sources = uniqueSources([
+        ...existing.sources,
+        ...candidate.sources,
+      ])
+    }
+  }
+
+  return [...canonical.values()].sort((left, right) =>
+    left.key.localeCompare(right.key)
+  )
+}
+
 /**
  * Deterministically links operational PO rows and tracking cards. Semantic
  * retrieval may suggest additional context, but it never creates or removes a
@@ -68,16 +101,8 @@ function candidates(
   record: WorkspaceExternalRecord,
   role: ProcurementEvidenceRole
 ): CanonicalOpenOrder[] {
-  if (role === "supporting" || isClosed(record.payload)) return []
-  const explicitReference = explicitBusinessReference(record.payload)
-  if (
-    role === "tracking" &&
-    !explicitReference &&
-    !isProcurementTrackingCard(record.payload)
-  ) {
-    return []
-  }
-  const reference = explicitReference ?? normalizeIdentifier(record.externalId)
+  const object = objectCandidate(record, role)
+  if (!object) return []
   const source = {
     recordId: record.id,
     sourceId: record.sourceId,
@@ -91,7 +116,7 @@ function candidates(
     if (!sku) return []
     return [
       {
-        key: objectKey(reference, record, sku),
+        key: `${object.key}:sku:${normalizeIdentifier(sku)}`,
         sku,
         quantity:
           positiveNumber(record.payload.quantity) ??
@@ -112,7 +137,7 @@ function candidates(
     if (!sku) return []
     return [
       {
-        key: objectKey(reference, record, sku),
+        key: `${object.key}:sku:${normalizeIdentifier(sku)}`,
         sku,
         quantity:
           positiveNumber(line.quantity) ??
@@ -123,6 +148,51 @@ function candidates(
       },
     ]
   })
+}
+
+function objectCandidate(
+  record: WorkspaceExternalRecord,
+  role: ProcurementEvidenceRole
+): CanonicalOpenOrderObject | null {
+  if (role === "supporting" || isClosed(record.payload)) return null
+  const explicitReference = explicitBusinessReference(record.payload)
+  if (
+    role === "tracking" &&
+    !explicitPurchaseOrderReference(record.payload) &&
+    !isProcurementTrackingCard(record.payload)
+  ) {
+    return null
+  }
+  const key = explicitReference
+    ? `po:${explicitReference}`
+    : `source:${normalizeIdentifier(record.sourceKey)}:${normalizeIdentifier(record.externalId)}`
+  return {
+    key,
+    roles: [role],
+    sources: [
+      {
+        recordId: record.id,
+        sourceId: record.sourceId,
+        sourceKey: record.sourceKey,
+        recordType: record.recordType,
+        externalId: record.externalId,
+      },
+    ],
+  }
+}
+
+function explicitPurchaseOrderReference(
+  payload: Record<string, unknown>
+): string | null {
+  for (const field of [
+    "purchase_order_number",
+    "po_number",
+    "purchaseOrderNumber",
+  ]) {
+    const value = nonEmptyString(payload[field])
+    if (value) return normalizeIdentifier(value)
+  }
+  return null
 }
 
 function explicitBusinessReference(
@@ -155,17 +225,6 @@ function isProcurementTrackingCard(payload: Record<string, unknown>): boolean {
   )
 }
 
-function objectKey(
-  reference: string | null,
-  record: WorkspaceExternalRecord,
-  sku: string
-): string {
-  const object = reference
-    ? `po:${reference}`
-    : `source:${normalizeIdentifier(record.sourceKey)}:${normalizeIdentifier(record.externalId)}`
-  return `${object}:sku:${normalizeIdentifier(sku)}`
-}
-
 function isClosed(payload: Record<string, unknown>): boolean {
   if (payload.closed === true) return true
   const status = [payload.status, payload.fulfillment_status, payload.list_name]
@@ -173,7 +232,7 @@ function isClosed(payload: Record<string, unknown>): boolean {
     .filter((value): value is string => Boolean(value))
     .join(" ")
     .toLowerCase()
-  return /(^|\s)(closed|fulfilled|cancelled|canceled|done|archived)(\s|$)/.test(
+  return /(^|\s)(closed|fulfilled|cancelled|canceled|done|archived|received|completed|discarded)(\s|$)/.test(
     status
   )
 }

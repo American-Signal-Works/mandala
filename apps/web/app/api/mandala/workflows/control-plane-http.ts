@@ -16,6 +16,7 @@ export function controlPlaneErrorResponse(error: unknown, fallback: string) {
     return privateJson({ error: "invalid_cursor" }, 400)
   }
   if (!(error instanceof ControlPlaneQueryError)) {
+    logControlPlaneFailure(fallback, error)
     return privateJson({ error: fallback }, 500)
   }
 
@@ -43,5 +44,26 @@ export function controlPlaneErrorResponse(error: unknown, fallback: string) {
     invalid_state: 409,
     review_not_approvable: 409,
   }
-  return privateJson({ error: error.code }, statuses[error.code] ?? 500)
+  const status = statuses[error.code] ?? 500
+  if (status >= 500) logControlPlaneFailure(fallback, error)
+  return privateJson({ error: error.code }, status)
+}
+
+function logControlPlaneFailure(fallback: string, error: unknown) {
+  const details =
+    error instanceof ControlPlaneQueryError
+      ? {
+          name: error.name,
+          code: error.code,
+          databaseCode: error.databaseCode ?? null,
+          message: error.message,
+        }
+      : error instanceof Error
+        ? { name: error.name, message: error.message }
+        : { name: "UnknownError", message: String(error) }
+
+  console.error("Mandala control-plane request failed.", {
+    fallback,
+    ...details,
+  })
 }

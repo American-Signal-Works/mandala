@@ -825,6 +825,30 @@ describe("Ink TUI", () => {
     ).toContain("/inbox")
     expect(matchingCommands("/zzzzzz", {})).toEqual([])
   })
+
+  it("keeps every command category in one contiguous palette section", () => {
+    const matches = matchingCommands("/s", {
+      userEmail: "seed@example.com",
+    })
+    const positions = new Map<string, number[]>()
+    matches.forEach((definition, index) => {
+      positions.set(definition.group, [
+        ...(positions.get(definition.group) ?? []),
+        index,
+      ])
+    })
+
+    for (const indexes of positions.values()) {
+      expect(indexes.at(-1)! - indexes[0]! + 1).toBe(indexes.length)
+    }
+    const commands = matches.map(({ command }) => command)
+    expect(
+      Math.abs(commands.indexOf("/sandbox") - commands.indexOf("/fixtures"))
+    ).toBe(1)
+    expect(
+      Math.abs(commands.indexOf("/inbox") - commands.indexOf("/refresh"))
+    ).toBeLessThanOrEqual(2)
+  })
 })
 
 function createHarness(

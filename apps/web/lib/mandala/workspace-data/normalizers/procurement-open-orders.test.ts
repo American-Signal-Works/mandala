@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest"
 import type { WorkspaceExternalRecord } from "../provider"
-import { normalizeProcurementOpenOrders } from "./procurement-open-orders"
+import {
+  normalizeProcurementOpenOrderObjects,
+  normalizeProcurementOpenOrders,
+} from "./procurement-open-orders"
 
 describe("procurement open-order normalization", () => {
   it("finds a ShipHero-only purchase order", () => {
@@ -44,6 +47,26 @@ describe("procurement open-order normalization", () => {
     expect(result.size).toBe(0)
   })
 
+  it("does not treat a generic order number as procurement evidence", () => {
+    const result = normalizeProcurementOpenOrderObjects([
+      {
+        role: "tracking",
+        records: [
+          trackingCard({
+            payload: {
+              purchase_order_number: null,
+              order_number: "TO-42",
+              order_type: "TO",
+              list_name: "Transfer Orders to be Picked",
+            },
+          }),
+        ],
+      },
+    ])
+
+    expect(result).toEqual([])
+  })
+
   it("deduplicates one PO represented by two sources and retains both citations", () => {
     const result = normalizeProcurementOpenOrders([
       { role: "authoritative", records: [purchaseOrder()] },
@@ -58,6 +81,32 @@ describe("procurement open-order normalization", () => {
           expect.objectContaining({ sourceKey: "shiphero" }),
           expect.objectContaining({ sourceKey: "trello" }),
         ],
+      }),
+    ])
+  })
+
+  it("counts one business PO across multiple SKUs and sources", () => {
+    const result = normalizeProcurementOpenOrderObjects([
+      {
+        role: "authoritative",
+        records: [
+          purchaseOrder({
+            payload: {
+              lines: [
+                { sku: "SKU-1", quantity: 12 },
+                { sku: "SKU-2", quantity: 4 },
+              ],
+            },
+          }),
+        ],
+      },
+      { role: "tracking", records: [trackingCard()] },
+    ])
+
+    expect(result).toEqual([
+      expect.objectContaining({
+        key: "po:PO-42",
+        roles: ["authoritative", "tracking"],
       }),
     ])
   })
@@ -77,6 +126,19 @@ describe("procurement open-order normalization", () => {
     ])
 
     expect(result.size).toBe(0)
+  })
+
+  it("does not treat a received Trello card as an open PO", () => {
+    const result = normalizeProcurementOpenOrderObjects([
+      {
+        role: "tracking",
+        records: [
+          trackingCard({ payload: { list_name: "Purchase Order Received" } }),
+        ],
+      },
+    ])
+
+    expect(result).toEqual([])
   })
 })
 

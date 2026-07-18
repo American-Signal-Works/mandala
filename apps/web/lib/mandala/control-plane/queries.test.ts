@@ -14,6 +14,33 @@ const itemId = "33000000-0000-0000-0000-000000000001"
 const draftId = "37000000-0000-0000-0000-000000000001"
 
 describe("controlled workflow RPC adapters", () => {
+  it("preserves the Supabase client receiver when calling an RPC", async () => {
+    const supabase = {
+      rpc(this: unknown) {
+        expect(this).toBe(supabase)
+        return Promise.resolve({
+          data: { items: [], nextPage: null },
+          error: null,
+        })
+      },
+    } as unknown as WorkflowSupabaseClient
+
+    await listWorkflowQueue({
+      supabase,
+      query: {
+        companyId,
+        statuses: ["active"],
+        itemTypes: [],
+        priorities: [],
+        sourceTypes: [],
+        ownerRoles: [],
+        assigneeIds: [],
+        sort: { key: "priority", direction: "desc" },
+        limit: 50,
+      },
+    })
+  })
+
   it("builds the legacy CLI detail shape from the controlled review RPC", async () => {
     const rpc = vi.fn().mockResolvedValueOnce({
       data: {
