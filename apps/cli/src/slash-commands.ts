@@ -74,7 +74,7 @@ export type SlashAvailability =
 
 export type SlashCommandGroup =
   | "Account"
-  | "Review work"
+  | "Inbox"
   | "Agents"
   | "Workspace settings"
   | "Inspect selected"
@@ -637,7 +637,7 @@ function groupForKind(kind: SlashCommandKind): SlashCommandGroup {
       return "Agents"
     case "view":
     case "selection":
-      return "Review work"
+      return "Inbox"
     case "detail":
       return "Inspect selected"
     case "mutation":

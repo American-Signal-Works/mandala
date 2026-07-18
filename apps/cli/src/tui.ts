@@ -120,6 +120,7 @@ type ContextualConversationResult = {
 
 type WorkspaceHeaderSettings = {
   contextStatus: string
+  sandboxEnabled?: boolean
   sandboxStatus: string
 }
 
@@ -240,6 +241,7 @@ class TuiSession {
   private currentCompanyId?: string
   private currentCompanyName?: string
   private currentEnvironment?: string
+  private currentSandboxEnabled?: boolean
   private currentUserEmail?: string
   private authAbort?: AbortController
   private operationAbort?: AbortController
@@ -320,6 +322,7 @@ class TuiSession {
             this.loadWorkspaceHeaderSettings(),
           ])
         : [undefined, undefined]
+    this.updateWorkspaceSettings(settings)
     if (inbox?.error && isAuthenticationError(inbox.error)) {
       this.writeSignedOutState(inbox.error)
       return
@@ -1766,7 +1769,10 @@ class TuiSession {
         return false
       }
       if (result.error.code === "api_unavailable") {
-        this.write(`Error\n${unavailableMutationMessage(action)}`, "error")
+        this.write(
+          singleSentenceError(unavailableMutationMessage(action)),
+          "error"
+        )
         return false
       }
       if (action === "approve") {
@@ -2107,6 +2113,10 @@ class TuiSession {
         ? workspaceSettingsSummary(updated, this.renderOptions)
         : renderHumanResult(result.data, this.renderOptions)
     )
+    if (typeof updated?.sandboxEnabled === "boolean") {
+      this.currentSandboxEnabled = updated.sandboxEnabled
+      this.notifySnapshot()
+    }
   }
 
   private async showHeader(): Promise<void> {
@@ -2125,6 +2135,7 @@ class TuiSession {
             this.loadWorkspaceHeaderSettings(),
           ])
         : [undefined, undefined]
+    this.updateWorkspaceSettings(settings)
     if (inbox?.error && isAuthenticationError(inbox.error)) {
       this.writeSignedOutState(inbox.error)
       return
@@ -2222,8 +2233,16 @@ class TuiSession {
             : "Supermemory (not ready)"
     return {
       contextStatus,
+      sandboxEnabled,
       sandboxStatus: sandboxEnabled ? "On" : "Off",
     }
+  }
+
+  private updateWorkspaceSettings(
+    settings: WorkspaceHeaderSettings | undefined
+  ): void {
+    this.currentSandboxEnabled = settings?.sandboxEnabled
+    this.notifySnapshot()
   }
 
   private updateCompanyFromContext(value: unknown): void {
@@ -2260,6 +2279,7 @@ class TuiSession {
     this.companyRows.clear()
     this.fixtureRows.clear()
     this.itemRows.clear()
+    this.currentSandboxEnabled = undefined
     this.notifySnapshot()
   }
 
@@ -2271,6 +2291,7 @@ class TuiSession {
         : this.currentCompanyId
           ? "Open inbox"
           : "Sign in",
+      sandboxEnabled: this.currentSandboxEnabled,
       selectedItem: this.selectedItem,
       userEmail: this.currentUserEmail,
       workspace: this.currentCompanyName
@@ -2460,16 +2481,8 @@ class TuiSession {
   }
 
   private writeError(error: CliError): void {
-    const actionable = actionableErrorMessage(error)
-    if (actionable) {
-      this.write(`Error\n${actionable}`, "error")
-      return
-    }
     this.write(
-      renderHumanResult(
-        { error: { code: error.code, message: error.message } },
-        this.renderOptions
-      ),
+      singleSentenceError(actionableErrorMessage(error) ?? error.message),
       "error"
     )
   }
@@ -3617,6 +3630,15 @@ function actionableErrorMessage(error: CliError): string | undefined {
     return `${error.message} Open the relevant list again to refresh its row numbers.`
   }
   return undefined
+}
+
+function singleSentenceError(value: string): string {
+  const sentence = sanitizeTerminalText(value)
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[.!?]+\s+(?=[A-Z])/g, "; ")
+  if (!sentence) return "The command failed."
+  return /[.!?]$/.test(sentence) ? sentence : `${sentence}.`
 }
 
 function unavailableMutationMessage(action: MutationAction): string {

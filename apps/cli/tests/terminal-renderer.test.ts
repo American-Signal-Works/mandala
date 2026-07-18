@@ -93,8 +93,8 @@ describe("terminal renderer", () => {
     expect(output).toContain(draftId)
   })
 
-  it("fits nested data at 40, 80, and 120 columns without truncating values", () => {
-    for (const width of [40, 80, 120]) {
+  it("fits nested data from 40 through 200 columns without truncating values", () => {
+    for (const width of [40, 80, 120, 200]) {
       const output = renderHumanResult(
         {
           deeplyNested: {
@@ -112,6 +112,27 @@ describe("terminal renderer", () => {
       expect(output).toContain("Type")
       expect(output).not.toContain("...")
     }
+  })
+
+  it("uses wide terminal space instead of capping tables at 120 columns", () => {
+    const output = renderHumanResult(
+      [
+        {
+          code: "SKU-123",
+          description:
+            "A deliberately descriptive inventory item that benefits from a wide terminal",
+          quantity: 24,
+          vendor: "Acme Supply",
+        },
+      ],
+      { title: "Inventory", width: 200 }
+    )
+    const widestLine = Math.max(
+      ...output.split("\n").map((line) => line.length)
+    )
+
+    expect(widestLine).toBeGreaterThan(120)
+    expect(widestLine).toBeLessThanOrEqual(200)
   })
 
   it("renders uniform record arrays as generated grids", () => {

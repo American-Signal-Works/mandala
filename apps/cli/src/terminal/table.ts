@@ -2,7 +2,7 @@ import Table from "cli-table3"
 import { sanitizeTerminalText } from "./sanitize.js"
 
 const DEFAULT_WIDTH = 80
-const MAX_WIDTH = 120
+const MAX_WIDTH = 240
 const MIN_WIDTH = 24
 const NARROW_WIDTH = 70
 const MAX_GRID_FIELDS = 5

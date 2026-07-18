@@ -105,7 +105,8 @@ describe("Ink TUI", () => {
     expect(resolveTuiWidth(39, 80)).toBe(39)
     expect(resolveTuiWidth(40, 80)).toBe(40)
     expect(resolveTuiWidth(119, 80)).toBe(119)
-    expect(resolveTuiWidth(200, 80)).toBe(120)
+    expect(resolveTuiWidth(200, 80)).toBe(200)
+    expect(resolveTuiWidth(240, 80)).toBe(240)
     expect(resolveTuiWidth(1_190, 119)).toBe(119)
     expect(resolveTuiWidth(Number.POSITIVE_INFINITY, 100)).toBe(100)
   })
@@ -128,6 +129,8 @@ describe("Ink TUI", () => {
     expect(terminal.lastFrame()).toContain("↑↓ move")
     expect(terminal.lastFrame()).toContain("Decide")
     expect(terminal.lastFrame()).toContain("Inspect selected")
+    expect(terminal.lastFrame()).toContain("Inbox")
+    expect(terminal.lastFrame()).toMatch(/Inbox\n\s*>?\s*\/inbox/)
 
     terminal.stdin.write("pur")
     await waitFor(() => terminal.lastFrame()?.includes("> /pur") === true)
@@ -489,9 +492,9 @@ describe("Ink TUI", () => {
     await waitFor(() => terminal.lastFrame()?.includes("> /evidence") === true)
     terminal.stdin.write("\r")
     await waitFor(
-      () =>
-        terminal.lastFrame()?.includes("Working: Loading evidence...") === true
+      () => terminal.lastFrame()?.includes("Loading evidence...") === true
     )
+    expect(terminal.lastFrame()).toMatch(/[⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏] Loading evidence\.\.\./)
     harness.release()
     await waitFor(() => terminal.lastFrame()?.includes("Ask Mandala") === true)
     terminal.unmount()
@@ -525,6 +528,44 @@ describe("Ink TUI", () => {
     expect(terminal.lastFrame()).toContain("2 warnings")
     expect(terminal.lastFrame()).toContain("Review evidence, then decide")
     terminal.unmount()
+  })
+
+  it("shows Sandbox Mode beneath the composer only when Sandbox is on", async () => {
+    const enabled = createHarness({
+      snapshot: {
+        sandboxEnabled: true,
+        workspace: { name: "Example workspace" },
+      },
+    })
+    const terminal = render(
+      <MandalaTui
+        color={false}
+        createSession={enabled.createSession}
+        width={100}
+      />
+    )
+    await waitFor(() => terminal.lastFrame()?.includes("Sandbox Mode") === true)
+    expect(terminal.lastFrame()).toMatch(/Ask Mandala[^\n]*\n● Sandbox Mode/)
+    terminal.unmount()
+
+    const disabled = createHarness({
+      snapshot: {
+        sandboxEnabled: false,
+        workspace: { name: "Example workspace" },
+      },
+    })
+    const disabledTerminal = render(
+      <MandalaTui
+        color={false}
+        createSession={disabled.createSession}
+        width={100}
+      />
+    )
+    await waitFor(
+      () => disabledTerminal.lastFrame()?.includes("Ask Mandala") === true
+    )
+    expect(disabledTerminal.lastFrame()).not.toContain("Sandbox Mode")
+    disabledTerminal.unmount()
   })
 
   it("sanitizes OSC and forged-line controls in persistent context", async () => {
@@ -597,6 +638,7 @@ describe("Ink TUI", () => {
     await waitFor(
       () => terminal.lastFrame()?.includes("Partial answer") === true
     )
+    expect(terminal.lastFrame()).toContain("Responding...")
     expect(terminal.lastFrame()).toContain("[Overview]")
     expect(terminal.lastFrame()).toContain("Overview details")
     expect(terminal.lastFrame()?.match(/Partial answer/g)).toHaveLength(1)

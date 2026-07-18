@@ -799,7 +799,10 @@ describe("interactive TUI", () => {
 
     expect(execute).toHaveBeenCalledTimes(1)
     expect(execute).toHaveBeenCalledWith(["context"], expect.any(Object))
-    expect(stderr.value).toContain("unknown_slash_command")
+    expect(stderr.value.trim()).toBe(
+      "Unknown slash command; Type / to browse available commands."
+    )
+    expect(stderr.value).not.toContain("| Field")
   })
 
   it("keeps a bare slash as a transient palette trigger", async () => {
@@ -1047,7 +1050,8 @@ describe("interactive TUI", () => {
   it("groups help and only shows actions valid for the current selection", async () => {
     const execute = fakeExecute()
     const before = await session("/help\n/exit\n", execute)
-    expect(before.stdout.value).toContain("Review work")
+    expect(before.stdout.value).toContain("Inbox")
+    expect(before.stdout.value).not.toContain("Review work")
     expect(before.stdout.value).not.toContain("/approve")
 
     const after = await session(
@@ -1174,7 +1178,8 @@ describe("interactive TUI", () => {
     expect(stdout.value).toContain("Decision recorded · APPROVE")
     expect(stdout.value).toContain("Approval was recorded")
     expect(stdout.value).toContain("use /execute to retry")
-    expect(stderr.value).toContain("execution_failed")
+    expect(stderr.value.trim()).toBe("The mock execution failed.")
+    expect(stderr.value).not.toContain("| Field")
   })
 
   it("reports one certain no-change error when approval cannot connect", async () => {

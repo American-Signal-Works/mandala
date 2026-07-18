@@ -51,6 +51,7 @@ export type TuiWorkspace = {
 export type TuiSessionSnapshot = {
   environment?: string
   nextAction?: string
+  sandboxEnabled?: boolean
   selectedItem?: TuiSelectedItem
   userEmail?: string
   workspace?: TuiWorkspace
@@ -97,9 +98,20 @@ export type CreateTuiSession = (io: TuiSessionIo) => TuiSessionController
 
 const DEFAULT_TUI_WIDTH = 80
 const MIN_TUI_WIDTH = 40
-const MAX_TUI_WIDTH = 120
+const MAX_TUI_WIDTH = 240
 const MAX_CREDIBLE_REPORTED_WIDTH = 240
-const WORKING_FRAMES = ["-", "\\", "|", "/"] as const
+const WORKING_FRAMES = [
+  "⠋",
+  "⠙",
+  "⠹",
+  "⠸",
+  "⠼",
+  "⠴",
+  "⠦",
+  "⠧",
+  "⠇",
+  "⠏",
+] as const
 export const RESIZE_SETTLE_MS = 250
 
 export const inkRenderConfiguration = {
@@ -298,6 +310,9 @@ export function MandalaTui(input: {
   const [workingLabel, setWorkingLabel] = useState(
     "Loading workspace and inbox"
   )
+  const liveRenderOptions = useRef({ color, width: currentWidth })
+  liveRenderOptions.current.color = color
+  liveRenderOptions.current.width = currentWidth
 
   const append = useCallback(
     (value: string, kind: TuiAppendKind = "output") => {
@@ -346,6 +361,7 @@ export function MandalaTui(input: {
   const setLiveMessage = useCallback((value: string | null) => {
     if (!mounted.current) return
     setLiveMessageState(value ? sanitizeTerminalText(value) : null)
+    if (value) setWorkingLabel("Responding")
   }, [])
 
   const setItemWorkspace = useCallback((value: TuiItemWorkspace | null) => {
@@ -398,19 +414,17 @@ export function MandalaTui(input: {
         setItemWorkspace,
         setLiveMessage,
         onSnapshot: snapshotChanged,
-        renderOptions: { color, width },
+        renderOptions: liveRenderOptions.current,
       }),
     [
       append,
       ask,
       choose,
       clearScreen,
-      color,
       createSession,
       setItemWorkspace,
       setLiveMessage,
       snapshotChanged,
-      width,
     ]
   )
 
@@ -881,7 +895,7 @@ export function MandalaTui(input: {
             width={currentWidth}
           />
         ) : working && !prompt ? (
-          <WorkingStatus animated={color} label={workingLabel} />
+          <WorkingStatus color={color} label={workingLabel} />
         ) : (
           <>
             <Text bold color={prompt ? "yellow" : "cyan"}>
@@ -903,6 +917,14 @@ export function MandalaTui(input: {
           </>
         )}
       </Box>
+
+      {snapshot.sandboxEnabled === true ? (
+        <Box>
+          <Text bold color="#f59e0b">
+            ● Sandbox Mode
+          </Text>
+        </Box>
+      ) : null}
 
       {paletteOpen ? (
         <CommandPalette
@@ -1195,18 +1217,20 @@ export function clipItemWorkspaceContent(
   }
 }
 
-function WorkingStatus(input: { animated: boolean; label: string }) {
+function WorkingStatus(input: { color: boolean; label: string }) {
   const [frame, setFrame] = useState(0)
   useEffect(() => {
-    if (!input.animated) return
     const timer = setInterval(
       () => setFrame((current) => (current + 1) % WORKING_FRAMES.length),
       90
     )
     return () => clearInterval(timer)
-  }, [input.animated])
-  const marker = input.animated ? WORKING_FRAMES[frame] : "Working:"
-  return <Text color="cyan">{`${marker} ${input.label}...`}</Text>
+  }, [])
+  return (
+    <Text color={input.color ? "cyan" : undefined}>
+      {`${WORKING_FRAMES[frame]} ${input.label}...`}
+    </Text>
+  )
 }
 
 function CommandPalette(input: {
@@ -1232,12 +1256,15 @@ function CommandPalette(input: {
         const index = start + visibleIndex
         const selected = index === input.selectedIndex
         const command = definition.command.padEnd(commandWidth)
+        const startsGroup =
+          index === 0 || input.commands[index - 1]?.group !== definition.group
         return (
-          <React.Fragment key={definition.command}>
-            {index === 0 ||
-            input.commands[index - 1]?.group !== definition.group ? (
-              <Text bold>{definition.group}</Text>
-            ) : null}
+          <Box
+            flexDirection="column"
+            key={definition.command}
+            marginTop={startsGroup && index !== start ? 1 : 0}
+          >
+            {startsGroup ? <Text bold>{definition.group}</Text> : null}
             <Text
               bold={selected}
               color={selected ? "cyan" : undefined}
@@ -1245,7 +1272,7 @@ function CommandPalette(input: {
             >
               {`${selected ? ">" : " "} ${command}${definition.description}`}
             </Text>
-          </React.Fragment>
+          </Box>
         )
       })}
       {start + visible.length < input.commands.length ? (
@@ -1328,12 +1355,12 @@ function commandRank(
     if (definition.group === "Inspect selected") return 20
     if (definition.command === "/inbox" || definition.command === "/unselect")
       return 30
-    if (definition.group === "Review work") return 40
+    if (definition.group === "Inbox") return 40
     if (definition.group === "Session") return 50
     return 60
   }
   if (definition.command === "/inbox") return 0
-  if (definition.group === "Review work") return 10
+  if (definition.group === "Inbox") return 10
   if (definition.group === "Agents") return 20
   if (definition.group === "Account") return 30
   if (definition.group === "Session") return 40
