@@ -319,6 +319,25 @@ describe("CLI commands", () => {
     expect(stdout.value).not.toContain('"ok":true')
   })
 
+  it("renders non-JSON command errors as one sentence instead of a table", async () => {
+    const api = fakeApi({
+      listWorkItems: vi.fn(async () => {
+        throw new CliError(
+          "company_required",
+          "Select a company first. Run mandala company use, then retry."
+        )
+      }),
+    })
+
+    expect(await command(["work", "list"], api)).toBe(1)
+
+    expect(stderr.value).toBe(
+      "Select a company first; Run mandala company use, then retry.\n"
+    )
+    expect(stderr.value).not.toContain("+")
+    expect(stderr.value).not.toContain("company_required")
+  })
+
   it("asks a read-only question about one selected work item", async () => {
     const api = fakeApi()
     const question = "Is 648 a good reorder quantity?"
