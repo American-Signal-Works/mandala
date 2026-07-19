@@ -161,6 +161,72 @@ describe("CLI commands", () => {
     expect(getContextWorkspaceStatus).toHaveBeenLastCalledWith(companyId)
   })
 
+  it("summarizes session, workspace, and endpoint health in one status command", async () => {
+    const getContextWorkspaceStatus = vi.fn(async () => workspaceStatus())
+    const api = fakeApi({ getContextWorkspaceStatus })
+
+    const result = await executeCliCommand(["status"], {
+      api,
+      environment: {},
+      store,
+      stdout,
+      stderr,
+    })
+
+    expect(getContextWorkspaceStatus).toHaveBeenCalledWith(companyId)
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+      session: { authenticated: false },
+      workspace: { id: companyId, name: "Example Company", mode: "sandbox" },
+      endpoints: {
+        contextSettings: expect.stringMatching(/^ok \(\d+ ms\)$/),
+        workQueue: expect.stringMatching(/^ok \(\d+ ms\)$/),
+        activeWorkItems: 0,
+      },
+      contextEngine: {
+        provider: "off",
+        sandboxEnabled: true,
+        readiness: "disabled",
+        eligibleRecords: null,
+        syncLagSeconds: null,
+      },
+      },
+    })
+  })
+
+  it("reports endpoint failures in status without aborting the summary", async () => {
+    const api = fakeApi({
+      listWorkItems: vi.fn(async () => {
+        throw new CliError(
+          "item_list_failed",
+          "The Mandala API request failed (500)."
+        )
+      }),
+    })
+
+    const result = await executeCliCommand(["status"], {
+      api,
+      environment: {},
+      store,
+      stdout,
+      stderr,
+    })
+
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        endpoints: {
+          workQueue: expect.stringMatching(
+            /^failed: item_list_failed \(\d+ ms\)$/
+          ),
+          activeWorkItems: null,
+        },
+        contextEngine: { provider: "off" },
+      },
+    })
+  })
+
   it("requires explicit confirmation before non-interactive safety weakening", async () => {
     const setContextWorkspaceConfiguration = vi.fn(async () =>
       workspaceStatus({ provider: "supermemory", readiness: "not_ready" })
