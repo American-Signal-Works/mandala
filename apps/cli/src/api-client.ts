@@ -758,7 +758,19 @@ function responseError(status: number, payload: unknown): CliError {
           : status === 403
             ? "forbidden"
             : "api_request_failed"
-  return new CliError(code, `The Mandala API request failed (${status}).`)
+  const detail =
+    isRecord(payload) && typeof payload.message === "string"
+      ? payload.message.trim()
+      : isRecord(payload) &&
+          isRecord(payload.error) &&
+          typeof payload.error.message === "string"
+        ? payload.error.message.trim()
+        : ""
+  const summary =
+    code === "api_request_failed"
+      ? `The Mandala API request failed (${status}).`
+      : `The Mandala API request failed (${status}: ${code}).`
+  return new CliError(code, detail === "" ? summary : `${summary} ${detail}`)
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
