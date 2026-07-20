@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(20);
+SELECT plan(22);
 
 SELECT has_table('public', 'workspace_data_catalogs', 'workspace imports have a generic catalog');
 SELECT has_table('public', 'workspace_capability_mapping_versions', 'capability mappings are versioned');
@@ -81,6 +81,13 @@ SELECT is(
      AND record_type = 'support_ticket'),
   'ready',
   'the generic profile becomes ready'
+);
+SELECT is(
+  (SELECT record_count::INTEGER FROM public.workspace_data_catalogs
+   WHERE company_id = 'c2000000-0000-4000-8000-000000000001'
+     AND record_type = 'support_ticket'),
+  1,
+  'profiling preserves the exact record count maintained during import'
 );
 SELECT ok(
   (SELECT field_profile @> '[{"path":"/severity","type":"number"}]'::JSONB
@@ -199,10 +206,10 @@ SELECT set_config(
 );
 SET LOCAL ROLE authenticated;
 SELECT public.refresh_workspace_data_catalog_v1('c2000000-0000-4000-8000-000000000001');
-SELECT throws_ok(
+SELECT lives_ok(
   $$SELECT public.publish_workspace_capability_mapping_v1(
     'c2000000-0000-4000-8000-000000000001',
-    'workspace.records.read.ambiguous',
+    'workspace.records.read.multisource',
     (SELECT capability_version_id FROM public.workspace_capability_mapping_versions
      WHERE id = (current_setting('test.mapping_result')::JSONB ->> 'mappingVersionId')::UUID),
     0.95,
@@ -211,9 +218,20 @@ SELECT throws_ok(
     '{"kind":"test_fixture"}'::JSONB,
     true
   )$$,
-  '22023',
-  'workspace_mapping_dataset_ambiguous',
-  'more than one matching source is never selected silently'
+  'read mappings accept every matching source instead of selecting one silently'
+);
+SELECT is(
+  (SELECT jsonb_array_length(dataset.expected_schema_hashes)
+   FROM public.workspace_capability_mapping_datasets dataset
+   JOIN public.workspace_capability_mapping_versions mapping
+     ON mapping.id = dataset.mapping_version_id
+   WHERE mapping.company_id = 'c2000000-0000-4000-8000-000000000001'
+     AND mapping.mapping_key = 'workspace.records.read.multisource'
+     AND dataset.dataset_alias = 'tickets'
+   ORDER BY mapping.version DESC
+   LIMIT 1),
+  2,
+  'the frozen read mapping preserves both source schemas'
 );
 
 RESET ROLE;

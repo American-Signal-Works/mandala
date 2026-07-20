@@ -11,7 +11,6 @@ import {
   answerWorkItemQuestion,
   streamWorkItemQuestion,
 } from "@/lib/mandala/control-plane/work-item-question"
-import { loadWorkItemQuestionModelContext } from "@/lib/mandala/control-plane/work-item-model-context"
 import {
   isSelectedItemReadOnlyQuestion,
   routeContextualChat,
@@ -35,6 +34,7 @@ import {
 } from "@/lib/supabase/request"
 import { createServerModelUsageRecorder } from "@/actions/admin/provider-usage"
 import { answerServerWorkspaceQuestion } from "@/actions/admin/workspace-question"
+import { loadServerWorkItemQuestionModelContext } from "@/actions/admin/work-item-question"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -135,8 +135,7 @@ export async function POST(request: Request) {
           itemId,
         })
       )
-      const modelContext = await loadWorkItemQuestionModelContext({
-        supabase: auth.supabase,
+      const modelContext = await loadServerWorkItemQuestionModelContext({
         companyId: parsed.data.companyId,
         itemId,
         detail,
@@ -173,8 +172,7 @@ export async function POST(request: Request) {
           {
             detail,
             question,
-            modelContext: await loadWorkItemQuestionModelContext({
-              supabase: auth.supabase,
+            modelContext: await loadServerWorkItemQuestionModelContext({
               companyId: parsed.data.companyId,
               itemId,
               detail,

@@ -5,7 +5,7 @@ import {
   getWorkflowReview,
 } from "@/lib/mandala/control-plane/queries"
 import { streamWorkItemQuestion } from "@/lib/mandala/control-plane/work-item-question"
-import { loadWorkItemQuestionModelContext } from "@/lib/mandala/control-plane/work-item-model-context"
+import { loadServerWorkItemQuestionModelContext } from "@/actions/admin/work-item-question"
 import { getCompanyMembership } from "@/lib/mandala/workflows"
 import { authenticateRequest } from "@/lib/supabase/request"
 import { answerServerWorkspaceQuestion } from "@/actions/admin/workspace-question"
@@ -44,8 +44,8 @@ vi.mock(
     streamWorkItemQuestion: vi.fn(),
   })
 )
-vi.mock("@/lib/mandala/control-plane/work-item-model-context", () => ({
-  loadWorkItemQuestionModelContext: vi.fn(),
+vi.mock("@/actions/admin/work-item-question", () => ({
+  loadServerWorkItemQuestionModelContext: vi.fn(),
 }))
 vi.mock("@/lib/mandala/control-plane/queries", async (importOriginal) => {
   const original =
@@ -70,7 +70,7 @@ describe("contextual chat route", () => {
     vi.clearAllMocks()
     vi.mocked(authenticateRequest).mockResolvedValue(auth as never)
     vi.mocked(getCompanyMembership).mockResolvedValue({ role: "member" })
-    vi.mocked(loadWorkItemQuestionModelContext).mockResolvedValue({
+    vi.mocked(loadServerWorkItemQuestionModelContext).mockResolvedValue({
       projectedData: {},
       capabilityAliases: [],
     })
@@ -342,7 +342,7 @@ describe("contextual chat route", () => {
       workItemDetail() as never
     )
     let releaseContext: (() => void) | undefined
-    vi.mocked(loadWorkItemQuestionModelContext).mockImplementationOnce(
+    vi.mocked(loadServerWorkItemQuestionModelContext).mockImplementationOnce(
       async () => {
         await new Promise<void>((resolve) => {
           releaseContext = resolve
@@ -363,7 +363,7 @@ describe("contextual chat route", () => {
       )
     )
     await vi.waitFor(() =>
-      expect(loadWorkItemQuestionModelContext).toHaveBeenCalledTimes(1)
+      expect(loadServerWorkItemQuestionModelContext).toHaveBeenCalledTimes(1)
     )
 
     abort.abort()
