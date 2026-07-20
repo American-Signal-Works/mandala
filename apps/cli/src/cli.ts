@@ -355,22 +355,36 @@ async function handleStatus(
 ): Promise<unknown> {
   if (action !== undefined || args.length > 0)
     throw new CliError("unknown_command", "Use: mandala status.")
+  const savedSession = await input.store.readSession()
+  let sessionIssue: string | null = null
+  if (savedSession) {
+    try {
+      await input.session.getAccessToken()
+    } catch (error) {
+      if (!(error instanceof CliError)) throw error
+      sessionIssue = error.code
+    }
+  }
   const session = await input.store.readSession()
-  const sessionStatus = session
-    ? {
-        authenticated: true,
-        email: session.user.email,
-        expiresAt: new Date(session.expiresAt * 1_000).toISOString(),
-        expired: session.expiresAt <= Math.floor(Date.now() / 1_000),
-      }
-    : { authenticated: false }
+  const sessionStatus =
+    session && !sessionIssue
+      ? {
+          authenticated: true,
+          email: session.user.email,
+          expiresAt: new Date(session.expiresAt * 1_000).toISOString(),
+          status: "ready",
+        }
+      : {
+          authenticated: false,
+          ...(sessionIssue ? { issue: sessionIssue } : {}),
+        }
   const config = await input.store.readConfig()
   input.audit.companyId = config.selectedCompany?.id
   if (!config.selectedCompany) {
     return {
       session: sessionStatus,
       workspace: { selected: false },
-      nextAction: session
+      nextAction: sessionStatus.authenticated
         ? "Select a company with 'mandala company use'."
         : "Sign in with 'mandala auth login'.",
     }

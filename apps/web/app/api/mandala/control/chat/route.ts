@@ -21,7 +21,7 @@ import {
   ConversationalParserUnavailableError,
   parseConversationalControlInput,
 } from "@/lib/mandala/control-plane/conversational-parser"
-import { isOpenPurchaseOrderCountQuestion } from "@/lib/mandala/control-plane/workspace-question"
+import { isWorkspaceProcurementQuestion } from "@/lib/mandala/control-plane/workspace-question"
 import {
   ControlPlaneQueryError,
   getWorkflowItemDetail,
@@ -81,10 +81,7 @@ export async function POST(request: Request) {
         ).version
       )
 
-    if (
-      !parsed.data.selectedItemId &&
-      isOpenPurchaseOrderCountQuestion(parsed.data.input)
-    ) {
+    if (isWorkspaceProcurementQuestion(parsed.data.input)) {
       const answer = await answerServerWorkspaceQuestion({
         companyId: parsed.data.companyId,
         question: parsed.data.input,

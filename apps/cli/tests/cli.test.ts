@@ -177,20 +177,76 @@ describe("CLI commands", () => {
     expect(result).toMatchObject({
       ok: true,
       data: {
-      session: { authenticated: false },
-      workspace: { id: companyId, name: "Example Company", mode: "sandbox" },
-      endpoints: {
-        contextSettings: expect.stringMatching(/^ok \(\d+ ms\)$/),
-        workQueue: expect.stringMatching(/^ok \(\d+ ms\)$/),
-        activeWorkItems: 0,
+        session: { authenticated: false },
+        workspace: {
+          id: companyId,
+          name: "Example Company",
+          mode: "sandbox",
+        },
+        endpoints: {
+          contextSettings: expect.stringMatching(/^ok \(\d+ ms\)$/),
+          workQueue: expect.stringMatching(/^ok \(\d+ ms\)$/),
+          activeWorkItems: 0,
+        },
+        contextEngine: {
+          provider: "off",
+          sandboxEnabled: true,
+          readiness: "disabled",
+          eligibleRecords: null,
+          syncLagSeconds: null,
+        },
       },
-      contextEngine: {
-        provider: "off",
-        sandboxEnabled: true,
-        readiness: "disabled",
-        eligibleRecords: null,
-        syncLagSeconds: null,
+    })
+  })
+
+  it("refreshes an expired access token before reporting session health", async () => {
+    await store.writeSession({
+      schemaVersion: 1,
+      refreshMode: "hosted",
+      cliSessionId: "10000000-0000-4000-8000-000000000002",
+      accessToken: "expired-access",
+      refreshToken: "refresh-secret",
+      expiresAt: 1,
+      user: {
+        id: "10000000-0000-4000-8000-000000000001",
+        email: "user@example.com",
       },
+    })
+    const getAccessToken = vi.fn(async () => {
+      await store.writeSession({
+        schemaVersion: 1,
+        refreshMode: "hosted",
+        cliSessionId: "10000000-0000-4000-8000-000000000002",
+        accessToken: "fresh-access",
+        refreshToken: "rotated-refresh-secret",
+        expiresAt: 2_000_000_000,
+        user: {
+          id: "10000000-0000-4000-8000-000000000001",
+          email: "user@example.com",
+        },
+      })
+      return "fresh-access"
+    })
+
+    const result = await executeCliCommand(["status"], {
+      api: fakeApi(),
+      environment: {},
+      session: { getAccessToken },
+      store,
+      stdout,
+      stderr,
+    })
+
+    expect(getAccessToken).toHaveBeenCalledTimes(1)
+    expect(result).toMatchObject({
+      ok: true,
+      data: {
+        session: {
+          authenticated: true,
+          email: "user@example.com",
+          expiresAt: "2033-05-18T03:33:20.000Z",
+          status: "ready",
+        },
       },
     })
   })

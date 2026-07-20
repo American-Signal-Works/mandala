@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(19);
+SELECT plan(20);
 
 SELECT has_function(
   'public',
@@ -91,7 +91,7 @@ VALUES
   ('a4000000-0000-4000-8000-000000000001', 'a2000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000001', 'inventory_position', 'SKU-REAL@warehouse',
     '{"sku":"SKU-REAL","product_name":"Real Product","on_hand":12,"allocated":2,"available":-6,"backorder":2,"reorder_level":20,"reorder_amount":30,"warehouse_id":"private-warehouse","unrestricted_secret":"must-not-leak"}', now()),
   ('a4000000-0000-4000-8000-000000000002', 'a2000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000001', 'sales_order', 'SO-REAL',
-    jsonb_build_object('order_date', current_date::TEXT, 'fulfillment_status', 'fulfilled', 'lines', jsonb_build_array(jsonb_build_object('sku','SKU-REAL','quantity',7,'price',10))), now()),
+    jsonb_build_object('order_date', current_date::TEXT || 'T23:18:57', 'fulfillment_status', 'fulfilled', 'lines', jsonb_build_array(jsonb_build_object('sku','SKU-REAL','quantity',7,'price',10))), now()),
   ('a4000000-0000-4000-8000-000000000003', 'a2000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000001', 'purchase_order', 'PO-REAL',
     jsonb_build_object('po_date', current_date::TEXT, 'fulfillment_status', 'pending', 'lines', jsonb_build_array(jsonb_build_object('sku','SKU-REAL','quantity',5,'price',4))), now()),
   ('a4000000-0000-4000-8000-000000000004', 'a2000000-0000-4000-8000-000000000001', 'a3000000-0000-4000-8000-000000000001', 'product_vendor', 'SKU-REAL@vendor',
@@ -144,6 +144,11 @@ SELECT is(
   (current_setting('test.sandbox_snapshot')::JSONB #>> '{candidates,0,inventory,available}')::NUMERIC,
   (-6)::NUMERIC,
   'legitimate negative available inventory remains visible to the reviewer'
+);
+SELECT is(
+  (current_setting('test.sandbox_snapshot')::JSONB #>> '{candidates,0,recentSalesUnits}')::NUMERIC,
+  7::NUMERIC,
+  'ISO datetime order_date values contribute to recent sales velocity'
 );
 SELECT is(
   (current_setting('test.sandbox_snapshot')::JSONB #>> '{candidates,0,recommendation,quantity}')::NUMERIC,

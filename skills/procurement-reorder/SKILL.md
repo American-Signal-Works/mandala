@@ -4,7 +4,7 @@ kind: agent_workflow
 metadata:
   id: procurement-reorder
   name: Procurement Reorder Review
-  version: 1.0.0
+  version: 1.0.1
   description: Finds inventory at risk, investigates messy demand signals, and prepares a guarded mock purchase-order draft for human review.
 workflow:
   type: procurement_reorder

@@ -321,6 +321,29 @@ describe("API client", () => {
     })
   })
 
+  it("surfaces a safe server error code and message", async () => {
+    const client = new ApiClient(
+      "http://127.0.0.1:3000",
+      { getAccessToken: vi.fn().mockResolvedValue("access") },
+      vi.fn<typeof fetch>().mockResolvedValue(
+        Response.json(
+          {
+            error: "agent_version_conflict",
+            message:
+              "Publish a new skill version before changing its frozen manifest.",
+          },
+          { status: 422 }
+        )
+      )
+    )
+
+    await expect(client.listCompanies()).rejects.toMatchObject({
+      code: "agent_version_conflict",
+      message:
+        "The Mandala API request failed (422: agent_version_conflict). Publish a new skill version before changing its frozen manifest.",
+    })
+  })
+
   it("does not include incompatible response bodies in errors", async () => {
     const client = new ApiClient(
       "http://127.0.0.1:3000",

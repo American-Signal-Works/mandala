@@ -8,6 +8,7 @@ import { streamWorkItemQuestion } from "@/lib/mandala/control-plane/work-item-qu
 import { loadWorkItemQuestionModelContext } from "@/lib/mandala/control-plane/work-item-model-context"
 import { getCompanyMembership } from "@/lib/mandala/workflows"
 import { authenticateRequest } from "@/lib/supabase/request"
+import { answerServerWorkspaceQuestion } from "@/actions/admin/workspace-question"
 import { POST } from "./route"
 
 vi.mock("@/lib/supabase/request", async (importOriginal) => ({
@@ -16,6 +17,9 @@ vi.mock("@/lib/supabase/request", async (importOriginal) => ({
 }))
 vi.mock("@/actions/admin/provider-usage", () => ({
   createServerModelUsageRecorder: vi.fn(() => vi.fn()),
+}))
+vi.mock("@/actions/admin/workspace-question", () => ({
+  answerServerWorkspaceQuestion: vi.fn(),
 }))
 vi.mock("@/lib/mandala/workflows", async (importOriginal) => {
   const original =
@@ -149,6 +153,45 @@ describe("contextual chat route", () => {
       companyId,
       userId: auth.user.id,
     })
+  })
+
+  it("routes a workspace procurement question ahead of a stale selected item", async () => {
+    vi.mocked(answerServerWorkspaceQuestion).mockResolvedValue(
+      "ShipHero shows 1,018 open POs."
+    )
+    const response = await POST(
+      chatRequest({
+        input: "how many open POs do we have",
+        selectedItemId: "40000000-0000-4000-8000-000000000001",
+        expectedReviewVersion: "review-v2",
+      })
+    )
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      route: "question",
+      message: "ShipHero shows 1,018 open POs.",
+      selectedItemId: null,
+      mutated: false,
+    })
+    expect(getWorkflowReview).not.toHaveBeenCalled()
+    expect(routeContextualChat).not.toHaveBeenCalled()
+  })
+
+  it("routes largest late PO wording as a workspace procurement question", async () => {
+    vi.mocked(answerServerWorkspaceQuestion).mockResolvedValue(
+      "The largest open ShipHero PO is A22947."
+    )
+    const response = await POST(
+      chatRequest({ input: "What's the biggest PO we have open that is late?" })
+    )
+
+    expect(response.status).toBe(200)
+    await expect(response.json()).resolves.toMatchObject({
+      route: "question",
+      message: "The largest open ShipHero PO is A22947.",
+    })
+    expect(routeContextualChat).not.toHaveBeenCalled()
   })
 
   it("reads a selected review version without confusing its database activity page for a public cursor", async () => {
