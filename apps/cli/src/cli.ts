@@ -221,6 +221,7 @@ async function executeCommand(input: {
   const [group, action, ...rest] = input.args
 
   if (group === "auth") return handleAuth(action, rest, input)
+  if (group === "status") return handleStatus(action, rest, input)
   if (group === "company") return handleCompany(action, rest, input)
   if (group === "context") {
     if (action === undefined) return showContext(input.store)
@@ -313,6 +314,106 @@ async function handleAuth(
     "unknown_command",
     "Use: mandala auth login|status|logout."
   )
+}
+
+type EndpointProbe =
+  | { ok: true; durationMs: number }
+  | { ok: false; durationMs: number; code: string; message: string }
+
+async function probeEndpoint<T>(
+  run: () => Promise<T>
+): Promise<{ probe: EndpointProbe; data: T | null }> {
+  const startedAt = Date.now()
+  try {
+    const data = await run()
+    return { probe: { ok: true, durationMs: Date.now() - startedAt }, data }
+  } catch (error) {
+    if (error instanceof CliError)
+      return {
+        probe: {
+          ok: false,
+          durationMs: Date.now() - startedAt,
+          code: error.code,
+          message: error.message,
+        },
+        data: null,
+      }
+    throw error
+  }
+}
+
+function describeProbe(probe: EndpointProbe): string {
+  return probe.ok
+    ? `ok (${probe.durationMs} ms)`
+    : `failed: ${probe.code} (${probe.durationMs} ms)`
+}
+
+async function handleStatus(
+  action: string | undefined,
+  args: string[],
+  input: Parameters<typeof executeCommand>[0]
+): Promise<unknown> {
+  if (action !== undefined || args.length > 0)
+    throw new CliError("unknown_command", "Use: mandala status.")
+  const session = await input.store.readSession()
+  const sessionStatus = session
+    ? {
+        authenticated: true,
+        email: session.user.email,
+        expiresAt: new Date(session.expiresAt * 1_000).toISOString(),
+        expired: session.expiresAt <= Math.floor(Date.now() / 1_000),
+      }
+    : { authenticated: false }
+  const config = await input.store.readConfig()
+  input.audit.companyId = config.selectedCompany?.id
+  if (!config.selectedCompany) {
+    return {
+      session: sessionStatus,
+      workspace: { selected: false },
+      nextAction: session
+        ? "Select a company with 'mandala company use'."
+        : "Sign in with 'mandala auth login'.",
+    }
+  }
+  const companyId = config.selectedCompany.id
+  const api = input.getApi()
+  const context = await probeEndpoint(() =>
+    api.getContextWorkspaceStatus(companyId)
+  )
+  const queue = await probeEndpoint(() => api.listWorkItems(companyId))
+  const status = context.data
+  return {
+    session: sessionStatus,
+    workspace: {
+      id: companyId,
+      name: config.selectedCompany.name,
+      mode: config.mode,
+    },
+    endpoints: {
+      contextSettings: describeProbe(context.probe),
+      workQueue: describeProbe(queue.probe),
+      activeWorkItems: queue.data === null ? null : queue.data.items.length,
+    },
+    contextEngine: status
+      ? {
+          provider: status.provider,
+          sandboxEnabled: status.sandboxEnabled,
+          readiness: status.readiness,
+          configurationVersion: status.configurationVersion,
+          providerHealth: status.providerStatus.status,
+          eligibleRecords:
+            status.indexingCoverage.status === "unavailable"
+              ? null
+              : status.indexingCoverage.eligibleRecordCount,
+          indexedRecords:
+            status.indexingCoverage.status === "unavailable"
+              ? null
+              : status.indexingCoverage.indexedRecordCount,
+          syncLagSeconds: status.synchronization.lagSeconds,
+          recentSyncErrors: status.synchronization.recentErrorCount,
+        }
+      : { unavailable: true },
+  }
 }
 
 async function handleCompany(
@@ -1571,6 +1672,9 @@ Authentication
   mandala auth login --local --email <address>
   mandala auth status
   mandala auth logout
+
+Status
+  mandala status
 
 Context
   mandala context
