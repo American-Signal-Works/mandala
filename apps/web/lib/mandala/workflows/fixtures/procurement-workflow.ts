@@ -515,12 +515,18 @@ function createContextPacket(
       openPurchaseOrders: sku.duplicateOpenOrderUnits,
       availableInventory: sku.inventoryOnHand + sku.inboundUnits,
       reorderPoint: sku.reorderPoint,
+      safetyStockUnits: sku.safetyStockUnits,
       recent30DaySales: sku.recent30DaySales,
       trailing90DaySales: sku.trailing90DaySales,
       seasonalIndex: sku.seasonalIndex,
+      recentSpikeMultiplier: sku.recentSpikeMultiplier,
       leadTimeDays: sku.leadTimeDays,
       vendorMinimumOrderQuantity: sku.vendorMinimumOrderQuantity,
       vendorPackSize: sku.vendorPackSize,
+      dataFreshnessHours: sku.dataFreshnessHours,
+      duplicateOpenOrderUnits: sku.duplicateOpenOrderUnits,
+      duplicateOpenOrderMatchCount: sku.duplicateOpenOrderMatchCount,
+      openOrderSourceCoverageComplete: sku.openOrderSourceCoverageComplete,
       ...(agent
         ? {
             agentModel: agent.model,
