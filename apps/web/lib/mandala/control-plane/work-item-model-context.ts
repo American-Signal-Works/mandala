@@ -41,16 +41,107 @@ export async function loadWorkItemQuestionModelContext(input: {
   const bindings = currentModelBindings(manifest, capabilities)
   const facts = asRecord(input.detail.contextPacket?.facts)
   const data = asRecord(facts?.data)
-
-  return {
-    projectedData: projectCapabilityDataForModel({
+  const fixtureProjection =
+    bindings.length === 0
+      ? projectLegacyFixtureDataForModel(input.detail)
+      : null
+  const projectedData =
+    fixtureProjection ??
+    projectCapabilityDataForModel({
       data: data ?? {},
       bindings,
-    }),
-    capabilityAliases: bindings
-      .filter((binding) => binding.useInPrompt)
-      .map((binding) => binding.alias)
-      .sort(),
+    })
+
+  return {
+    projectedData,
+    capabilityAliases: fixtureProjection
+      ? ["synthetic-fixture"]
+      : bindings
+          .filter((binding) => binding.useInPrompt)
+          .map((binding) => binding.alias)
+          .sort(),
+  }
+}
+
+// Cycle .7 fixtures predate compiled capability bindings. Their work-item
+// projection is already bounded, synthetic, and visible to the reviewer, so
+// preserve a narrow allowlist for explanation without opening a fallback for
+// real connector data.
+export function projectLegacyFixtureDataForModel(
+  detail: WorkItemDetail
+): Record<string, unknown> | null {
+  const sources = detail.contextPacket?.sources ?? []
+  if (
+    sources.length === 0 ||
+    !sources.every((source) => {
+      const name = asRecord(source)?.source
+      return (
+        typeof name === "string" &&
+        (name.startsWith("fixture_") || name.startsWith("synthetic_"))
+      )
+    })
+  ) {
+    return null
+  }
+
+  const facts = asRecord(detail.contextPacket?.facts) ?? {}
+  const recommendationOutput = asRecord(detail.recommendation?.output) ?? {}
+  return {
+    "synthetic-fixture": {
+      inventory: pickSafeScalars(facts, [
+        "sku",
+        "productTitle",
+        "inventoryOnHand",
+        "onHandInventory",
+        "inboundUnits",
+        "availableInventory",
+        "reorderPoint",
+        "safetyStockUnits",
+        "dataFreshnessHours",
+      ]),
+      sales: pickSafeScalars(facts, [
+        "recent30DaySales",
+        "trailing90DaySales",
+        "recent90DaySales",
+        "seasonalIndex",
+        "recentSpikeMultiplier",
+      ]),
+      vendorTerms: pickSafeScalars(facts, [
+        "vendor",
+        "leadTimeDays",
+        "vendorPackSize",
+        "vendorMinimumOrderQuantity",
+      ]),
+      openOrders: pickSafeScalars(facts, [
+        "openPurchaseOrders",
+        "duplicateOpenOrderUnits",
+        "duplicateOpenOrderMatchCount",
+        "openOrderSourceCoverageComplete",
+      ]),
+      recommendation: {
+        rationale: detail.recommendation?.rationaleSummary ?? null,
+        ...pickSafeScalars(recommendationOutput, [
+          "sku",
+          "reorderPoint",
+          "availableInventory",
+          "projectedDailySales",
+          "recommendedQuantity",
+          "projectedCoverageDays",
+        ]),
+      },
+      evidence: (detail.evidence?.evidence ?? [])
+        .slice(0, 20)
+        .flatMap((entry) => {
+          const record = asRecord(entry)
+          return typeof record?.label === "string" && isSafeScalar(record.value)
+            ? [{ label: record.label.slice(0, 128), value: record.value }]
+            : []
+        }),
+      assumptions: (detail.evidence?.assumptions ?? [])
+        .filter((entry): entry is string => typeof entry === "string")
+        .slice(0, 20)
+        .map((entry) => entry.slice(0, 500)),
+    },
   }
 }
 
@@ -88,4 +179,28 @@ function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object" && !Array.isArray(value)
     ? (value as Record<string, unknown>)
     : null
+}
+
+function pickSafeScalars(
+  source: Record<string, unknown>,
+  keys: readonly string[]
+): Record<string, string | number | boolean | null> {
+  return Object.fromEntries(
+    keys.flatMap((key) =>
+      Object.hasOwn(source, key) && isSafeScalar(source[key])
+        ? [[key, source[key]]]
+        : []
+    )
+  )
+}
+
+function isSafeScalar(
+  value: unknown
+): value is string | number | boolean | null {
+  return (
+    value === null ||
+    typeof value === "string" ||
+    typeof value === "boolean" ||
+    (typeof value === "number" && Number.isFinite(value))
+  )
 }
