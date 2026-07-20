@@ -8,7 +8,6 @@ import {
   WorkItemQuestionUnavailableError,
   answerWorkItemQuestion,
 } from "@/lib/mandala/control-plane/work-item-question"
-import { loadWorkItemQuestionModelContext } from "@/lib/mandala/control-plane/work-item-model-context"
 import {
   ControlPlaneQueryError,
   getWorkflowItemDetail,
@@ -16,6 +15,7 @@ import {
 import { getCompanyMembership } from "@/lib/mandala/workflows"
 import { allowsCliWorkspace, authenticateRequest } from "@/lib/supabase/request"
 import { createServerModelUsageRecorder } from "@/actions/admin/provider-usage"
+import { loadServerWorkItemQuestionModelContext } from "@/actions/admin/work-item-question"
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
@@ -68,8 +68,7 @@ export async function POST(
       {
         detail,
         question: parsed.data.question,
-        modelContext: await loadWorkItemQuestionModelContext({
-          supabase: auth.supabase,
+        modelContext: await loadServerWorkItemQuestionModelContext({
           companyId: parsed.data.companyId,
           itemId: itemIdParsed.data,
           detail,
@@ -104,6 +103,7 @@ export async function POST(
         }
       )
     }
+    console.error("Work item question failed.", error)
     return NextResponse.json(
       { error: "work_item_question_failed" },
       {
