@@ -4,6 +4,7 @@ import {
   workspaceSandboxRunResponseSchema,
 } from "@workspace/control-plane"
 import { createPersistenceVerificationAdminClient } from "@/actions/admin/persistence-verification"
+import { createWorkspaceDataAdminClient } from "@/actions/admin/workspace-data"
 import { getCompanyMembership } from "@/lib/mandala/workflows"
 import { runWorkspaceSandboxGoldenPath } from "@/lib/mandala/workspace-data/sandbox-runner"
 import { WorkspaceDataProviderError } from "@/lib/mandala/workspace-data/provider"
@@ -46,6 +47,7 @@ export async function POST(request: Request) {
     }
     const result = await runWorkspaceSandboxGoldenPath({
       supabase: auth.supabase,
+      dataSupabase: createWorkspaceDataAdminClient(),
       proofSupabase: createPersistenceVerificationAdminClient(),
       companyId: parsed.data.companyId,
       actorUserId: auth.user.id,

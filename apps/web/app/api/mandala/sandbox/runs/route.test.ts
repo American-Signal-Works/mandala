@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { createPersistenceVerificationAdminClient } from "@/actions/admin/persistence-verification"
+import { createWorkspaceDataAdminClient } from "@/actions/admin/workspace-data"
 import { getCompanyMembership } from "@/lib/mandala/workflows"
 import { runWorkspaceSandboxGoldenPath } from "@/lib/mandala/workspace-data/sandbox-runner"
 import { WorkspaceSetupError } from "@/lib/mandala/workspace-data/setup"
@@ -20,6 +21,9 @@ vi.mock("@/lib/mandala/workspace-data/sandbox-runner", () => ({
 vi.mock("@/actions/admin/persistence-verification", () => ({
   createPersistenceVerificationAdminClient: vi.fn(),
 }))
+vi.mock("@/actions/admin/workspace-data", () => ({
+  createWorkspaceDataAdminClient: vi.fn(),
+}))
 
 const companyId = "a2000000-0000-4000-8000-000000000001"
 const userId = "a1000000-0000-4000-8000-000000000001"
@@ -34,6 +38,7 @@ const auth = {
   supabase: {},
   user: { id: userId },
 }
+const dataSupabase = { role: "workspace-data-admin" }
 
 describe("workspace Sandbox golden-path route", () => {
   beforeEach(() => {
@@ -41,6 +46,9 @@ describe("workspace Sandbox golden-path route", () => {
     vi.mocked(authenticateRequest).mockResolvedValue(auth as never)
     vi.mocked(createPersistenceVerificationAdminClient).mockReturnValue(
       {} as never
+    )
+    vi.mocked(createWorkspaceDataAdminClient).mockReturnValue(
+      dataSupabase as never
     )
     vi.mocked(getCompanyMembership).mockResolvedValue({ role: "admin" })
     vi.mocked(runWorkspaceSandboxGoldenPath).mockResolvedValue(
@@ -59,6 +67,8 @@ describe("workspace Sandbox golden-path route", () => {
     expect(result.headers.get("cache-control")).toBe("private, no-store")
     expect(runWorkspaceSandboxGoldenPath).toHaveBeenCalledWith(
       expect.objectContaining({
+        supabase: auth.supabase,
+        dataSupabase,
         companyId,
         actorUserId: userId,
         confirmMappings: true,

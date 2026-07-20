@@ -13,6 +13,7 @@ import { prepareWorkspaceAgent } from "./setup"
 
 export async function runWorkspaceSandboxGoldenPath(input: {
   supabase: WorkflowSupabaseClient
+  dataSupabase?: WorkflowSupabaseClient
   proofSupabase: WorkflowSupabaseClient
   companyId: string
   actorUserId: string
@@ -23,7 +24,7 @@ export async function runWorkspaceSandboxGoldenPath(input: {
   const now = input.now ?? new Date()
   const setup = await prepareWorkspaceAgent(input)
   const store = new SupabaseWorkspaceDataStore(
-    input.supabase,
+    input.dataSupabase ?? input.supabase,
     setup.bindingSnapshotId,
     () => now
   )
