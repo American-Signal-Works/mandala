@@ -1,11 +1,16 @@
 import type { AgentManualRunRequest } from "@workspace/control-plane"
+import type { BaseCheckpointSaver } from "@langchain/langgraph"
 import { deriveControlInputHash } from "../control-plane/input-hash"
 import { createServerContextRetriever } from "../context/retrieval-service"
 import { getProductionWorkflowCheckpointer } from "../runtime/checkpointer"
 import { runCompiledWorkflowInMemory } from "../runtime/memory-runner"
 import type { RuntimeTrigger } from "../runtime/state"
 import { createWorkspaceJudgment } from "../workspace-data/sandbox-runner"
-import { WorkspaceDatasetProvider } from "../workspace-data/provider"
+import {
+  WorkspaceDatasetProvider,
+  type WorkspaceProjection,
+  type WorkspaceSignal,
+} from "../workspace-data/provider"
 import { SupabaseWorkspaceDataStore } from "../workspace-data/supabase-store"
 import { WorkflowMemoryStore, type WorkflowSupabaseClient } from "../workflows"
 import type { WorkflowClientSurface } from "../workflows"
@@ -27,6 +32,9 @@ import { loadStoredAgentWorkflow } from "./test-run"
 // rather than doing anything — real data flows in, nothing external is
 // ever attempted. Wiring the draft/execute step is a separate, later change.
 
+const BATCH_DEFAULT_LIMIT = 10
+const BATCH_MAXIMUM_LIMIT = 25
+
 export class ManualRunAgentNotActiveError extends Error {
   constructor(readonly lifecycleState: string) {
     super(
@@ -45,7 +53,20 @@ export type ManualAgentRunResult = {
   result: Record<string, unknown>
 }
 
-export async function runManualAgentTrigger(input: {
+export type ManualAgentBatchRunResult = {
+  agentId: string
+  matchedEntities: number
+  limit: number
+  runs: Array<{
+    entity: { key: string; value: string }
+    workflowRunId: string
+    status: ManualAgentRunResult["status"]
+    itemId: string | null
+    duplicate: boolean
+  }>
+}
+
+type ManualRunInput = {
   supabase: WorkflowSupabaseClient
   dataSupabase?: WorkflowSupabaseClient
   agentId: string
@@ -54,12 +75,94 @@ export async function runManualAgentTrigger(input: {
   clientSurface: WorkflowClientSurface
   now?: () => Date
   dependencies?: {
-    loadCheckpointer?: () => Promise<
-      Awaited<ReturnType<typeof getProductionWorkflowCheckpointer>>
-    >
+    loadCheckpointer?: () => Promise<BaseCheckpointSaver>
     persist?: typeof persistCompiledWorkflowReview
   }
-}): Promise<ManualAgentRunResult> {
+}
+
+export async function runManualAgentTrigger(
+  input: ManualRunInput
+): Promise<ManualAgentRunResult> {
+  const context = await loadManualRunContext(input)
+  const prepared = await context.provider.prepareAll({
+    companyId: input.request.companyId,
+    bindings: context.workflow.manifest.capabilityBindings,
+  })
+  const signal = prepared.signals[0]!
+  const { run, persistence } = await executeEntityRun({
+    input,
+    context,
+    signal,
+    projections: prepared.projections,
+  })
+  return {
+    agentId: context.workflow.id,
+    workflowRunId: persistence.workflowRunId,
+    status: projectStatus(run.run.status),
+    itemId: persistence.itemId,
+    entity: { key: signal.entityKey, value: signal.entityValue },
+    result: {
+      recommendation: run.recommendation?.output ?? null,
+      rationale: run.recommendation?.rationaleSummary ?? null,
+      warnings: run.recommendation?.warnings ?? [],
+      duplicate: persistence.duplicate,
+      draftId: persistence.draftId,
+    },
+  }
+}
+
+// Batch mode: one work item per qualifying entity instead of first-match
+// only. Entities run sequentially — they share the projection load, and
+// per-entity persistence stays idempotent via the entity-scoped input hash.
+export async function runManualAgentTriggerBatch(
+  input: ManualRunInput
+): Promise<ManualAgentBatchRunResult> {
+  const limit = Math.min(
+    Math.max(input.request.limit ?? BATCH_DEFAULT_LIMIT, 1),
+    BATCH_MAXIMUM_LIMIT
+  )
+  const context = await loadManualRunContext(input)
+  const prepared = await context.provider.prepareAll({
+    companyId: input.request.companyId,
+    bindings: context.workflow.manifest.capabilityBindings,
+  })
+  const runs: ManualAgentBatchRunResult["runs"] = []
+  for (const signal of prepared.signals.slice(0, limit)) {
+    context.provider.selectSignal(signal)
+    const { run, persistence } = await executeEntityRun({
+      input,
+      context,
+      signal,
+      projections: prepared.projections,
+    })
+    runs.push({
+      entity: { key: signal.entityKey, value: signal.entityValue },
+      workflowRunId: persistence.workflowRunId,
+      status: projectStatus(run.run.status),
+      itemId: persistence.itemId,
+      duplicate: persistence.duplicate,
+    })
+  }
+  return {
+    agentId: context.workflow.id,
+    matchedEntities: prepared.signals.length,
+    limit,
+    runs,
+  }
+}
+
+type ManualRunContext = {
+  workflow: Awaited<ReturnType<typeof loadStoredAgentWorkflow>>
+  bindingSnapshotId: string
+  provider: WorkspaceDatasetProvider
+  checkpointer: BaseCheckpointSaver
+  persist: typeof persistCompiledWorkflowReview
+  now: Date
+}
+
+async function loadManualRunContext(
+  input: ManualRunInput
+): Promise<ManualRunContext> {
   const now = (input.now ?? (() => new Date()))()
   const persist = input.dependencies?.persist ?? persistCompiledWorkflowReview
   const checkpointer = await (
@@ -92,24 +195,39 @@ export async function runManualAgentTrigger(input: {
     () => now
   )
   const provider = new WorkspaceDatasetProvider(store, () => now)
-  const prepared = await provider.prepare({
-    companyId: input.request.companyId,
-    bindings: workflow.manifest.capabilityBindings,
-  })
+  return {
+    workflow,
+    bindingSnapshotId: runtimeState.bindingSnapshotId,
+    provider,
+    checkpointer,
+    persist,
+    now,
+  }
+}
 
+async function executeEntityRun(args: {
+  input: ManualRunInput
+  context: ManualRunContext
+  signal: WorkspaceSignal
+  projections: WorkspaceProjection[]
+}): Promise<{
+  run: Awaited<ReturnType<typeof runCompiledWorkflowInMemory>>
+  persistence: CompiledReviewPersistenceResult
+}> {
+  const { input, context, signal, projections } = args
   const declaredTrigger =
-    workflow.manifest.workflow.triggers.find(
+    context.workflow.manifest.workflow.triggers.find(
       (candidate) => candidate.kind === "manual"
-    ) ?? workflow.manifest.workflow.triggers[0]!
+    ) ?? context.workflow.manifest.workflow.triggers[0]!
   const trigger: RuntimeTrigger = {
     id: declaredTrigger.id,
     kind: declaredTrigger.kind,
     input: {
       operatingMode: "manual",
-      entityKey: prepared.signal.entityKey,
-      entityValue: prepared.signal.entityValue,
-      mappingVersionId: prepared.signal.mappingVersionId,
-      bindingSnapshotId: runtimeState.bindingSnapshotId,
+      entityKey: signal.entityKey,
+      entityValue: signal.entityValue,
+      mappingVersionId: signal.mappingVersionId,
+      bindingSnapshotId: context.bindingSnapshotId,
       reason: input.request.reason,
     },
   }
@@ -117,58 +235,38 @@ export async function runManualAgentTrigger(input: {
   const memory = new WorkflowMemoryStore()
   const run = await runCompiledWorkflowInMemory({
     store: memory,
-    manifest: workflow.manifest,
+    manifest: context.workflow.manifest,
     companyId: input.request.companyId,
     actorUserId: input.actorUserId,
-    workflowDefinitionId: workflow.id,
+    workflowDefinitionId: context.workflow.id,
     trigger,
-    capabilityProvider: provider,
+    capabilityProvider: context.provider,
     contextRetriever: createServerContextRetriever({
       supabase: input.supabase,
-      now: () => now,
+      now: () => context.now,
     }),
-    agentJudgment: createWorkspaceJudgment(
-      prepared.projections,
-      prepared.signal.entityValue
-    ),
-    skillMarkdown: workflow.skillMarkdown,
-    now,
-    checkpointer,
+    agentJudgment: createWorkspaceJudgment(projections, signal.entityValue),
+    skillMarkdown: context.workflow.skillMarkdown,
+    now: context.now,
+    checkpointer: context.checkpointer,
   })
 
-  const persistence: CompiledReviewPersistenceResult = await persist({
+  const persistence = await context.persist({
     supabase: input.supabase,
     companyId: input.request.companyId,
-    workflowId: workflow.id,
-    bindingSnapshotId: runtimeState.bindingSnapshotId,
+    workflowId: context.workflow.id,
+    bindingSnapshotId: context.bindingSnapshotId,
     result: run,
     inputHash: deriveControlInputHash("manual_trigger", {
       companyId: input.request.companyId,
       agentId: input.agentId,
-      entityValue: prepared.signal.entityValue,
-      manifestDigest: workflow.manifest.manifestDigest,
-      bindingSnapshotId: runtimeState.bindingSnapshotId,
+      entityValue: signal.entityValue,
+      manifestDigest: context.workflow.manifest.manifestDigest,
+      bindingSnapshotId: context.bindingSnapshotId,
     }),
     clientSurface: input.clientSurface,
   })
-
-  return {
-    agentId: workflow.id,
-    workflowRunId: persistence.workflowRunId,
-    status: projectStatus(run.run.status),
-    itemId: persistence.itemId,
-    entity: {
-      key: prepared.signal.entityKey,
-      value: prepared.signal.entityValue,
-    },
-    result: {
-      recommendation: run.recommendation?.output ?? null,
-      rationale: run.recommendation?.rationaleSummary ?? null,
-      warnings: run.recommendation?.warnings ?? [],
-      duplicate: persistence.duplicate,
-      draftId: persistence.draftId,
-    },
-  }
+  return { run, persistence }
 }
 
 export async function refreshWorkspaceCatalogForManualRun(input: {

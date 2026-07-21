@@ -4,6 +4,7 @@ import {
   agentInstallRequestSchema,
   agentInstallResponseSchema,
   agentListResponseSchema,
+  agentManualRunBatchResponseSchema,
   agentManualRunRequestSchema,
   agentManualRunResponseSchema,
   agentTestRunRequestSchema,
@@ -84,6 +85,7 @@ type AgentActionData = z.infer<typeof agentActionResponseSchema>
 type AgentInstallData = z.infer<typeof agentInstallResponseSchema>
 type AgentTestRunData = z.infer<typeof agentTestRunResponseSchema>
 type AgentManualRunData = z.infer<typeof agentManualRunResponseSchema>
+type AgentManualRunBatchData = z.infer<typeof agentManualRunBatchResponseSchema>
 
 export interface ControlApi {
   getContextWorkspaceStatus(companyId: string): Promise<ContextWorkspaceStatus>
@@ -107,6 +109,10 @@ export interface ControlApi {
     agentId: string,
     request: AgentManualRunRequest
   ): Promise<AgentManualRunData>
+  runAgentBatch(
+    agentId: string,
+    request: AgentManualRunRequest
+  ): Promise<AgentManualRunBatchData>
   activateAgent(
     agentId: string,
     request: AgentActionRequest
@@ -275,6 +281,18 @@ export class ApiClient implements ControlApi {
       "manual-runs",
       agentManualRunResponseSchema,
       agentManualRunRequestSchema.parse(request)
+    )
+  }
+
+  runAgentBatch(
+    agentId: string,
+    request: AgentManualRunRequest
+  ): Promise<AgentManualRunBatchData> {
+    return this.agentActionRequest(
+      agentId,
+      "manual-runs",
+      agentManualRunBatchResponseSchema,
+      agentManualRunRequestSchema.parse({ ...request, allMatching: true })
     )
   }
 

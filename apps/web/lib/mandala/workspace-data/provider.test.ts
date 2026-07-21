@@ -291,6 +291,99 @@ describe("WorkspaceDatasetProvider", () => {
     })
   })
 
+  it("enumerates every qualifying signal once and pins the first for load", async () => {
+    const store: WorkspaceDataStore = {
+      resolveMapping: async () => ({
+        mappingVersionId: "10000000-0000-4000-8000-000000000001",
+        mappingKey: "workspace.records.read",
+        specHash: "b".repeat(64),
+        catalogDigest: "c".repeat(64),
+        spec,
+      }),
+      loadRecords: async () => [
+        ticket("T-1", 5),
+        ticket("T-2", 1),
+        ticket("T-3", 4),
+        ticket("T-3", 4),
+      ],
+    }
+    const provider = new WorkspaceDatasetProvider(
+      store,
+      () => new Date("2026-07-16T20:00:00.000Z")
+    )
+    const prepared = await provider.prepareAll({
+      companyId: "company",
+      bindings: [binding],
+    })
+
+    expect(prepared.signals.map(({ entityValue }) => entityValue)).toEqual([
+      "T-1",
+      "T-3",
+    ])
+
+    const loaded = await provider.load({
+      state: { companyId: "company" } as never,
+      manifest: {} as never,
+      bindings: [binding],
+      allowedTools: [binding.toolName],
+    })
+    expect(loaded.data.tickets).toMatchObject({ ticket_id: "T-1" })
+  })
+
+  it("repoints load at the chosen entity after selectSignal", async () => {
+    const store: WorkspaceDataStore = {
+      resolveMapping: async () => ({
+        mappingVersionId: "10000000-0000-4000-8000-000000000001",
+        mappingKey: "workspace.records.read",
+        specHash: "b".repeat(64),
+        catalogDigest: "c".repeat(64),
+        spec,
+      }),
+      loadRecords: async () => [ticket("T-1", 5), ticket("T-3", 4)],
+    }
+    const provider = new WorkspaceDatasetProvider(
+      store,
+      () => new Date("2026-07-16T20:00:00.000Z")
+    )
+    const prepared = await provider.prepareAll({
+      companyId: "company",
+      bindings: [binding],
+    })
+    provider.selectSignal(prepared.signals[1]!)
+
+    const loaded = await provider.load({
+      state: { companyId: "company" } as never,
+      manifest: {} as never,
+      bindings: [binding],
+      allowedTools: [binding.toolName],
+    })
+    expect(loaded.data.tickets).toMatchObject({ ticket_id: "T-3" })
+    expect(
+      loaded.sourceRefs.every(({ reference }) =>
+        (reference.entityValues as string[]).includes("T-3")
+      )
+    ).toBe(true)
+  })
+
+  it("refuses selectSignal before prepareAll", () => {
+    const provider = new WorkspaceDatasetProvider(
+      { resolveMapping: async () => ({}) as never, loadRecords: async () => [] },
+      () => new Date("2026-07-16T20:00:00.000Z")
+    )
+    expect(() =>
+      provider.selectSignal({
+        id: "high-severity-ticket",
+        mappingVersionId: "10000000-0000-4000-8000-000000000001",
+        entityKey: "ticket_id",
+        entityValue: "T-1",
+        detectedAt: "2026-07-16T20:00:00.000Z",
+        evidence: {},
+      })
+    ).toThrowError(
+      expect.objectContaining({ code: "provider_not_prepared" })
+    )
+  })
+
   it("accepts a zero-match procurement check only with complete current coverage", async () => {
     const provider = procurementProvider([
       coverage("shiphero", "purchase_order", "authoritative", "checked"),
@@ -485,6 +578,19 @@ function coverage(
     recordCount: 0,
     checkedAt: "2026-07-17T19:00:00.000Z",
     freshestObservedAt: "2026-07-17T18:00:00.000Z",
+  }
+}
+
+function ticket(ticketId: string, severity: number) {
+  return {
+    id: `r-${ticketId}-${severity}`,
+    companyId: "company",
+    sourceId: "source",
+    sourceKey: "helpdesk",
+    recordType: "support_ticket",
+    externalId: ticketId,
+    payload: { ticket_id: ticketId, severity },
+    pulledAt: "2026-07-16T19:00:00.000Z",
   }
 }
 

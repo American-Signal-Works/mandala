@@ -703,38 +703,56 @@ async function handleAgents(
   args: string[],
   input: Parameters<typeof executeCommand>[0]
 ): Promise<unknown> {
-  if (action !== "run")
-    throw new CliError(
-      "unknown_command",
-      "Use: mandala agents run <agent-id> --reason <text> --confirm."
-    )
+  const usage =
+    "Use: mandala agents run <agent-id> --reason <text> [--all-matching [--limit <1-25>]] --confirm."
+  if (action !== "run") throw new CliError("unknown_command", usage)
   const [agentId, ...extra] = args
-  if (!agentId)
-    throw new CliError(
-      "invalid_arguments",
-      "Use: mandala agents run <agent-id> --reason <text> --confirm."
-    )
+  if (!agentId) throw new CliError("invalid_arguments", usage)
   const parsed = parseOptions(extra, {
     reason: { type: "string" },
     confirm: { type: "boolean" },
+    "all-matching": { type: "boolean" },
+    limit: { type: "string" },
   })
   if (parsed.positionals.length)
-    throw new CliError(
-      "invalid_arguments",
-      "Use: mandala agents run <agent-id> --reason <text> --confirm."
-    )
+    throw new CliError("invalid_arguments", usage)
   const reason = stringOption(parsed.values.reason)
   if (!reason)
     throw new CliError(
       "invalid_arguments",
       "A --reason is required: this runs the agent against real company data."
     )
+  const allMatching = parsed.values["all-matching"] === true
+  const limitOption = stringOption(parsed.values.limit)
+  if (limitOption && !allMatching)
+    throw new CliError(
+      "invalid_arguments",
+      "--limit only applies with --all-matching."
+    )
+  let limit: number | undefined
+  if (limitOption) {
+    limit = Number.parseInt(limitOption, 10)
+    if (!Number.isInteger(limit) || limit < 1 || limit > 25)
+      throw new CliError(
+        "invalid_arguments",
+        "Batch limit must be a whole number from 1 to 25."
+      )
+  }
   if (parsed.values.confirm !== true)
     throw new CliError(
       "confirmation_required",
-      "This runs the agent's manual trigger against real, cataloged company data and persists a reviewable work item. Review the agent's status, then rerun with --confirm."
+      allMatching
+        ? "This runs the agent's manual trigger against every qualifying entity in real company data and persists one reviewable work item per entity. Review the agent's status, then rerun with --confirm."
+        : "This runs the agent's manual trigger against real, cataloged company data and persists a reviewable work item. Review the agent's status, then rerun with --confirm."
     )
   const config = await requireCompany(input.store, input.audit)
+  if (allMatching) {
+    return input.getApi().runAgentBatch(agentId, {
+      companyId: config.selectedCompany.id,
+      reason,
+      ...(limit !== undefined ? { limit } : {}),
+    })
+  }
   return input.getApi().runAgent(agentId, {
     companyId: config.selectedCompany.id,
     reason,
@@ -1750,6 +1768,7 @@ Real-data Sandbox
 
 Agents
   mandala agents run <agent-id> --reason <text> --confirm
+  mandala agents run <agent-id> --reason <text> --all-matching [--limit <1-25>] --confirm
 
 Workflows
   mandala workflow fixture list

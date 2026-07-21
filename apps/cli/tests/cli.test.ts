@@ -1127,6 +1127,9 @@ function fakeApi(overrides: Partial<ControlApi> = {}) {
     runAgent: vi.fn(async () => {
       throw new Error("Agent manual run is not used by this test.")
     }),
+    runAgentBatch: vi.fn(async () => {
+      throw new Error("Agent batch run is not used by this test.")
+    }),
     activateAgent: vi.fn(async () => {
       throw new Error("Agent activation is not used by this test.")
     }),

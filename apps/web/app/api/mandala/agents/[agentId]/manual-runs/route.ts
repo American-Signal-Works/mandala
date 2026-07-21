@@ -1,11 +1,13 @@
 import { NextResponse } from "next/server"
 import {
+  agentManualRunBatchResponseSchema,
   agentManualRunRequestSchema,
   agentManualRunResponseSchema,
 } from "@workspace/control-plane"
 import {
   ManualRunAgentNotActiveError,
   runManualAgentTrigger,
+  runManualAgentTriggerBatch,
 } from "@/lib/mandala/agents"
 import { WorkspaceDataProviderError } from "@/lib/mandala/workspace-data/provider"
 import { createWorkspaceDataAdminClient } from "@/actions/admin/workspace-data"
@@ -13,12 +15,14 @@ import { getCompanyMembership } from "@/lib/mandala/workflows"
 import { allowsCliWorkspace, authenticateRequest } from "@/lib/supabase/request"
 
 export const runtime = "nodejs"
-export const maxDuration = 60
+export const maxDuration = 300
 
 // Fires an active agent's declared `manual` trigger against real, cataloged
 // company data and persists the result as a reviewable work item. Distinct
 // from /sandbox/runs (always a zero-write proof, requires an inactive agent)
 // and /agents/[agentId]/test-runs (persists, but only against synthetic data).
+// With allMatching, runs every qualifying entity (bounded by limit) instead
+// of first-match only — one persisted work item per entity.
 
 export async function POST(
   request: Request,
@@ -59,14 +63,21 @@ export async function POST(
   }
 
   try {
-    const result = await runManualAgentTrigger({
+    const runInput = {
       supabase: auth.supabase,
       dataSupabase: createWorkspaceDataAdminClient(),
       agentId,
       request: parsed.data,
       actorUserId: auth.user.id,
-      clientSurface: auth.authMode === "bearer" ? "cli" : "web",
-    })
+      clientSurface: (auth.authMode === "bearer" ? "cli" : "web") as
+        | "cli"
+        | "web",
+    }
+    if (parsed.data.allMatching) {
+      const result = await runManualAgentTriggerBatch(runInput)
+      return manualRunJson(agentManualRunBatchResponseSchema.parse(result))
+    }
+    const result = await runManualAgentTrigger(runInput)
     return manualRunJson(agentManualRunResponseSchema.parse(result))
   } catch (error) {
     if (error instanceof ManualRunAgentNotActiveError) {

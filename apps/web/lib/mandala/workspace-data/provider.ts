@@ -118,6 +118,20 @@ export class WorkspaceDatasetProvider implements RuntimeCapabilityProvider {
     companyId: string
     bindings: readonly CompiledCapabilityBinding[]
   }): Promise<{ signal: WorkspaceSignal; projections: WorkspaceProjection[] }> {
+    const { signals, projections } = await this.prepareAll(input)
+    return { signal: signals[0]!, projections }
+  }
+
+  // Projects once, detects every qualifying signal, and pins the first one.
+  // Batch callers iterate the returned signals via selectSignal without
+  // re-loading or re-projecting workspace records per entity.
+  async prepareAll(input: {
+    companyId: string
+    bindings: readonly CompiledCapabilityBinding[]
+  }): Promise<{
+    signals: WorkspaceSignal[]
+    projections: WorkspaceProjection[]
+  }> {
     const readBindings = input.bindings.filter(
       ({ access }) => access === "read"
     )
@@ -136,18 +150,28 @@ export class WorkspaceDatasetProvider implements RuntimeCapabilityProvider {
       })
     )
     const projectionMap = new Map(projections)
-    const signal = detectWorkspaceSignal(
+    const signals = detectWorkspaceSignals(
       [...projectionMap.values()],
       this.now().toISOString()
     )
-    if (!signal) {
+    if (signals.length === 0) {
       throw new WorkspaceDataProviderError(
         "qualifying_signal_not_found",
         "No cataloged workspace record matched an installed skill signal."
       )
     }
-    this.prepared = { projections: projectionMap, signal }
-    return { signal, projections: [...projectionMap.values()] }
+    this.prepared = { projections: projectionMap, signal: signals[0]! }
+    return { signals, projections: [...projectionMap.values()] }
+  }
+
+  selectSignal(signal: WorkspaceSignal): void {
+    if (!this.prepared) {
+      throw new WorkspaceDataProviderError(
+        "provider_not_prepared",
+        "Call prepareAll before selecting a signal."
+      )
+    }
+    this.prepared = { ...this.prepared, signal }
   }
 
   async load(input: {
@@ -466,6 +490,15 @@ export function detectWorkspaceSignal(
   projections: readonly WorkspaceProjection[],
   detectedAt: string
 ): WorkspaceSignal | null {
+  return detectWorkspaceSignals(projections, detectedAt)[0] ?? null
+}
+
+export function detectWorkspaceSignals(
+  projections: readonly WorkspaceProjection[],
+  detectedAt: string
+): WorkspaceSignal[] {
+  const signals: WorkspaceSignal[] = []
+  const seen = new Set<string>()
   for (const projection of projections) {
     const signal = projection.binding.spec.signal
     if (!signal) continue
@@ -481,6 +514,7 @@ export function detectWorkspaceSignal(
       const entityValue = record[entityKey]
       if (typeof entityValue !== "string" && typeof entityValue !== "number")
         continue
+      if (seen.has(String(entityValue))) continue
       const complete = projections.every((candidateProjection) => {
         const candidateEntityKey =
           candidateProjection.binding.spec.output.entityKey
@@ -490,7 +524,8 @@ export function detectWorkspaceSignal(
         )
       })
       if (!complete) continue
-      return {
+      seen.add(String(entityValue))
+      signals.push({
         id: signal.id,
         mappingVersionId: projection.binding.mappingVersionId,
         entityKey,
@@ -499,10 +534,10 @@ export function detectWorkspaceSignal(
         evidence: Object.fromEntries(
           signal.all.map(({ left }) => [left, record[left]])
         ),
-      }
+      })
     }
   }
-  return null
+  return signals
 }
 
 type NormalizedRow = {

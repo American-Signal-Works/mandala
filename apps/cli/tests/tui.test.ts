@@ -2219,6 +2219,7 @@ function agentControlApi(
       itemId: null,
     })),
     runAgent: unsupported,
+    runAgentBatch: unsupported,
     activateAgent: unsupported,
     deactivateAgent: unsupported,
     pauseAgent: unsupported,
