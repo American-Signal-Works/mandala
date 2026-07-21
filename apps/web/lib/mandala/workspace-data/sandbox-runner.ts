@@ -168,7 +168,7 @@ export async function runWorkspaceSandboxGoldenPath(input: {
   })
 }
 
-function createWorkspaceJudgment(
+export function createWorkspaceJudgment(
   projections: WorkspaceProjection[],
   entityValue: string
 ) {

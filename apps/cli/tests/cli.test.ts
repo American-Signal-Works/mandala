@@ -1124,6 +1124,9 @@ function fakeApi(overrides: Partial<ControlApi> = {}) {
       status: "completed" as const,
       itemId: null,
     })),
+    runAgent: vi.fn(async () => {
+      throw new Error("Agent manual run is not used by this test.")
+    }),
     activateAgent: vi.fn(async () => {
       throw new Error("Agent activation is not used by this test.")
     }),

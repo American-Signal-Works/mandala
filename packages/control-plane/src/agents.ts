@@ -146,6 +146,24 @@ export const agentTestRunResponseSchema = z
   })
   .strict()
 
+export const agentManualRunRequestSchema = z
+  .object({
+    companyId: z.string().uuid(),
+    reason: z.string().trim().min(1).max(2_000),
+  })
+  .strict()
+
+export const agentManualRunResponseSchema = z
+  .object({
+    agentId: z.string().uuid(),
+    workflowRunId: z.string().uuid(),
+    status: z.enum(["blocked", "suppressed", "waiting_for_approval", "completed"]),
+    itemId: z.string().uuid().nullable(),
+    entity: z.object({ key: z.string().min(1), value: z.string().min(1) }).strict(),
+    result: jsonValueSchema.optional(),
+  })
+  .strict()
+
 export const agentLifecycleEventSchema = z
   .object({
     id: z.string().uuid(),
@@ -175,3 +193,5 @@ export type AgentValidateRequest = z.infer<typeof agentValidateRequestSchema>
 export type AgentValidateResponse = z.infer<typeof agentValidateResponseSchema>
 export type AgentActionRequest = z.infer<typeof agentActionRequestSchema>
 export type AgentTestRunRequest = z.infer<typeof agentTestRunRequestSchema>
+export type AgentManualRunRequest = z.infer<typeof agentManualRunRequestSchema>
+export type AgentManualRunResponse = z.infer<typeof agentManualRunResponseSchema>

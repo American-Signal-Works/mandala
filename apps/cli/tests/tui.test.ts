@@ -2159,6 +2159,7 @@ function agentControlApi(
       status: "completed" as const,
       itemId: null,
     })),
+    runAgent: unsupported,
     activateAgent: unsupported,
     deactivateAgent: unsupported,
     pauseAgent: unsupported,

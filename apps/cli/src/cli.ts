@@ -228,6 +228,7 @@ async function executeCommand(input: {
     return handleContextSettings(action, rest, input)
   }
   if (group === "sandbox") return handleSandbox(action, rest, input)
+  if (group === "agents") return handleAgents(action, rest, input)
   if (group === "workflow") return handleWorkflow(action, rest, input)
   if (group === "work") return handleWork(action, rest, input)
   if (group === "parse")
@@ -695,6 +696,49 @@ async function setWorkspaceConfiguration(
     }
     throw error
   }
+}
+
+async function handleAgents(
+  action: string | undefined,
+  args: string[],
+  input: Parameters<typeof executeCommand>[0]
+): Promise<unknown> {
+  if (action !== "run")
+    throw new CliError(
+      "unknown_command",
+      "Use: mandala agents run <agent-id> --reason <text> --confirm."
+    )
+  const [agentId, ...extra] = args
+  if (!agentId)
+    throw new CliError(
+      "invalid_arguments",
+      "Use: mandala agents run <agent-id> --reason <text> --confirm."
+    )
+  const parsed = parseOptions(extra, {
+    reason: { type: "string" },
+    confirm: { type: "boolean" },
+  })
+  if (parsed.positionals.length)
+    throw new CliError(
+      "invalid_arguments",
+      "Use: mandala agents run <agent-id> --reason <text> --confirm."
+    )
+  const reason = stringOption(parsed.values.reason)
+  if (!reason)
+    throw new CliError(
+      "invalid_arguments",
+      "A --reason is required: this runs the agent against real company data."
+    )
+  if (parsed.values.confirm !== true)
+    throw new CliError(
+      "confirmation_required",
+      "This runs the agent's manual trigger against real, cataloged company data and persists a reviewable work item. Review the agent's status, then rerun with --confirm."
+    )
+  const config = await requireCompany(input.store, input.audit)
+  return input.getApi().runAgent(agentId, {
+    companyId: config.selectedCompany.id,
+    reason,
+  })
 }
 
 async function handleWorkflow(
@@ -1703,6 +1747,9 @@ Real-data Sandbox
   mandala sandbox set <on|off> --expected-version <n> --reason <text> [--confirm]
   mandala sandbox open [--limit <1-100>]
   mandala sandbox run --skill <SKILL.md> --confirm-mappings
+
+Agents
+  mandala agents run <agent-id> --reason <text> --confirm
 
 Workflows
   mandala workflow fixture list
