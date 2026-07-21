@@ -4,6 +4,8 @@ import {
   agentInstallRequestSchema,
   agentInstallResponseSchema,
   agentListResponseSchema,
+  agentManualRunRequestSchema,
+  agentManualRunResponseSchema,
   agentTestRunRequestSchema,
   agentTestRunResponseSchema,
   agentValidateRequestSchema,
@@ -41,6 +43,7 @@ import {
   workItemReviewResponseSchema,
   type AgentActionRequest,
   type AgentInstallRequest,
+  type AgentManualRunRequest,
   type AgentSummary,
   type AgentTestRunRequest,
   type AgentValidateRequest,
@@ -80,6 +83,7 @@ import { CliError } from "./errors.js"
 type AgentActionData = z.infer<typeof agentActionResponseSchema>
 type AgentInstallData = z.infer<typeof agentInstallResponseSchema>
 type AgentTestRunData = z.infer<typeof agentTestRunResponseSchema>
+type AgentManualRunData = z.infer<typeof agentManualRunResponseSchema>
 
 export interface ControlApi {
   getContextWorkspaceStatus(companyId: string): Promise<ContextWorkspaceStatus>
@@ -99,6 +103,10 @@ export interface ControlApi {
     agentId: string,
     request: AgentTestRunRequest
   ): Promise<AgentTestRunData>
+  runAgent(
+    agentId: string,
+    request: AgentManualRunRequest
+  ): Promise<AgentManualRunData>
   activateAgent(
     agentId: string,
     request: AgentActionRequest
@@ -255,6 +263,18 @@ export class ApiClient implements ControlApi {
       "test-runs",
       agentTestRunResponseSchema,
       agentTestRunRequestSchema.parse(request)
+    )
+  }
+
+  runAgent(
+    agentId: string,
+    request: AgentManualRunRequest
+  ): Promise<AgentManualRunData> {
+    return this.agentActionRequest(
+      agentId,
+      "manual-runs",
+      agentManualRunResponseSchema,
+      agentManualRunRequestSchema.parse(request)
     )
   }
 
