@@ -116,6 +116,12 @@ const attemptRowSchema = z
     completed_at: z.string().nullable(),
   })
   .strict()
+const itemOutcomeRpcResultSchema = z
+  .object({
+    decision: decisionRowSchema.nullable(),
+    attempt: attemptRowSchema.nullable(),
+  })
+  .strict()
 const decisionV2ResultSchema = z
   .object({
     decision: rowSchema,
@@ -510,37 +516,17 @@ async function readWorkflowItemOutcome(input: {
   companyId: string
   itemId: string
 }) {
-  const [decisionResult, attemptResult] = await Promise.all([
-    input.supabase
-      .from("workflow_decisions")
-      .select(
-        "id, action_draft_id, decision, reason, warnings_acknowledged, created_at"
-      )
-      .eq("company_id", input.companyId)
-      .eq("workflow_item_id", input.itemId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    input.supabase
-      .from("workflow_action_attempts")
-      .select(
-        "id, action_draft_id, decision_id, action_type, mode, status, result_payload, mock_external_id, error_message, created_at, completed_at"
-      )
-      .eq("company_id", input.companyId)
-      .eq("workflow_item_id", input.itemId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-  ])
-  if (decisionResult.error || attemptResult.error) {
-    throw new ControlPlaneQueryError("item_detail_failed")
+  const { data, error } = await input.supabase.rpc(
+    "get_workflow_item_outcome_v1",
+    {
+      p_company_id: input.companyId,
+      p_workflow_item_id: input.itemId,
+    }
+  )
+  if (error) {
+    throw new ControlPlaneQueryError("item_detail_failed", error.code)
   }
-  const decision = decisionResult.data
-    ? decisionRowSchema.parse(decisionResult.data)
-    : null
-  const attempt = attemptResult.data
-    ? attemptRowSchema.parse(attemptResult.data)
-    : null
+  const { decision, attempt } = itemOutcomeRpcResultSchema.parse(data)
   return {
     decision: decision
       ? workflowDecisionSchema.parse({

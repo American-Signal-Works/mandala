@@ -541,19 +541,19 @@ function detailSupabase(
   rpc: ReturnType<typeof vi.fn>,
   rows: { decision?: unknown; attempt?: unknown } = {}
 ): WorkflowSupabaseClient {
-  const from = vi.fn((table: string) => {
-    const data =
-      table === "workflow_decisions"
-        ? (rows.decision ?? null)
-        : table === "workflow_action_attempts"
-          ? (rows.attempt ?? null)
-          : null
-    const query: Record<string, ReturnType<typeof vi.fn>> = {}
-    for (const method of ["select", "eq", "order", "limit"]) {
-      query[method] = vi.fn(() => query)
+  const detailRpc = vi.fn((name: string, args: unknown) => {
+    if (name === "get_workflow_item_outcome_v1") {
+      return Promise.resolve({
+        data: {
+          decision: rows.decision ?? null,
+          attempt: rows.attempt ?? null,
+        },
+        error: null,
+      })
     }
-    query.maybeSingle = vi.fn(async () => ({ data, error: null }))
-    return query
+    return (
+      rpc as unknown as (name: string, args: unknown) => Promise<unknown>
+    )(name, args)
   })
-  return { rpc, from } as unknown as WorkflowSupabaseClient
+  return { rpc: detailRpc } as unknown as WorkflowSupabaseClient
 }
