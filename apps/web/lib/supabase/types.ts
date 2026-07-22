@@ -6285,6 +6285,10 @@ export type Database = {
         Args: { p_company_id: string; p_context_packet_id: string }
         Returns: Json
       }
+      get_workflow_item_outcome_v1: {
+        Args: { p_company_id: string; p_workflow_item_id: string }
+        Returns: Json
+      }
       get_workflow_review_v1: {
         Args: {
           p_activity_before_created_at?: string

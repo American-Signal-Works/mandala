@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(130);
+SELECT plan(134);
 
 INSERT INTO auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -115,6 +115,8 @@ SELECT ok(NOT has_function_privilege('authenticated','public.record_agent_readin
 SELECT ok(has_function_privilege('authenticated','public.record_agent_test_evaluation_v1(uuid,uuid,bigint,uuid,uuid,jsonb,text,text)','EXECUTE'),'managers use the evidence-derived Sandbox evaluation boundary');
 SELECT ok(has_function_privilege('authenticated','public.record_agent_feedback_v1(uuid,uuid,jsonb)','EXECUTE'),'authenticated callers receive only the controlled feedback RPC');
 SELECT ok(NOT has_function_privilege('authenticated','workflow_private.claim_due_agent_follow_ups(text,integer,integer,timestamp with time zone)','EXECUTE'),'authenticated callers cannot claim worker jobs');
+SELECT ok(has_function_privilege('authenticated','public.get_workflow_item_outcome_v1(uuid,uuid)','EXECUTE'),'authenticated members can read the bounded item outcome projection');
+SELECT ok(NOT has_function_privilege('anon','public.get_workflow_item_outcome_v1(uuid,uuid)','EXECUTE'),'anonymous callers cannot read item outcomes');
 SELECT is((SELECT prosecdef FROM pg_proc WHERE oid='workflow_private.record_agent_feedback_payload(uuid,uuid,jsonb)'::REGPROCEDURE),true,'private feedback mutation is security definer');
 SELECT ok((SELECT proconfig @> ARRAY['search_path=""'] FROM pg_proc WHERE oid='workflow_private.record_agent_feedback_payload(uuid,uuid,jsonb)'::REGPROCEDURE),'private feedback mutation has an empty search path');
 SELECT ok((SELECT proconfig @> ARRAY['search_path=""'] FROM pg_proc WHERE oid='public.has_company_role(uuid,text)'::REGPROCEDURE),'shared company-role checks use an explicit empty search path');
@@ -145,6 +147,28 @@ SELECT throws_ok($$INSERT INTO public.agent_execution_receipts(company_id,action
 SET LOCAL ROLE authenticated;
 SELECT set_config('request.jwt.claim.sub','a1000000-0000-4000-8000-000000000001',true);
 SELECT set_config('request.jwt.claims','{"sub":"a1000000-0000-4000-8000-000000000001","role":"authenticated"}',true);
+SELECT ok(
+  public.get_workflow_item_outcome_v1(
+    'a2000000-0000-4000-8000-000000000001',
+    'a6000000-0000-4000-8000-000000000001'
+  ) #>> '{decision,id}' = 'ab000000-0000-4000-8000-000000000001'
+  AND public.get_workflow_item_outcome_v1(
+    'a2000000-0000-4000-8000-000000000001',
+    'a6000000-0000-4000-8000-000000000001'
+  ) #>> '{attempt,id}' = 'ad000000-0000-4000-8000-000000000001',
+  'item outcome returns the latest persisted decision and attempt without table access'
+);
+SELECT set_config('request.jwt.claim.sub','a1000000-0000-4000-8000-000000000002',true);
+SELECT throws_ok(
+  $$SELECT public.get_workflow_item_outcome_v1(
+    'a2000000-0000-4000-8000-000000000001',
+    'a6000000-0000-4000-8000-000000000001'
+  )$$,
+  '42501',
+  'forbidden',
+  'item outcome cannot cross workspace boundaries'
+);
+SELECT set_config('request.jwt.claim.sub','a1000000-0000-4000-8000-000000000001',true);
 SELECT is(public.record_agent_test_evaluation_v1('a2000000-0000-4000-8000-000000000001','a3000000-0000-4000-8000-000000000001',1,'a4000000-0000-4000-8000-000000000001','a6000000-0000-4000-8000-000000000001','[]','1.0.0','Sandbox evidence passed')->>'lifecycleState','ready','readiness is derived from a durable Sandbox review and evaluation');
 SELECT ok((SELECT case_key LIKE 'sandbox-review-a3000000-0000-4000-8000-000000000001-%' FROM public.agent_evaluation_cases WHERE company_id='a2000000-0000-4000-8000-000000000001' ORDER BY created_at DESC LIMIT 1),'evaluation fixtures are keyed to the exact workflow and durable dataset digest');
 SELECT set_config('test.evaluation_review_version',(SELECT recommendation_version FROM public.agent_evaluation_runs WHERE company_id='a2000000-0000-4000-8000-000000000001' ORDER BY created_at DESC LIMIT 1),true);
