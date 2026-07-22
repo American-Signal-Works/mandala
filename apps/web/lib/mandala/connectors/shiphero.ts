@@ -20,13 +20,13 @@ const PAGE_PAUSE_MS = 1500
 const VENDOR_PAGE = 50
 const INVENTORY_PAGE = 50
 // ShipHero prices complexity by REQUESTED page size, and the nested
-// line_items(first: 100) multiplies it: a page of 25 POs costs ~2,500
-// credits whether or not rows come back — close to a full credit bucket,
-// which never fills while other Dirt King systems draw from the same
-// account. Smaller pages keep each call affordable under contention;
-// the cursor makes up the difference across worker slots.
-const PO_PAGE = 10
-const SALES_PAGE = 10
+// line_items(first: 100) multiplies it. Keep the full 100-line coverage so a
+// larger order does not introduce a new truncation failure, and reduce the
+// outer pages instead: 5 × 100 PO lines and 8 × 100 sales lines stay within
+// the same approximate complexity targets as 10 × 50 and 10 × 80. The cursor
+// spreads the additional outer pages across worker slots.
+const PO_PAGE = 5
+const SALES_PAGE = 8
 // Overlap update windows so provider writes that land on a timestamp boundary
 // are re-read. The first sales import only needs the recent demand horizon.
 const UPDATE_OVERLAP_DAYS = 2
