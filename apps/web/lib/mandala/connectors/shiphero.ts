@@ -20,23 +20,13 @@ const PAGE_PAUSE_MS = 1500
 const VENDOR_PAGE = 50
 const INVENTORY_PAGE = 50
 // ShipHero prices complexity by REQUESTED page size, and the nested
-// line_items(first: 100) multiplies it: a page of 25 POs costs ~2,500
-// credits whether or not rows come back — close to a full credit bucket,
-// which never fills while other Dirt King systems draw from the same
-// account. Smaller pages keep each call affordable under contention;
-// the cursor makes up the difference across worker slots.
-const PO_PAGE = 10
-const SALES_PAGE = 10
-// ShipHero charges complexity up-front on REQUESTED results: a connection
-// costs first(outer) × first(inner). The nested line_items(first: 100) was
-// the real cost driver — 10 POs × 100 lines = ~1,001 credits/call against a
-// 4,004 bucket, so a 3-call worker slot throttled. Dirt King's actual line
-// counts (max 28 PO / 58 sales) never approach 100, so we request just above
-// the observed max with headroom. The line-truncation guard in
-// purchaseOrderRecord/salesOrderRecord still errors loudly if a future order
-// exceeds this, rather than silently dropping lines.
-const PO_LINE_ITEMS = 50
-const SALES_LINE_ITEMS = 80
+// line_items(first: 100) multiplies it. Keep the full 100-line coverage so a
+// larger order does not introduce a new truncation failure, and reduce the
+// outer pages instead: 5 × 100 PO lines and 8 × 100 sales lines stay within
+// the same approximate complexity targets as 10 × 50 and 10 × 80. The cursor
+// spreads the additional outer pages across worker slots.
+const PO_PAGE = 5
+const SALES_PAGE = 8
 // Overlap update windows so provider writes that land on a timestamp boundary
 // are re-read. The first sales import only needs the recent demand horizon.
 const UPDATE_OVERLAP_DAYS = 2
@@ -112,7 +102,7 @@ const PURCHASE_ORDERS_QUERY = `
             fulfillment_status
             subtotal
             total_price
-            line_items(first: ${PO_LINE_ITEMS}) {
+            line_items(first: 100) {
               pageInfo { hasNextPage }
               edges { node { sku quantity price product_name } }
             }
@@ -138,7 +128,7 @@ const ORDERS_QUERY = `
             updated_at
             fulfillment_status
             total_price
-            line_items(first: ${SALES_LINE_ITEMS}) {
+            line_items(first: 100) {
               pageInfo { hasNextPage }
               edges { node { sku quantity price product_name } }
             }

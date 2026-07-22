@@ -191,22 +191,25 @@ describe("createShipheroAdapter", () => {
 })
 
 describe("ShipHero query complexity budget", () => {
-  // ShipHero charges first(outer) × first(inner) up-front; the nested
-  // line_items multiplier is what previously throttled the PO/sales phases.
-  // Pin the inner page size so a regression back toward 100 fails loudly.
-  it("requests a bounded line_items page for purchase orders", async () => {
+  // ShipHero estimates connection complexity from the requested outer and
+  // inner page sizes; the nested multiplier throttled the PO/sales phases.
+  // Preserve 100-line order coverage and pin smaller outer pages instead.
+  it("requests fewer purchase orders without reducing line coverage", async () => {
     const execute = vi.fn().mockResolvedValue({
       purchase_orders: {
         data: { pageInfo: { hasNextPage: false, endCursor: null }, edges: [] },
       },
     })
     await createShipheroAdapter({ execute }).pull(purchaseOrderInput)
-    const query = execute.mock.calls[0]?.[0] as string
-    expect(query).toContain("line_items(first: 50)")
-    expect(query).not.toContain("line_items(first: 100)")
+    const [query, variables] = execute.mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+    ]
+    expect(query).toContain("line_items(first: 100)")
+    expect(variables.first).toBe(5)
   })
 
-  it("requests a bounded line_items page for sales orders", async () => {
+  it("requests fewer sales orders without reducing line coverage", async () => {
     const execute = vi.fn().mockResolvedValue({
       orders: {
         data: { pageInfo: { hasNextPage: false, endCursor: null }, edges: [] },
@@ -225,9 +228,12 @@ describe("ShipHero query complexity budget", () => {
         salesOrderDateFrom: "2026-06-02T00:00:00.000Z",
       },
     })
-    const query = execute.mock.calls[0]?.[0] as string
-    expect(query).toContain("line_items(first: 80)")
-    expect(query).not.toContain("line_items(first: 100)")
+    const [query, variables] = execute.mock.calls[0] as [
+      string,
+      Record<string, unknown>,
+    ]
+    expect(query).toContain("line_items(first: 100)")
+    expect(variables.first).toBe(8)
   })
 })
 
