@@ -19,8 +19,14 @@ const SHIPHERO_REFRESH_API = "https://public-api.shiphero.com/auth/refresh"
 const PAGE_PAUSE_MS = 1500
 const VENDOR_PAGE = 50
 const INVENTORY_PAGE = 50
-const PO_PAGE = 25
-const SALES_PAGE = 20
+// ShipHero prices complexity by REQUESTED page size, and the nested
+// line_items(first: 100) multiplies it: a page of 25 POs costs ~2,500
+// credits whether or not rows come back — close to a full credit bucket,
+// which never fills while other Dirt King systems draw from the same
+// account. Smaller pages keep each call affordable under contention;
+// the cursor makes up the difference across worker slots.
+const PO_PAGE = 10
+const SALES_PAGE = 10
 // Overlap update windows so provider writes that land on a timestamp boundary
 // are re-read. The first sales import only needs the recent demand horizon.
 const UPDATE_OVERLAP_DAYS = 2
