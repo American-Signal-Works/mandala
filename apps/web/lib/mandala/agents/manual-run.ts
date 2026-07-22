@@ -54,9 +54,9 @@ export async function runManualAgentTrigger(input: {
   clientSurface: WorkflowClientSurface
   now?: () => Date
   dependencies?: {
-    loadCheckpointer?: () => Promise<Awaited<
-      ReturnType<typeof getProductionWorkflowCheckpointer>
-    >>
+    loadCheckpointer?: () => Promise<
+      Awaited<ReturnType<typeof getProductionWorkflowCheckpointer>>
+    >
     persist?: typeof persistCompiledWorkflowReview
   }
 }): Promise<ManualAgentRunResult> {
@@ -80,6 +80,11 @@ export async function runManualAgentTrigger(input: {
   if (runtimeState.lifecycleState !== "active") {
     throw new ManualRunAgentNotActiveError(runtimeState.lifecycleState)
   }
+
+  await refreshWorkspaceCatalogForManualRun({
+    supabase: input.supabase,
+    companyId: input.request.companyId,
+  })
 
   const store = new SupabaseWorkspaceDataStore(
     input.dataSupabase ?? input.supabase,
@@ -166,6 +171,19 @@ export async function runManualAgentTrigger(input: {
   }
 }
 
+export async function refreshWorkspaceCatalogForManualRun(input: {
+  supabase: WorkflowSupabaseClient
+  companyId: string
+}): Promise<void> {
+  const { error } = await input.supabase.rpc(
+    "refresh_workspace_data_catalog_v1",
+    { p_company_id: input.companyId }
+  )
+  if (error) {
+    throw new Error(`workspace_catalog_refresh_failed: ${error.message}`)
+  }
+}
+
 async function loadAgentRuntimeState(input: {
   supabase: WorkflowSupabaseClient
   companyId: string
@@ -189,9 +207,7 @@ async function loadAgentRuntimeState(input: {
   }
 }
 
-function projectStatus(
-  status: string
-): ManualAgentRunResult["status"] {
+function projectStatus(status: string): ManualAgentRunResult["status"] {
   if (status === "blocked") return "blocked"
   if (status === "suppressed") return "suppressed"
   if (status === "waiting_for_approval") return "waiting_for_approval"
