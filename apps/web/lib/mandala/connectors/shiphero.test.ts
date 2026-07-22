@@ -223,4 +223,100 @@ describe("createShipheroGraphqlExecutor", () => {
       })
     )
   })
+
+  it("waits out ShipHero's stated credit refill and then succeeds", async () => {
+    vi.useFakeTimers()
+    try {
+      const fetchMock = vi
+        .fn()
+        .mockImplementationOnce(() =>
+          Promise.resolve(
+            graphqlResponse({
+              errors: [
+                {
+                  message:
+                    "There are not enough credits available to perform this request. Required credits: 1002 Remaining credits: 802. Try again in 3 seconds",
+                },
+              ],
+            })
+          )
+        )
+        .mockImplementationOnce(() =>
+          Promise.resolve(graphqlResponse({ data: { ok: true } }))
+        )
+      vi.stubGlobal("fetch", fetchMock)
+
+      const execute = createShipheroGraphqlExecutor("access-token")
+      const pending = execute("query { ok }", {})
+      const assertion = expect(pending).resolves.toEqual({ ok: true })
+      await vi.runAllTimersAsync()
+      await assertion
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("treats HTTP 429 as a credit wait, not an instant failure", async () => {
+    vi.useFakeTimers()
+    try {
+      const fetchMock = vi
+        .fn()
+        .mockImplementationOnce(() =>
+          Promise.resolve(new Response(null, { status: 429 }))
+        )
+        .mockImplementationOnce(() =>
+          Promise.resolve(graphqlResponse({ data: { ok: true } }))
+        )
+      vi.stubGlobal("fetch", fetchMock)
+
+      const execute = createShipheroGraphqlExecutor("access-token")
+      const pending = execute("query { ok }", {})
+      const assertion = expect(pending).resolves.toEqual({ ok: true })
+      await vi.runAllTimersAsync()
+      await assertion
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
+  it("gives up with shiphero_rate_limited once the shared wait budget is spent", async () => {
+    vi.useFakeTimers()
+    try {
+      const fetchMock = vi.fn().mockImplementation(() =>
+        Promise.resolve(
+          graphqlResponse({
+            errors: [
+              {
+                message:
+                  "There are not enough credits available to perform this request. Try again in 30 seconds",
+              },
+            ],
+          })
+        )
+      )
+      vi.stubGlobal("fetch", fetchMock)
+
+      const execute = createShipheroGraphqlExecutor("access-token")
+      const pending = execute("query { ok }", {})
+      const assertion = expect(pending).rejects.toThrow(
+        "shiphero_rate_limited"
+      )
+      await vi.runAllTimersAsync()
+      await assertion
+      // 30s suggested wait fits the 35s budget once; the second throttle
+      // cannot afford another 30s wait, so the pull fails over to backoff.
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+    } finally {
+      vi.useRealTimers()
+    }
+  })
 })
+
+function graphqlResponse(body: unknown): Response {
+  return new Response(JSON.stringify(body), {
+    status: 200,
+    headers: { "content-type": "application/json" },
+  })
+}

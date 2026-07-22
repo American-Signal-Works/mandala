@@ -26,7 +26,17 @@ const SALES_PAGE = 20
 const UPDATE_OVERLAP_DAYS = 2
 const INITIAL_SALES_LOOKBACK_DAYS = 45
 const REQUEST_TIMEOUT_MS = 6_000
-const MAX_REQUEST_ATTEMPTS = 2
+const MAX_NETWORK_ATTEMPTS = 2
+// ShipHero's credit bucket refills over tens of seconds, so a throttled
+// request must actually wait for the refill instead of retrying a second
+// later. ShipHero states the wait in its error ("Try again in N seconds");
+// honor it when present, bounded so the worker stays inside its slot. The
+// budget is shared across the whole executor lifetime (= one worker slot).
+const MAX_THROTTLE_ATTEMPTS = 4
+const THROTTLE_WAIT_BUDGET_MS = 35_000
+const MIN_THROTTLE_WAIT_MS = 2_000
+const MAX_THROTTLE_WAIT_MS = 30_000
+const FALLBACK_THROTTLE_WAITS_MS = [5_000, 10_000, 20_000]
 
 const VENDORS_QUERY = `
   query Vendors($first: Int!, $after: String) {
@@ -176,10 +186,34 @@ export function createShipheroGraphqlExecutor(
     return accessToken
   }
 
+  // Shared across every request this executor makes (one executor lives for
+  // one worker slot), so stacked throttle waits cannot blow the slot budget.
+  let throttleWaitBudgetMs = THROTTLE_WAIT_BUDGET_MS
+
+  async function waitForCreditRefill(
+    throttleAttempt: number,
+    suggestedWaitMs: number | null
+  ): Promise<boolean> {
+    const fallback =
+      FALLBACK_THROTTLE_WAITS_MS[
+        Math.min(throttleAttempt, FALLBACK_THROTTLE_WAITS_MS.length - 1)
+      ]!
+    const wait = Math.min(
+      Math.max(suggestedWaitMs ?? fallback, MIN_THROTTLE_WAIT_MS),
+      MAX_THROTTLE_WAIT_MS
+    )
+    if (wait > throttleWaitBudgetMs) return false
+    throttleWaitBudgetMs -= wait
+    await sleep(wait)
+    return true
+  }
+
   return async (query, variables) => {
     if (!accessToken) await refreshAccessToken()
     let refreshedAfterUnauthorized = false
-    for (let attempt = 0; attempt < MAX_REQUEST_ATTEMPTS; attempt += 1) {
+    let networkFailures = 0
+    let throttleAttempts = 0
+    while (true) {
       let response: Response
       try {
         response = await fetch(SHIPHERO_API, {
@@ -192,8 +226,9 @@ export function createShipheroGraphqlExecutor(
           signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
         })
       } catch {
-        if (attempt + 1 < MAX_REQUEST_ATTEMPTS) {
-          await sleep(1000 * (attempt + 1))
+        networkFailures += 1
+        if (networkFailures < MAX_NETWORK_ATTEMPTS) {
+          await sleep(1000 * networkFailures)
           continue
         }
         throw new Error("shiphero_request_failed")
@@ -208,8 +243,13 @@ export function createShipheroGraphqlExecutor(
         continue
       }
       if (response.status === 429) {
-        if (attempt + 1 < MAX_REQUEST_ATTEMPTS)
-          await sleep(1000 * (attempt + 1))
+        throttleAttempts += 1
+        if (
+          throttleAttempts >= MAX_THROTTLE_ATTEMPTS ||
+          !(await waitForCreditRefill(throttleAttempts - 1, null))
+        ) {
+          throw new Error("shiphero_rate_limited")
+        }
         continue
       }
       if (!response.ok) {
@@ -217,14 +257,22 @@ export function createShipheroGraphqlExecutor(
       }
       const body = (await response.json()) as {
         data?: unknown
-        errors?: Array<{ message?: string }>
+        errors?: Array<{ message?: string; time_remaining?: string }>
       }
-      const throttled = body.errors?.some((error) =>
+      const throttledError = body.errors?.find((error) =>
         /throttl|credit|rate/i.test(error.message ?? "")
       )
-      if (throttled) {
-        if (attempt + 1 < MAX_REQUEST_ATTEMPTS)
-          await sleep(1000 * (attempt + 1))
+      if (throttledError) {
+        throttleAttempts += 1
+        if (
+          throttleAttempts >= MAX_THROTTLE_ATTEMPTS ||
+          !(await waitForCreditRefill(
+            throttleAttempts - 1,
+            suggestedThrottleWaitMs(throttledError)
+          ))
+        ) {
+          throw new Error("shiphero_rate_limited")
+        }
         continue
       }
       if (body.errors?.length) {
@@ -234,8 +282,21 @@ export function createShipheroGraphqlExecutor(
       }
       return body.data
     }
-    throw new Error("shiphero_rate_limited")
   }
+}
+
+// ShipHero throttle errors state their own refill wait, either as a
+// `time_remaining` field ("44 seconds") or inline in the message ("Try
+// again in 4 seconds"). Returns milliseconds, or null when unstated.
+function suggestedThrottleWaitMs(error: {
+  message?: string
+  time_remaining?: string
+}): number | null {
+  const source = `${error.time_remaining ?? ""} ${error.message ?? ""}`
+  const match = source.match(/(\d+(?:\.\d+)?)\s*sec/i)
+  if (!match) return null
+  const seconds = Number(match[1])
+  return Number.isFinite(seconds) ? Math.ceil(seconds * 1000) : null
 }
 
 function overlapStart(value: string, days: number): string {
