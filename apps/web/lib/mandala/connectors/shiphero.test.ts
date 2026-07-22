@@ -190,6 +190,47 @@ describe("createShipheroAdapter", () => {
   })
 })
 
+describe("ShipHero query complexity budget", () => {
+  // ShipHero charges first(outer) × first(inner) up-front; the nested
+  // line_items multiplier is what previously throttled the PO/sales phases.
+  // Pin the inner page size so a regression back toward 100 fails loudly.
+  it("requests a bounded line_items page for purchase orders", async () => {
+    const execute = vi.fn().mockResolvedValue({
+      purchase_orders: {
+        data: { pageInfo: { hasNextPage: false, endCursor: null }, edges: [] },
+      },
+    })
+    await createShipheroAdapter({ execute }).pull(purchaseOrderInput)
+    const query = execute.mock.calls[0]?.[0] as string
+    expect(query).toContain("line_items(first: 50)")
+    expect(query).not.toContain("line_items(first: 100)")
+  })
+
+  it("requests a bounded line_items page for sales orders", async () => {
+    const execute = vi.fn().mockResolvedValue({
+      orders: {
+        data: { pageInfo: { hasNextPage: false, endCursor: null }, edges: [] },
+      },
+    })
+    await createShipheroAdapter({ execute }).pull({
+      ...pullInput,
+      cursor: {
+        phase: "sales_orders",
+        after: null,
+        vendorNames: {},
+        cycleStartedAt: "2026-07-17T00:00:00.000Z",
+        poUpdatedFrom: null,
+        poInitialStatus: null,
+        salesUpdatedFrom: null,
+        salesOrderDateFrom: "2026-06-02T00:00:00.000Z",
+      },
+    })
+    const query = execute.mock.calls[0]?.[0] as string
+    expect(query).toContain("line_items(first: 80)")
+    expect(query).not.toContain("line_items(first: 100)")
+  })
+})
+
 describe("createShipheroGraphqlExecutor", () => {
   it("refreshes an access token for unattended connector sync", async () => {
     const fetchMock = vi

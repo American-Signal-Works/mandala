@@ -27,6 +27,16 @@ const INVENTORY_PAGE = 50
 // the cursor makes up the difference across worker slots.
 const PO_PAGE = 10
 const SALES_PAGE = 10
+// ShipHero charges complexity up-front on REQUESTED results: a connection
+// costs first(outer) × first(inner). The nested line_items(first: 100) was
+// the real cost driver — 10 POs × 100 lines = ~1,001 credits/call against a
+// 4,004 bucket, so a 3-call worker slot throttled. Dirt King's actual line
+// counts (max 28 PO / 58 sales) never approach 100, so we request just above
+// the observed max with headroom. The line-truncation guard in
+// purchaseOrderRecord/salesOrderRecord still errors loudly if a future order
+// exceeds this, rather than silently dropping lines.
+const PO_LINE_ITEMS = 50
+const SALES_LINE_ITEMS = 80
 // Overlap update windows so provider writes that land on a timestamp boundary
 // are re-read. The first sales import only needs the recent demand horizon.
 const UPDATE_OVERLAP_DAYS = 2
@@ -102,7 +112,7 @@ const PURCHASE_ORDERS_QUERY = `
             fulfillment_status
             subtotal
             total_price
-            line_items(first: 100) {
+            line_items(first: ${PO_LINE_ITEMS}) {
               pageInfo { hasNextPage }
               edges { node { sku quantity price product_name } }
             }
@@ -128,7 +138,7 @@ const ORDERS_QUERY = `
             updated_at
             fulfillment_status
             total_price
-            line_items(first: 100) {
+            line_items(first: ${SALES_LINE_ITEMS}) {
               pageInfo { hasNextPage }
               edges { node { sku quantity price product_name } }
             }
