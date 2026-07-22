@@ -99,6 +99,9 @@ function lifecycleError(error: unknown) {
     message.includes("agent_not_ready") ||
     message.includes("agent_readiness_stale") ||
     message.includes("binding_snapshot_not_ready") ||
+    message.includes("workspace_mapping_snapshot_not_ready") ||
+    message.includes("workspace_mapping_snapshot_incomplete") ||
+    message.includes("workspace_mapping_schema_drift") ||
     message.includes("promotion_checkpoint_blocked") ||
     message.includes("rollback_target_must_differ") ||
     message.includes("rollback_source_not_active") ||

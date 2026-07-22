@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(20);
+SELECT plan(23);
 
 SELECT has_function(
   'public',
@@ -55,6 +55,31 @@ SELECT is(
   ),
   false,
   'anonymous callers cannot execute the private projection'
+);
+SELECT is(
+  has_table_privilege('authenticated', 'public.external_sources', 'SELECT'),
+  false,
+  'workspace members do not receive table-wide connector source access'
+);
+SELECT is(
+  has_column_privilege(
+    'authenticated',
+    'public.external_sources',
+    'source_key',
+    'SELECT'
+  ),
+  true,
+  'workspace members can read the safe connector identity projection'
+);
+SELECT is(
+  has_column_privilege(
+    'authenticated',
+    'public.external_sources',
+    'config',
+    'SELECT'
+  ),
+  false,
+  'connector configuration remains server-only'
 );
 
 INSERT INTO auth.users (

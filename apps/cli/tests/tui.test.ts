@@ -564,6 +564,65 @@ describe("interactive TUI", () => {
     expect(stdout.value).toContain("Open the inbox to review")
   })
 
+  it("refreshes an agent after a Sandbox test before activating it", async () => {
+    const beforeTest = testAgentSummary({
+      status: "draft",
+      stateVersion: 1,
+    })
+    const afterTest = {
+      ...beforeTest,
+      status: "ready" as const,
+      stateVersion: 2,
+    }
+    const active = {
+      ...afterTest,
+      status: "active" as const,
+      stateVersion: 3,
+      active: true,
+    }
+    const listAgents = vi
+      .fn()
+      .mockResolvedValueOnce({ agents: [beforeTest] })
+      .mockResolvedValue({ agents: [afterTest] })
+    const activateAgent = vi.fn(async () => ({
+      agent: active,
+      action: "activated",
+    }))
+    const api = agentControlApi(beforeTest, { listAgents, activateAgent })
+    const stdout = new CaptureStream()
+    const stderr = new CaptureStream()
+    const selections: Array<string | null> = [
+      beforeTest.id,
+      "test",
+      "activate",
+      "confirm",
+      "back",
+      null,
+    ]
+    const controller = createTuiSessionFactory(
+      { api, execute: fakeExecute() },
+      stdout,
+      stderr
+    )({
+      append: (value) => stdout.write(`${value}\n`),
+      ask: async () => null,
+      choose: async () => selections.shift() ?? null,
+      clearScreen: () => undefined,
+      onSnapshot: () => undefined,
+      renderOptions: { color: false, width: 100 },
+    })
+
+    await controller.start()
+    await controller.handleLine("/agents")
+
+    expect(listAgents).toHaveBeenCalledTimes(3)
+    expect(activateAgent).toHaveBeenCalledWith(beforeTest.id, {
+      companyId,
+      expectedVersion: afterTest.stateVersion,
+      reason: "Confirmed in the Mandala terminal.",
+    })
+  })
+
   it("offers safe guided installation when the workspace has no agents", async () => {
     const agent = testAgentSummary()
     const skillFile = resolve(
