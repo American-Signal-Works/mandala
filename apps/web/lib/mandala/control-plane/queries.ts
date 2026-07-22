@@ -1,6 +1,8 @@
 import type { WorkflowSupabaseClient } from "@/lib/mandala/workflows"
 import {
   contextPacketProvenanceSchema,
+  workflowAttemptSchema,
+  workflowDecisionSchema,
   workItemReviewDataSchema,
 } from "@workspace/control-plane"
 import { z } from "zod"
@@ -76,6 +78,44 @@ const activityRpcResultSchema = z
   })
   .strict()
 const reviewRpcResultSchema = rowSchema
+const decisionRowSchema = z
+  .object({
+    id: z.string().uuid(),
+    action_draft_id: z.string().uuid().nullable(),
+    decision: z.enum([
+      "approve",
+      "edit",
+      "reject",
+      "request_rework",
+      "resolve",
+    ]),
+    reason: z.string().nullable(),
+    warnings_acknowledged: z.boolean(),
+    created_at: z.string(),
+  })
+  .strict()
+const attemptRowSchema = z
+  .object({
+    id: z.string().uuid(),
+    action_draft_id: z.string().uuid(),
+    decision_id: z.string().uuid(),
+    action_type: z.string(),
+    mode: z.enum(["fixture", "mock", "dry_run", "shadow", "live"]),
+    status: z.enum([
+      "pending",
+      "processing",
+      "succeeded",
+      "failed",
+      "unknown",
+      "reconciliation_required",
+    ]),
+    result_payload: z.record(z.string(), z.unknown()),
+    mock_external_id: z.string().nullable(),
+    error_message: z.string().nullable(),
+    created_at: z.string(),
+    completed_at: z.string().nullable(),
+  })
+  .strict()
 const decisionV2ResultSchema = z
   .object({
     decision: rowSchema,
@@ -408,6 +448,11 @@ export async function getWorkflowItemDetail(input: {
         contextPacketId: parsed.recordSnapshot.contextPacketId,
       })
     : null
+  const outcome = await readWorkflowItemOutcome({
+    supabase: input.supabase,
+    companyId: input.companyId,
+    itemId: input.itemId,
+  })
 
   return {
     item: {
@@ -447,8 +492,8 @@ export async function getWorkflowItemDetail(input: {
           updatedAt: parsed.draft.updatedAt,
         }
       : null,
-    decision: null,
-    attempt: null,
+    decision: outcome.decision,
+    attempt: outcome.attempt,
     auditEvents: parsed.activity.items.map((event) => ({
       id: event.id,
       eventType: event.type,
@@ -457,6 +502,71 @@ export async function getWorkflowItemDetail(input: {
       trace: {},
       createdAt: event.createdAt,
     })),
+  }
+}
+
+async function readWorkflowItemOutcome(input: {
+  supabase: WorkflowSupabaseClient
+  companyId: string
+  itemId: string
+}) {
+  const [decisionResult, attemptResult] = await Promise.all([
+    input.supabase
+      .from("workflow_decisions")
+      .select(
+        "id, action_draft_id, decision, reason, warnings_acknowledged, created_at"
+      )
+      .eq("company_id", input.companyId)
+      .eq("workflow_item_id", input.itemId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    input.supabase
+      .from("workflow_action_attempts")
+      .select(
+        "id, action_draft_id, decision_id, action_type, mode, status, result_payload, mock_external_id, error_message, created_at, completed_at"
+      )
+      .eq("company_id", input.companyId)
+      .eq("workflow_item_id", input.itemId)
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+  ])
+  if (decisionResult.error || attemptResult.error) {
+    throw new ControlPlaneQueryError("item_detail_failed")
+  }
+  const decision = decisionResult.data
+    ? decisionRowSchema.parse(decisionResult.data)
+    : null
+  const attempt = attemptResult.data
+    ? attemptRowSchema.parse(attemptResult.data)
+    : null
+  return {
+    decision: decision
+      ? workflowDecisionSchema.parse({
+          id: decision.id,
+          actionDraftId: decision.action_draft_id,
+          decision: decision.decision,
+          reason: decision.reason,
+          warningsAcknowledged: decision.warnings_acknowledged,
+          createdAt: decision.created_at,
+        })
+      : null,
+    attempt: attempt
+      ? workflowAttemptSchema.parse({
+          id: attempt.id,
+          actionDraftId: attempt.action_draft_id,
+          decisionId: attempt.decision_id,
+          actionType: attempt.action_type,
+          mode: attempt.mode,
+          status: attempt.status,
+          resultPayload: attempt.result_payload,
+          mockExternalId: attempt.mock_external_id,
+          errorMessage: attempt.error_message,
+          createdAt: attempt.created_at,
+          completedAt: attempt.completed_at,
+        })
+      : null,
   }
 }
 

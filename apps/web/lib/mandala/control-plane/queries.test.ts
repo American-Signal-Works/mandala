@@ -12,6 +12,8 @@ import {
 const companyId = "20000000-0000-0000-0000-000000000001"
 const itemId = "33000000-0000-0000-0000-000000000001"
 const draftId = "37000000-0000-0000-0000-000000000001"
+const decisionId = "38000000-0000-0000-0000-000000000001"
+const attemptId = "39000000-0000-0000-0000-000000000001"
 
 describe("controlled workflow RPC adapters", () => {
   it("preserves the Supabase client receiver when calling an RPC", async () => {
@@ -91,13 +93,45 @@ describe("controlled workflow RPC adapters", () => {
     })
 
     const detail = await getWorkflowItemDetail({
-      supabase: { rpc } as unknown as WorkflowSupabaseClient,
+      supabase: detailSupabase(rpc, {
+        decision: {
+          id: decisionId,
+          action_draft_id: draftId,
+          decision: "approve",
+          reason: "Inventory checks confirmed.",
+          warnings_acknowledged: true,
+          created_at: "2026-07-14T18:01:00.000Z",
+        },
+        attempt: {
+          id: attemptId,
+          action_draft_id: draftId,
+          decision_id: decisionId,
+          action_type: "execute_mock_purchase_order",
+          mode: "mock",
+          status: "succeeded",
+          result_payload: { committed: false },
+          mock_external_id: "mock-po-42",
+          error_message: null,
+          created_at: "2026-07-14T18:02:00.000Z",
+          completed_at: "2026-07-14T18:02:01.000Z",
+        },
+      }),
       companyId,
       itemId,
     })
 
     expect(detail.draft?.payload).toEqual({ lines: [{ quantity: 12 }] })
     expect(detail.contextPacket).toBeNull()
+    expect(detail.decision).toMatchObject({
+      id: decisionId,
+      decision: "approve",
+      warningsAcknowledged: true,
+    })
+    expect(detail.attempt).toMatchObject({
+      id: attemptId,
+      status: "succeeded",
+      mockExternalId: "mock-po-42",
+    })
     expect(rpc).toHaveBeenCalledWith(
       "get_workflow_review_v1",
       expect.objectContaining({ p_workflow_item_id: itemId })
@@ -194,7 +228,7 @@ describe("controlled workflow RPC adapters", () => {
       .mockResolvedValueOnce({ data: operationalContext, error: null })
 
     const detail = await getWorkflowItemDetail({
-      supabase: { rpc } as unknown as WorkflowSupabaseClient,
+      supabase: detailSupabase(rpc),
       companyId,
       itemId,
     })
@@ -502,3 +536,24 @@ describe("controlled workflow RPC adapters", () => {
     ).rejects.toMatchObject({ code: "stale_draft" })
   })
 })
+
+function detailSupabase(
+  rpc: ReturnType<typeof vi.fn>,
+  rows: { decision?: unknown; attempt?: unknown } = {}
+): WorkflowSupabaseClient {
+  const from = vi.fn((table: string) => {
+    const data =
+      table === "workflow_decisions"
+        ? (rows.decision ?? null)
+        : table === "workflow_action_attempts"
+          ? (rows.attempt ?? null)
+          : null
+    const query: Record<string, ReturnType<typeof vi.fn>> = {}
+    for (const method of ["select", "eq", "order", "limit"]) {
+      query[method] = vi.fn(() => query)
+    }
+    query.maybeSingle = vi.fn(async () => ({ data, error: null }))
+    return query
+  })
+  return { rpc, from } as unknown as WorkflowSupabaseClient
+}

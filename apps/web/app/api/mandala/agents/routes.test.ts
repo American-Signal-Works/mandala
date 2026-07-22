@@ -346,6 +346,25 @@ describe("Mandala agent lifecycle routes", () => {
     })
   })
 
+  it("returns a stable conflict when real-data mappings are not activation-ready", async () => {
+    vi.mocked(transitionAgentWorkflowLifecycle).mockRejectedValueOnce(
+      new Error("workspace_mapping_snapshot_not_ready")
+    )
+    const response = await activateAgent(
+      jsonRequest(`/agents/${agentId}/activate`, {
+        companyId,
+        expectedVersion: 2,
+        reason: "Activate after real-data Sandbox review",
+      }),
+      { params: Promise.resolve({ agentId }) }
+    )
+
+    expect(response.status).toBe(409)
+    await expect(response.json()).resolves.toEqual({
+      error: "agent_state_conflict",
+    })
+  })
+
   it("requires an explicit rollback version", async () => {
     const response = await rollbackAgent(
       jsonRequest(`/agents/${agentId}/rollback`, {

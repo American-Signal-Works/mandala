@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(129);
+SELECT plan(130);
 
 INSERT INTO auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -150,7 +150,8 @@ SELECT ok((SELECT case_key LIKE 'sandbox-review-a3000000-0000-4000-8000-00000000
 SELECT set_config('test.evaluation_review_version',(SELECT recommendation_version FROM public.agent_evaluation_runs WHERE company_id='a2000000-0000-4000-8000-000000000001' ORDER BY created_at DESC LIMIT 1),true);
 SELECT is(current_setting('test.evaluation_review_version'),public.get_workflow_review_v1('a2000000-0000-4000-8000-000000000001','a6000000-0000-4000-8000-000000000001')->>'version','evaluation records the exact review version that produced the recommendation');
 SELECT is((SELECT safe_trace_ids FROM public.agent_evaluation_runs WHERE company_id='a2000000-0000-4000-8000-000000000001' ORDER BY created_at DESC LIMIT 1),'["trace-runtime-safe","run-runtime-safe"]'::JSONB,'evaluation persists only bounded safe trace identifiers');
-SELECT throws_ok($$SELECT public.record_agent_test_evaluation_v1('a2000000-0000-4000-8000-000000000001','a3000000-0000-4000-8000-000000000001',1,'a4000000-0000-4000-8000-000000000001','a6000000-0000-4000-8000-000000000001','[]','1.0.0','Stale Sandbox result')$$,'40001','stale_agent_state','readiness updates use caller-observed versions');
+SELECT throws_ok($$SELECT public.record_agent_test_evaluation_v1('a2000000-0000-4000-8000-000000000001','a3000000-0000-4000-8000-000000000001',1,'a4000000-0000-4000-8000-000000000001','a6000000-0000-4000-8000-000000000001','[]','1.0.0','Stale Sandbox result')$$,'P0001','stale_agent_state','stale readiness returns one application conflict instead of a retryable transaction failure');
+SELECT throws_ok($$SELECT public.transition_agent_lifecycle_v1('a2000000-0000-4000-8000-000000000001','a3000000-0000-4000-8000-000000000001','activate',1,'Stale activation')$$,'P0001','stale_agent_state','stale lifecycle transitions return one application conflict instead of a retry storm');
 SELECT is(public.transition_agent_lifecycle_v1('a2000000-0000-4000-8000-000000000001','a3000000-0000-4000-8000-000000000001','activate',2,'Activate tested agent')->>'lifecycleState','active','only a ready agent activates');
 SELECT throws_ok($$SELECT public.activate_agent_workflow('a2000000-0000-4000-8000-000000000001','a3000000-0000-4000-8000-000000000001','a3100000-0000-4000-8000-000000000001','a3000000-0000-4000-8000-000000000001')$$,'55000','lifecycle_transition_requires_expected_version','legacy activation cannot bypass caller-observed lifecycle versions');
 SELECT throws_ok($$SELECT public.deactivate_agent_workflow('a2000000-0000-4000-8000-000000000001','controlled_runtime_test','a3000000-0000-4000-8000-000000000001')$$,'55000','lifecycle_transition_requires_expected_version','legacy deactivation cannot desynchronize runtime lifecycle state');

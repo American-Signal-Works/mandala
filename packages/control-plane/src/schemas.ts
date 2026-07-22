@@ -153,7 +153,7 @@ export const workflowActionDraftSchema = z
 export const workflowDecisionSchema = z
   .object({
     id: z.string().uuid(),
-    actionDraftId: z.string().uuid(),
+    actionDraftId: z.string().uuid().nullable(),
     decision: decisionKindSchema,
     reason: z.string().max(2_000).nullable().optional(),
     warningsAcknowledged: z.boolean(),
@@ -167,8 +167,15 @@ export const workflowAttemptSchema = z
     actionDraftId: z.string().uuid(),
     decisionId: z.string().uuid(),
     actionType: identifierSchema,
-    mode: z.literal("mock"),
-    status: z.enum(["succeeded", "failed"]),
+    mode: z.enum(["fixture", "mock", "dry_run", "shadow", "live"]),
+    status: z.enum([
+      "pending",
+      "processing",
+      "succeeded",
+      "failed",
+      "unknown",
+      "reconciliation_required",
+    ]),
     resultPayload: jsonObjectSchema,
     mockExternalId: z.string().max(500).nullable(),
     errorMessage: z.string().max(2_000).nullable(),

@@ -1216,7 +1216,7 @@ class TuiSession {
         continue
       }
       if (selected === "test") {
-        await this.runAgentTest(agent)
+        agent = await this.runAgentTest(agent)
         continue
       }
       if (selected === "rollback") {
@@ -1242,11 +1242,13 @@ class TuiSession {
     }
   }
 
-  private async runAgentTest(agent: AgentSummary): Promise<void> {
+  private async runAgentTest(agent: AgentSummary): Promise<AgentSummary> {
     const result = await this.getAgentApi().testAgent(agent.id, {
       companyId: this.requireCompanyId(),
     })
     this.write(renderAgentTestResult(agent, result, this.renderOptions))
+    const refreshed = await this.loadAgents()
+    return refreshed.find(({ id }) => id === agent.id) ?? agent
   }
 
   private async runAgentLifecycleAction(
