@@ -4,7 +4,7 @@ import {
   type WorkspaceCapabilityMappingSpec,
 } from "@workspace/control-plane"
 import type { WorkflowSupabaseClient } from "../workflows"
-import { connectorAccessSchema } from "../connectors"
+import { connectorAccessSchema, connectorSyncConfigSchema } from "../connectors"
 import {
   WorkspaceDataProviderError,
   type WorkspaceDataStore,
@@ -56,6 +56,12 @@ const catalogRowSchema = z
     freshest_observed_at: z.string().datetime({ offset: true }).nullable(),
   })
   .passthrough()
+const sourceCatalogRowSchema = catalogRowSchema.extend({
+  source_id: z.string().uuid(),
+})
+const coverageCatalogRowSchema = sourceCatalogRowSchema.extend({
+  record_count: z.coerce.number().int().nonnegative(),
+})
 const sourceRowSchema = z
   .object({
     id: z.string().uuid(),
@@ -63,7 +69,6 @@ const sourceRowSchema = z
     sync_status: z.enum(["idle", "syncing", "error"]),
     config: z.record(z.string(), z.unknown()),
     last_synced_at: z.string().datetime({ offset: true }).nullable(),
-    last_sync_error: z.string().nullable(),
   })
   .passthrough()
 const externalRecordSchema = z
@@ -194,9 +199,7 @@ export class SupabaseWorkspaceDataStore implements WorkspaceDataStore {
   }): Promise<WorkspaceExternalRecord[]> {
     let sourceQuery = this.db
       .from("external_sources")
-      .select(
-        "id, source_key, sync_status, config, last_synced_at, last_sync_error"
-      )
+      .select("id, source_key, sync_status, config, last_synced_at")
       .eq("company_id", input.companyId)
     if (input.sourceKey)
       sourceQuery = sourceQuery.eq("source_key", input.sourceKey)
@@ -204,12 +207,33 @@ export class SupabaseWorkspaceDataStore implements WorkspaceDataStore {
       .array(sourceRowSchema)
       .parse(rowsOrThrow(await sourceQuery))
     if (sources.length === 0) return []
-    const healthySources = sources.filter(
-      (source) => source.sync_status === "idle" && hasReadAccess(source.config)
+    const authorizedSources = sources.filter(
+      (source) =>
+        source.sync_status !== "syncing" && hasReadAccess(source.config)
     )
-    if (healthySources.length === 0) return []
+    if (authorizedSources.length === 0) return []
+
+    let catalogQuery = this.db
+      .from("workspace_data_catalogs")
+      .select(
+        "source_id, source_key, record_type, schema_hash, profile_status, freshest_observed_at"
+      )
+      .eq("company_id", input.companyId)
+      .eq("record_type", input.recordType)
+    if (input.sourceKey)
+      catalogQuery = catalogQuery.eq("source_key", input.sourceKey)
+    const catalogs = z
+      .array(sourceCatalogRowSchema)
+      .parse(rowsOrThrow(await catalogQuery))
+    const catalogBySource = new Map(
+      catalogs.map((catalog) => [catalog.source_id, catalog])
+    )
+    const readableSources = authorizedSources.filter((source) =>
+      hasCompleteReadableSnapshot(source, catalogBySource.get(source.id))
+    )
+    if (readableSources.length === 0) return []
     const sourceById = new Map(
-      healthySources.map((source) => [source.id, source.source_key])
+      readableSources.map((source) => [source.id, source.source_key])
     )
     const rows: z.infer<typeof externalRecordSchema>[] = []
     const pageSize = 1_000
@@ -227,7 +251,7 @@ export class SupabaseWorkspaceDataStore implements WorkspaceDataStore {
             .eq("record_type", input.recordType)
             .in(
               "source_id",
-              healthySources.map(({ id }) => id)
+              readableSources.map(({ id }) => id)
             )
             .order("pulled_at", { ascending: false })
             .order("id", { ascending: true })
@@ -259,9 +283,7 @@ export class SupabaseWorkspaceDataStore implements WorkspaceDataStore {
   }): Promise<WorkspaceSourceCoverage[]> {
     let sourceQuery = this.db
       .from("external_sources")
-      .select(
-        "id, source_key, sync_status, config, last_synced_at, last_sync_error"
-      )
+      .select("id, source_key, sync_status, config, last_synced_at")
       .eq("company_id", input.companyId)
     if (input.sourceKey)
       sourceQuery = sourceQuery.eq("source_key", input.sourceKey)
@@ -279,12 +301,7 @@ export class SupabaseWorkspaceDataStore implements WorkspaceDataStore {
     if (input.sourceKey)
       catalogQuery = catalogQuery.eq("source_key", input.sourceKey)
     const catalogs = z
-      .array(
-        catalogRowSchema.extend({
-          source_id: z.string().uuid(),
-          record_count: z.coerce.number().int().nonnegative(),
-        })
-      )
+      .array(coverageCatalogRowSchema)
       .parse(rowsOrThrow(await catalogQuery))
     const catalogBySource = new Map(
       catalogs.map((catalog) => [catalog.source_id, catalog])
@@ -298,20 +315,38 @@ export class SupabaseWorkspaceDataStore implements WorkspaceDataStore {
     const checkedAt = this.now().toISOString()
     return relevant.map((source) => {
       const catalog = catalogBySource.get(source.id)
+      const hasAuthorizedRead = hasReadAccess(source.config)
+      const hasCompleteSnapshot = hasCompleteReadableSnapshot(source, catalog)
       const freshestObservedAt =
-        catalog?.freshest_observed_at ?? source.last_synced_at
+        source.sync_status === "error"
+          ? source.last_synced_at
+          : (catalog?.freshest_observed_at ?? source.last_synced_at)
       const freshnessHours = freshestObservedAt
         ? (this.now().getTime() - new Date(freshestObservedAt).getTime()) /
           3_600_000
         : Number.POSITIVE_INFINITY
-      const status: WorkspaceSourceCoverage["status"] =
-        !hasReadAccess(source.config) || source.sync_status !== "idle"
+      const status: WorkspaceSourceCoverage["status"] = !hasAuthorizedRead
+        ? "unavailable"
+        : source.sync_status === "syncing"
           ? "unavailable"
           : catalog?.profile_status === "drifted"
             ? "schema_drift"
-            : freshnessHours > input.maximumFreshnessHours
-              ? "stale"
-              : "checked"
+            : !hasCompleteSnapshot
+              ? "unavailable"
+              : freshnessHours > input.maximumFreshnessHours
+                ? "stale"
+                : "checked"
+      const syncStateNotice =
+        source.sync_status === "error"
+          ? "Latest source sync failed; coverage is based on the last-known-good snapshot."
+          : undefined
+      const unavailableReason = !hasAuthorizedRead
+        ? "Source is not connected with read permission."
+        : source.sync_status === "syncing"
+          ? "Source sync is still running; a completed snapshot is not available."
+          : catalog?.profile_status !== "ready"
+            ? "Source data catalog is not ready."
+            : "Source data changed after the last completed sync."
       return {
         sourceId: source.id,
         sourceKey: source.source_key,
@@ -324,14 +359,11 @@ export class SupabaseWorkspaceDataStore implements WorkspaceDataStore {
         freshestObservedAt,
         ...(status === "unavailable"
           ? {
-              error: !hasReadAccess(source.config)
-                ? "Source is not connected with read permission."
-                : (source.last_sync_error ??
-                  (source.sync_status === "syncing"
-                    ? "Source sync is still running."
-                    : "Source sync is unavailable.")),
+              error: unavailableReason,
             }
-          : {}),
+          : syncStateNotice
+            ? { error: syncStateNotice }
+            : {}),
       }
     })
   }
@@ -343,6 +375,27 @@ function hasReadAccess(config: Record<string, unknown>): boolean {
     access.success &&
     access.data.status === "connected" &&
     access.data.permissions.read
+  )
+}
+
+function hasCompleteReadableSnapshot(
+  source: z.infer<typeof sourceRowSchema>,
+  catalog: z.infer<typeof sourceCatalogRowSchema> | undefined
+): boolean {
+  const sync = connectorSyncConfigSchema.safeParse(source.config.sync ?? {})
+  if (
+    source.sync_status === "syncing" ||
+    catalog?.profile_status !== "ready" ||
+    !catalog.freshest_observed_at ||
+    !sync.success ||
+    sync.data.cursor !== null ||
+    !source.last_synced_at
+  ) {
+    return false
+  }
+  return (
+    new Date(catalog.freshest_observed_at).getTime() <=
+    new Date(source.last_synced_at).getTime()
   )
 }
 
