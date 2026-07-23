@@ -22,7 +22,7 @@ import {
 
 export const contextIndexRpcNames = {
   prepare: "prepare_context_index_work_v1",
-  claim: "claim_context_index_work_v1",
+  claim: "claim_context_index_replace_v1",
   claimAddBatch: "claim_context_index_add_batch_v1",
   claimCleanup: "claim_context_index_cleanup_v1",
   claimProcessing: "claim_context_index_processing_v1",
@@ -156,6 +156,24 @@ const claimSchema = z
         code: z.ZodIssueCode.custom,
         path: ["canonicalPayload"],
         message: "Add and replace claims require canonical projection data.",
+      })
+    }
+    if (claim.operation === "add" && claim.providerDocumentId !== null) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["providerDocumentId"],
+        message: "Add claims cannot contain a provider document identifier.",
+      })
+    }
+    if (
+      (claim.operation === "replace" || claim.operation === "delete") &&
+      claim.providerDocumentId === null
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["providerDocumentId"],
+        message:
+          "Replace and delete claims require a provider document identifier.",
       })
     }
   })
