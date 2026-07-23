@@ -1114,7 +1114,7 @@ describe("interactive TUI", () => {
     expect(stdout.value).toContain("Evidence & freshness")
     expect(stdout.value).toContain("Assumptions")
     expect(stdout.value).toContain("Activity & history")
-    expect(stdout.value).toContain("Context Packet")
+    expect(stdout.value).toContain("Context & evidence")
     expect(stdout.value).toContain("Recommendation created")
   })
 

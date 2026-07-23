@@ -59,19 +59,18 @@ describe("terminal renderer", () => {
     ).toBe(true)
   })
 
-  it("retains every known detail section and unknown nested field", () => {
+  it("renders a bounded review projection for work-item details", () => {
     const output = renderHumanResult(completeDetail(), { width: 120 })
 
     for (const section of [
-      "Item",
-      "Context Packet",
+      "Work item",
       "Recommendation",
-      "Evidence",
+      "Context & evidence",
+      "Context retrieval",
       "Draft",
       "Decision",
-      "Attempt",
-      "Audit Events",
-      "futureSection",
+      "Execution outcome",
+      "Recent activity",
     ]) {
       expect(output).toContain(section)
     }
@@ -85,12 +84,112 @@ describe("terminal renderer", () => {
       "policy-marker",
       "result-marker",
       "audit-marker",
-      "future-marker",
     ]) {
       expect(output).toContain(marker)
     }
     expect(output).toContain(itemId)
     expect(output).toContain(draftId)
+    expect(output).toContain("Full structured detail")
+    expect(output).not.toContain("future-marker")
+  })
+
+  it("bounds a large real-shaped work detail without printing raw context payloads", () => {
+    const rawPayloadMarker = "raw-provider-payload-should-not-render"
+    const output = renderHumanResult(
+      {
+        ...completeDetail(),
+        contextPacket: {
+          ...completeDetail().contextPacket,
+          sources: Array.from({ length: 2_000 }, (_, index) => ({
+            source: "shiphero",
+            recordId: `record-${index}`,
+            payload: `${rawPayloadMarker}-${index}-${"x".repeat(1_000)}`,
+          })),
+          facts: Object.fromEntries(
+            Array.from({ length: 1_000 }, (_, index) => [
+              `field-${index}`,
+              `${rawPayloadMarker}-${index}`,
+            ])
+          ),
+          operationalContext: {
+            provider: "supermemory",
+            status: "complete",
+            fallbackReason: null,
+            bounds: {
+              maximumResults: 5,
+              maximumCharacters: 12_000,
+              maximumTokens: 4_000,
+              maximumAgeHours: 8_760,
+              minimumConfidence: 0.72,
+              timeoutMs: 2_000,
+            },
+            resultCount: 5,
+            characterCount: 11_500,
+            tokenEstimate: 3_800,
+            latencyMs: 125,
+            citations: Array.from({ length: 5 }, (_, index) => ({
+              providerReference: `provider-${index}`,
+              canonicalRecordId: `record-${index}`,
+              sourceKey: "shiphero",
+              rank: index + 1,
+            })),
+          },
+        },
+        evidence: {
+          ...completeDetail().evidence,
+          evidence: Array.from({ length: 1_000 }, (_, index) => ({
+            recordId: `evidence-${index}`,
+            payload: `${rawPayloadMarker}-${index}`,
+          })),
+        },
+        auditEvents: Array.from({ length: 1_000 }, (_, index) => ({
+          id: `audit-${index}`,
+          eventType: "context_loaded",
+          summary: `Loaded record ${index}`,
+          payload: `${rawPayloadMarker}-${index}-${"y".repeat(1_000)}`,
+        })),
+      },
+      { width: 120 }
+    )
+
+    expect(output.split("\n").length).toBeLessThanOrEqual(240)
+    expect(Buffer.byteLength(output)).toBeLessThanOrEqual(24_000)
+    expect(output).not.toContain(`${rawPayloadMarker}-999`)
+    expect(output).toContain("… +1994 more")
+    expect(output).toContain("Maximum results")
+    expect(output).toContain("Maximum characters")
+    expect(output).toContain("Maximum tokens")
+    expect(output).toContain("Maximum age (hours)")
+    expect(output).toContain("Minimum confidence")
+    expect(output).toContain("Timeout (ms)")
+    expect(output).toContain("Latency (ms)")
+    expect(output).toContain("Full structured detail")
+  })
+
+  it.each([
+    ["empty", "no_matches"],
+    ["timeout", "provider_timeout"],
+    ["unavailable", "provider_not_operational"],
+    ["failed", "provider_request_failed"],
+    ["disabled", "context_off"],
+  ])("keeps %s Context and its fallback explicit", (status, fallbackReason) => {
+    const output = renderHumanResult(
+      {
+        ...completeDetail(),
+        contextPacket: {
+          ...completeDetail().contextPacket,
+          operationalContext: {
+            provider: status === "disabled" ? "off" : "supermemory",
+            status,
+            fallbackReason,
+          },
+        },
+      },
+      { width: 100 }
+    )
+
+    expect(output).toContain(status)
+    expect(output).toContain(fallbackReason)
   })
 
   it("fits nested data from 40 through 200 columns without truncating values", () => {
