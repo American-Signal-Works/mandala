@@ -1,5 +1,6 @@
 BEGIN;
 SELECT plan(46);
+SELECT set_config('test.provider_worker_now', now()::TEXT, true);
 
 SELECT has_table('public', 'context_index_operation_audits', 'service operation audits exist');
 SELECT has_function('public', 'accept_context_index_work_v1', ARRAY['text','uuid','text','timestamp with time zone'], 'provider acceptance RPC exists');
@@ -48,7 +49,7 @@ INSERT INTO public.external_records(
   'f2000000-0000-4000-8000-000000000001',
   'f3000000-0000-4000-8000-000000000001',
   'vendor_alias', 'alias-1', '{"alias":"ACME","canonical":"Acme Supply","secret":"excluded"}',
-  '2026-07-18 04:00:00+00'
+  current_setting('test.provider_worker_now')::TIMESTAMPTZ
 );
 
 SELECT set_config('request.jwt.claim.sub', '', true);
@@ -57,19 +58,20 @@ SELECT throws_ok(
   $$SELECT public.configure_context_index_operations_v1(
     'f2000000-0000-4000-8000-000000000001', 'ready', true,
     1, 4, 10, 10000, 'Must not activate without a fresh provider probe.',
-    '2026-07-18 04:01:00+00'
+    current_setting('test.provider_worker_now')::TIMESTAMPTZ + INTERVAL '1 minute'
   )$$,
   '55000', 'context_provider_health_required', 'activation requires fresh live provider health'
 );
 SELECT lives_ok(
   $$SELECT public.reserve_context_provider_health_v1(
-    '2026-07-18 04:00:58+00'
+    current_setting('test.provider_worker_now')::TIMESTAMPTZ + INTERVAL '58 seconds'
   )$$,
   'health traffic is reserved before the external probe'
 );
 SELECT lives_ok(
   $$SELECT public.record_context_provider_health_v1(
-    'healthy', 'provider_ready', '2026-07-18 04:00:59+00'
+    'healthy', 'provider_ready',
+    current_setting('test.provider_worker_now')::TIMESTAMPTZ + INTERVAL '59 seconds'
   )$$,
   'service health probe is persisted before activation'
 );
@@ -77,17 +79,18 @@ SELECT lives_ok(
   $$SELECT public.configure_context_index_operations_v1(
     'f2000000-0000-4000-8000-000000000001', 'ready', true,
     100000, 4, 10, 10000, 'Allow a policy-governed full-corpus provider sync.',
-    '2026-07-18 04:01:00+00'
+    current_setting('test.provider_worker_now')::TIMESTAMPTZ + INTERVAL '1 minute'
   )$$,
   'checked service operation supports a bounded full-corpus admission ceiling'
 );
-SELECT is(jsonb_array_length(public.claim_context_index_work_v1('provider-worker', 1, 60, '2026-07-18 04:01:01+00')->'claims'), 1, 'dispatch claims one bounded record');
+SELECT is(jsonb_array_length(public.claim_context_index_work_v1('provider-worker', 1, 60, current_setting('test.provider_worker_now')::TIMESTAMPTZ + INTERVAL '61 seconds')->'claims'), 1, 'dispatch claims one bounded record');
 SELECT ok((SELECT dispatch_started_at IS NOT NULL FROM public.context_index_outbox WHERE canonical_record_id = 'f4000000-0000-4000-8000-000000000001'), 'dispatch start is durable before the provider call');
 SELECT throws_ok(
   $$SELECT public.accept_context_index_work_v1(
     'wrong-worker',
     (SELECT lease_id FROM public.context_index_outbox WHERE canonical_record_id = 'f4000000-0000-4000-8000-000000000001'),
-    'provider-doc-1', '2026-07-18 04:01:02+00'
+    'provider-doc-1',
+    current_setting('test.provider_worker_now')::TIMESTAMPTZ + INTERVAL '62 seconds'
   )$$,
   '40001', 'context_index_lease_not_owned_or_expired', 'another worker cannot accept the lease'
 );
@@ -95,7 +98,8 @@ SELECT is(
   public.accept_context_index_work_v1(
     'provider-worker',
     (SELECT lease_id FROM public.context_index_outbox WHERE canonical_record_id = 'f4000000-0000-4000-8000-000000000001'),
-    'provider-doc-1', '2026-07-18 04:01:02+00'
+    'provider-doc-1',
+    current_setting('test.provider_worker_now')::TIMESTAMPTZ + INTERVAL '62 seconds'
   )->>'status',
   'awaiting_provider', 'queued provider response persists as awaiting work'
 );
@@ -103,7 +107,10 @@ SELECT is((SELECT delivery_state FROM public.context_index_outbox WHERE canonica
 SELECT is((SELECT status FROM public.context_index_ledger WHERE canonical_record_id = 'f4000000-0000-4000-8000-000000000001'), 'processing', 'ledger exposes provider processing truthfully');
 SELECT ok(
   (WITH result AS (
-    SELECT public.claim_context_index_processing_v1('provider-worker', 1, 60, '2026-07-18 04:01:03+00') AS value
+    SELECT public.claim_context_index_processing_v1(
+      'provider-worker', 1, 60,
+      current_setting('test.provider_worker_now')::TIMESTAMPTZ + INTERVAL '63 seconds'
+    ) AS value
   ) SELECT jsonb_array_length(value->'claims') = 1 AND NOT (value->'claims'->0 ? 'canonicalPayload') FROM result),
   'later heartbeat claims one read-only poll without canonical payload'
 );
@@ -112,17 +119,18 @@ SELECT is(
   public.defer_context_index_processing_v1(
     'provider-worker',
     (SELECT lease_id FROM public.context_index_outbox WHERE canonical_record_id = 'f4000000-0000-4000-8000-000000000001'),
-    'processing', '2026-07-18 04:01:04+00'
+    'processing',
+    current_setting('test.provider_worker_now')::TIMESTAMPTZ + INTERVAL '64 seconds'
   )->>'status',
   'awaiting_provider', 'processing status schedules only another read-only poll'
 );
-SELECT is(jsonb_array_length(public.claim_context_index_processing_v1('provider-worker', 1, 60, '2026-07-18 04:01:20+00')->'claims'), 1, 'deferred provider work is pollable again');
+SELECT is(jsonb_array_length(public.claim_context_index_processing_v1('provider-worker', 1, 60, current_setting('test.provider_worker_now')::TIMESTAMPTZ + INTERVAL '80 seconds')->'claims'), 1, 'deferred provider work is pollable again');
 SELECT is(
   public.complete_context_index_work_v1(
     'provider-worker',
     (SELECT lease_id FROM public.context_index_outbox WHERE canonical_record_id = 'f4000000-0000-4000-8000-000000000001'),
     '{"providerDocumentId":"provider-doc-1","estimatedCostMicrounits":0}',
-    '2026-07-18 04:01:21+00'
+    current_setting('test.provider_worker_now')::TIMESTAMPTZ + INTERVAL '81 seconds'
   )->>'status',
   'completed', 'done status uses the existing completion fence'
 );
@@ -140,14 +148,15 @@ WHERE id = 'f4000000-0000-4000-8000-000000000001';
 UPDATE public.context_index_operation_controls
 SET daily_operation_cap = 1, daily_cost_cap_microunits = 1
 WHERE company_id = 'f2000000-0000-4000-8000-000000000001';
-SELECT is(jsonb_array_length(public.claim_context_index_work_v1('provider-worker', 1, 60, '2026-07-18 04:01:30+00')->'claims'), 0, 'spent ingestion allowance cannot claim cleanup through the normal path');
-SELECT is(jsonb_array_length(public.claim_context_index_cleanup_v1('provider-worker', 1, 60, '2026-07-18 04:01:30+00')->'claims'), 0, 'cleanup respects the shared per-minute provider limit');
-SELECT is(jsonb_array_length(public.claim_context_index_cleanup_v1('provider-worker', 1, 60, '2026-07-18 04:02:21+00')->'claims'), 1, 'cleanup bypasses exhausted spend allowance after request capacity resets');
+SELECT is(jsonb_array_length(public.claim_context_index_work_v1('provider-worker', 1, 60, current_setting('test.provider_worker_now')::TIMESTAMPTZ + INTERVAL '90 seconds')->'claims'), 0, 'spent ingestion allowance cannot claim cleanup through the normal path');
+SELECT is(jsonb_array_length(public.claim_context_index_cleanup_v1('provider-worker', 1, 60, current_setting('test.provider_worker_now')::TIMESTAMPTZ + INTERVAL '90 seconds')->'claims'), 0, 'cleanup respects the shared per-minute provider limit');
+SELECT is(jsonb_array_length(public.claim_context_index_cleanup_v1('provider-worker', 1, 60, current_setting('test.provider_worker_now')::TIMESTAMPTZ + INTERVAL '141 seconds')->'claims'), 1, 'cleanup bypasses exhausted spend allowance after request capacity resets');
 SELECT is(
   public.complete_context_index_work_v1(
     'provider-worker',
     (SELECT lease_id FROM public.context_index_outbox WHERE canonical_record_id = 'f4000000-0000-4000-8000-000000000001' AND operation = 'delete'),
-    '{"estimatedCostMicrounits":0}', '2026-07-18 04:02:22+00'
+    '{"estimatedCostMicrounits":0}',
+    current_setting('test.provider_worker_now')::TIMESTAMPTZ + INTERVAL '142 seconds'
   )->>'deletionConfirmed',
   'true', 'cleanup confirmation drains the provider copy'
 );
@@ -159,14 +168,17 @@ INSERT INTO public.external_records(
   'f2000000-0000-4000-8000-000000000001',
   'f3000000-0000-4000-8000-000000000001',
   'vendor_alias', 'alias-2', '{"alias":"BETA","canonical":"Beta Supply"}',
-  '2026-07-18 04:00:00+00'
+  current_setting('test.provider_worker_now')::TIMESTAMPTZ
 );
 UPDATE public.context_index_operation_controls
 SET canary_record_limit = 2, daily_operation_cap = 10,
     daily_cost_cap_microunits = 10000
 WHERE company_id = 'f2000000-0000-4000-8000-000000000001';
-SELECT is(jsonb_array_length(public.claim_context_index_work_v1('crashing-worker', 1, 60, '2026-07-18 04:03:22+00')->'claims'), 1, 'second dispatch can be claimed after the shared request window resets');
-SELECT public.prepare_context_index_work_v1('2026-07-18 04:04:23+00', 10);
+SELECT is(jsonb_array_length(public.claim_context_index_work_v1('crashing-worker', 1, 60, current_setting('test.provider_worker_now')::TIMESTAMPTZ + INTERVAL '202 seconds')->'claims'), 1, 'second dispatch can be claimed after the shared request window resets');
+SELECT public.prepare_context_index_work_v1(
+  current_setting('test.provider_worker_now')::TIMESTAMPTZ + INTERVAL '263 seconds',
+  10
+);
 SELECT is((SELECT delivery_state FROM public.context_index_outbox WHERE canonical_record_id = 'f4000000-0000-4000-8000-000000000002'), 'needs_reconciliation', 'expired started dispatch is never blindly replayed');
 SELECT is((SELECT safe_error_code FROM public.context_index_outbox WHERE canonical_record_id = 'f4000000-0000-4000-8000-000000000002'), 'dispatch_outcome_unknown', 'crash recovery records a safe bounded reason');
 SELECT is((SELECT status FROM public.context_index_ledger WHERE canonical_record_id = 'f4000000-0000-4000-8000-000000000002'), 'reconcile_required', 'crash recovery keeps ledger state consistent');
@@ -189,7 +201,7 @@ SELECT is(
       'providerDocumentId', 'provider-reconciled-2',
       'status', 'done'
     )),
-    '2026-07-18 04:04:24+00'
+    current_setting('test.provider_worker_now')::TIMESTAMPTZ + INTERVAL '264 seconds'
   )->>'settledCount')::integer,
   1,
   'completed provider inventory evidence settles an outcome-unknown write'
