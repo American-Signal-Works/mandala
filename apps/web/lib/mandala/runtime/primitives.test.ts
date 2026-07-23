@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest"
+import { createValidationResult } from "@workspace/control-plane"
 import type { SkillRule } from "../skills/schema"
 import { applyDeterministicRules, readRuntimePath } from "./primitives"
 
@@ -153,6 +154,12 @@ describe("deterministic runtime primitives", () => {
 
     expect(result.ok).toBe(false)
     expect(result.errors.join(" ")).toContain("divide by zero")
+    expect(result.issues).toEqual([
+      expect.objectContaining({
+        code: "rule:unsafe_division:division_by_zero",
+        kind: "reason",
+      }),
+    ])
     expect(() =>
       readRuntimePath(
         { trigger: {}, data: {}, agent: {}, rules: {}, context: {} },
@@ -160,5 +167,78 @@ describe("deterministic runtime primitives", () => {
       )
     ).toThrow("Unsafe runtime path")
     expect(({} as Record<string, unknown>).polluted).toBeUndefined()
+  })
+
+  it("uses rule identity for warnings instead of deriving codes from wording", () => {
+    const result = applyDeterministicRules({
+      rules: [
+        {
+          id: "inventory_review",
+          operation: "threshold",
+          value: { path: "data.quantity" },
+          operator: "lt",
+          threshold: 10,
+          output: "rules.review",
+          outcome: {
+            when: "true",
+            effect: "warn",
+            message: "Inventory needs review.",
+          },
+        },
+      ],
+      context: {
+        trigger: {},
+        data: { quantity: 2 },
+        agent: {},
+        rules: {},
+        context: {},
+      },
+    })
+
+    expect(result.issues).toEqual([
+      {
+        code: "rule:inventory_review",
+        message: "Inventory needs review.",
+        kind: "warning",
+      },
+    ])
+  })
+
+  it("keeps maximum-length rule identity inside the validation code bound", () => {
+    const ruleId = `r${"a".repeat(199)}`
+    const result = applyDeterministicRules({
+      rules: [
+        {
+          id: ruleId,
+          operation: "threshold",
+          value: { value: 1 },
+          operator: "lt",
+          threshold: 2,
+          output: "rules.boundary",
+          outcome: {
+            when: "true",
+            effect: "warn",
+            message: "Boundary warning.",
+          },
+        },
+      ],
+      context: {
+        trigger: {},
+        data: {},
+        agent: {},
+        rules: {},
+        context: {},
+      },
+    })
+
+    expect(result.issues[0]?.code).toBe(ruleId)
+    expect(result.issues[0]?.code).toHaveLength(200)
+    expect(() =>
+      createValidationResult({
+        status: "warn",
+        issues: result.issues,
+        suppressRecommendation: false,
+      })
+    ).not.toThrow()
   })
 })

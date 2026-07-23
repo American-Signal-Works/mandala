@@ -4,13 +4,16 @@ import {
   permissionForWorkflowDecision,
   type CompanyRole,
   type ContextPacketProvenance,
+  type ValidationResult,
+  type ValidationStatus,
 } from "@workspace/control-plane";
 import type { WorkflowSpec } from "./schema";
 import { hashWorkflowValue, workflowUuidFor } from "./hash";
 
 export type { CompanyRole } from "@workspace/control-plane";
+export type { ValidationIssue, ValidationResult } from "@workspace/control-plane";
 export type ActorType = "user" | "system_agent";
-export type ValidationStatus = "pass" | "warn" | "blocked";
+export type { ValidationStatus } from "@workspace/control-plane";
 export type WorkflowItemStatus = "active" | "blocked" | "approved" | "rejected" | "executed" | "resolved";
 export type DecisionKind = "approve" | "edit" | "reject" | "request_rework";
 
@@ -64,13 +67,6 @@ export type WorkflowEventRecord = {
   validationStatus: ValidationStatus;
   validationResult: ValidationResult;
   createdAt: string;
-};
-
-export type ValidationResult = {
-  status: ValidationStatus;
-  reasons: string[];
-  warnings: string[];
-  suppressRecommendation: boolean;
 };
 
 export type WorkflowItemRecord = {

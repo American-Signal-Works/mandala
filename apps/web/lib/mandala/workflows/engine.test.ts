@@ -128,6 +128,7 @@ describe("procurement fixture workflow", () => {
 
     expect(result.run.status).toBe("waiting_for_approval")
     expect(result.event.validationStatus).toBe("pass")
+    expect(result.event.validationResult.issues).toEqual([])
     expect(result.item?.itemType).toBe("procurement_reorder_review")
     expect(result.contextPacket?.facts).toMatchObject({
       availableInventory: 18,
@@ -198,10 +199,25 @@ describe("procurement fixture workflow", () => {
 
     expect(stale.run.status).toBe("blocked")
     expect(stale.draft).toBeNull()
+    expect(stale.event.validationResult.issues).toContainEqual({
+      code: "source_data_stale",
+      message: "Source data is stale.",
+      kind: "reason",
+    })
     expect(duplicateRisk.run.status).toBe("blocked")
     expect(duplicateRisk.event.validationResult.reasons).toContain(
       "Existing open purchase order covers projected need."
     )
+    expect(duplicateRisk.event.validationResult.issues).toContainEqual({
+      code: "duplicate_open_purchase_order",
+      message: "Existing open purchase order covers projected need.",
+      kind: "reason",
+    })
+    expect(
+      duplicateRisk.auditEvents.find(
+        (event) => event.eventType === "event_validated"
+      )?.payload.validation
+    ).toEqual(duplicateRisk.event.validationResult)
     expect(store.items).toHaveLength(0)
   })
 
@@ -219,6 +235,32 @@ describe("procurement fixture workflow", () => {
     expect(result.item).toBeNull()
     expect(result.recommendation).toBeNull()
     expect(result.draft).toBeNull()
+    expect(result.event.validationResult.issues).toContainEqual({
+      code: "inventory_above_reorder_point",
+      message: "Available inventory is above reorder point.",
+      kind: "reason",
+    })
+  })
+
+  it("keeps sales-spike display text separate from its stable warning code", () => {
+    const result = runProcurementFixtureScenario({
+      store: new WorkflowMemoryStore(),
+      companyId,
+      actorUserId: userId,
+      scenarioId: "sales_spike_warning",
+    })
+
+    expect(result.event.validationResult).toMatchObject({
+      status: "warn",
+      warnings: ["Recent sales spike requires human acknowledgement."],
+      issues: [
+        {
+          code: "sales_spike_acknowledgement_required",
+          message: "Recent sales spike requires human acknowledgement.",
+          kind: "warning",
+        },
+      ],
+    })
   })
 
   it("provides explicit edit and reject fixture paths", () => {

@@ -4,6 +4,7 @@ export const skillSchemaVersion = "mandala.ai/v1" as const
 export const skillCompilerVersion = "1.0.0" as const
 
 const keySchema = z.string().regex(/^[a-z0-9][a-z0-9._-]*$/)
+const ruleKeySchema = keySchema.max(200)
 const fieldKeySchema = z.string().regex(/^[A-Za-z_][A-Za-z0-9_-]*$/)
 const pathSegmentSchema = z.string().regex(/^[A-Za-z0-9_-]+$/)
 const pathSchema = z
@@ -52,7 +53,7 @@ export type SkillExpression =
     }
 
 const ruleBase = z.object({
-  id: keySchema,
+  id: ruleKeySchema,
   outcome: z
     .object({
       when: z.enum(["true", "false"]),

@@ -119,6 +119,36 @@ describe("Mandala workflow API routes", () => {
     expect(persistFixtureRun).not.toHaveBeenCalled()
   })
 
+  it("returns stable validation issues in the event and audit payload", async () => {
+    vi.mocked(persistFixtureRun).mockResolvedValue({
+      duplicate: false,
+      run: { id: "31000000-0000-0000-0000-000000000011" },
+      eventId: "32000000-0000-0000-0000-000000000011",
+      itemId: null,
+      draftId: null,
+    })
+
+    const response = await runFixture(
+      jsonRequest("/fixtures", {
+        companyId,
+        scenarioId: "stale_inventory",
+      })
+    )
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.event.validationResult.issues).toContainEqual({
+      code: "source_data_stale",
+      message: "Source data is stale.",
+      kind: "reason",
+    })
+    expect(
+      body.auditEvents.find(
+        (event: { eventType?: string }) => event.eventType === "event_validated"
+      )?.payload.validation
+    ).toEqual(body.event.validationResult)
+  })
+
   it("returns durable duplicate references without replaying an in-memory draft", async () => {
     vi.mocked(persistFixtureRun).mockResolvedValue({
       duplicate: true,

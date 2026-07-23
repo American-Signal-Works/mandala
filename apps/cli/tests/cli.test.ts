@@ -866,6 +866,87 @@ describe("CLI commands", () => {
     expect(stdout.value).not.toContain(itemId)
   })
 
+  it("renders bounded validation issues without raw fixture payloads", async () => {
+    const api = fakeApi({
+      runFixture: vi.fn(async () => ({
+        duplicate: false,
+        workflowRun: { id: runId, status: "blocked" },
+        event: {
+          id: "31000000-0000-4000-8000-000000000098",
+          sourceRef: { secret: "raw-source-secret" },
+          payload: { customer: "raw-customer-payload" },
+          validationResult: {
+            status: "blocked",
+            issues: [
+              {
+                code: "source_data_stale",
+                message: "Source data is stale.",
+                kind: "reason",
+              },
+            ],
+            reasons: ["Source data is stale."],
+            warnings: [],
+            suppressRecommendation: true,
+          },
+        },
+        auditEvents: [{ payload: { secret: "raw-audit-secret" } }],
+        item: null,
+        recommendation: null,
+        draft: null,
+      })),
+    })
+
+    expect(
+      await command(
+        ["workflow", "fixture", "run", "stale_inventory", "--json"],
+        api
+      )
+    ).toBe(0)
+    expect(stdout.value).toContain("source_data_stale")
+    expect(stdout.value).toContain("Source data is stale.")
+    expect(stdout.value).not.toContain("raw-source-secret")
+    expect(stdout.value).not.toContain("raw-customer-payload")
+    expect(stdout.value).not.toContain("raw-audit-secret")
+  })
+
+  it("renders validation code and message in human fixture output", async () => {
+    const api = fakeApi({
+      runFixture: vi.fn(async () => ({
+        duplicate: false,
+        workflowRun: { id: runId, status: "blocked" },
+        event: {
+          id: "31000000-0000-4000-8000-000000000097",
+          sourceRef: { secret: "human-raw-source-secret" },
+          validationResult: {
+            status: "blocked",
+            issues: [
+              {
+                code: "source_data_stale",
+                message: "Source data is stale.",
+                kind: "reason",
+              },
+            ],
+            reasons: ["Source data is stale."],
+            warnings: [],
+            suppressRecommendation: true,
+          },
+        },
+        auditEvents: [{ payload: { secret: "human-raw-audit-secret" } }],
+        item: null,
+        recommendation: null,
+        draft: null,
+      })),
+    })
+
+    expect(
+      await command(["workflow", "fixture", "run", "stale_inventory"], api)
+    ).toBe(0)
+    expect(stdout.value).toContain("source_data_stale")
+    expect(stdout.value).toContain("Source data is stale.")
+    expect(stdout.value).not.toContain("human-raw-source-secret")
+    expect(stdout.value).not.toContain("human-raw-audit-secret")
+  })
+
   it("keeps deterministic parse local and hashes the phrase instead of argv", async () => {
     const api = fakeApi()
 

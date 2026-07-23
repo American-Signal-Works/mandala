@@ -1,4 +1,5 @@
 import type { BaseCheckpointSaver } from "@langchain/langgraph"
+import { createValidationResult } from "@workspace/control-plane"
 import type { CompiledAgentManifest } from "../skills/compiler"
 import {
   WorkflowMemoryStore,
@@ -249,12 +250,10 @@ function createInitialEvent(
     },
     freshnessState: "unknown",
     validationStatus: "pass",
-    validationResult: {
+    validationResult: createValidationResult({
       status: "pass",
-      reasons: [],
-      warnings: [],
       suppressRecommendation: false,
-    },
+    }),
     createdAt,
   }
 }
@@ -511,15 +510,11 @@ function workflowRunStatus(state: RuntimeState): WorkflowRunRecord["status"] {
 
 function runtimeValidationResult(state: RuntimeState): ValidationResult {
   const status = validationStatus(state)
-  return {
+  return createValidationResult({
     status,
-    reasons: uniqueStrings([
-      ...(state.ruleResult?.messages ?? []),
-      ...state.errors,
-    ]),
-    warnings: [...state.warnings],
+    issues: state.validationIssues,
     suppressRecommendation: state.status === "suppressed",
-  }
+  })
 }
 
 function validationStatus(state: RuntimeState): ValidationResult["status"] {
@@ -749,8 +744,4 @@ function findLast<T>(
     if (predicate(record)) return record
   }
   return null
-}
-
-function uniqueStrings(values: string[]): string[] {
-  return [...new Set(values)]
 }

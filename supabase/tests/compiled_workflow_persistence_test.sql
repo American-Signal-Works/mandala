@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(32);
+SELECT plan(33);
 
 INSERT INTO auth.users (
   id,
@@ -316,8 +316,8 @@ SELECT jsonb_build_object(
     "source_ref":{},
     "payload":{"manifestDigest":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","trigger":{"id":"manual_test","kind":"manual","input":{"sku":"COFFEE-001"}}},
     "freshness_state":"fresh",
-    "validation_status":"pass",
-    "validation_result":{"status":"pass","reasons":[],"warnings":[],"suppressRecommendation":false},
+    "validation_status":"warn",
+    "validation_result":{"status":"warn","issues":[{"code":"rule:recent_sales_spike","message":"Recent sales spike requires human acknowledgement.","kind":"warning"}],"reasons":[],"warnings":["Recent sales spike requires human acknowledgement."],"suppressRecommendation":false},
     "created_at":"2026-07-14T03:00:00Z"
   }'::JSONB || jsonb_build_object('workflow_id', workflow.id),
   'item', '{
@@ -394,6 +394,19 @@ SELECT jsonb_build_object(
     "updated_at":"2026-07-14T03:00:00Z"
   }'::JSONB,
   'audit_events', '[
+    {
+      "id":"8a000000-0000-0000-0000-000000000002",
+      "company_id":"82000000-0000-0000-0000-000000000001",
+      "actor_type":"user",
+      "actor_id":"81000000-0000-0000-0000-000000000001",
+      "workflow_run_id":"83000000-0000-0000-0000-000000000001",
+      "workflow_item_id":"85000000-0000-0000-0000-000000000001",
+      "event_type":"event_validated",
+      "summary":"Validated compiled workflow event: warn.",
+      "payload":{"validation":{"status":"warn","issues":[{"code":"rule:recent_sales_spike","message":"Recent sales spike requires human acknowledgement.","kind":"warning"}],"reasons":[],"warnings":["Recent sales spike requires human acknowledgement."],"suppressRecommendation":false}},
+      "trace":{},
+      "created_at":"2026-07-14T03:00:00Z"
+    },
     {
       "id":"8a000000-0000-0000-0000-000000000001",
       "company_id":"82000000-0000-0000-0000-000000000001",
@@ -487,6 +500,22 @@ SELECT is(
   ),
   '{"items":1,"contexts":1,"recommendations":1,"evidence":1,"drafts":1}'::JSONB,
   'the complete existing workflow review graph is inserted'
+);
+SELECT is(
+  (
+    SELECT jsonb_build_object(
+      'eventIssue', event.validation_result #>> '{issues,0,code}',
+      'auditIssue', audit.payload #>> '{validation,issues,0,code}',
+      'legacyWarning', event.validation_result #>> '{warnings,0}'
+    )
+    FROM public.workflow_events event
+    JOIN public.workflow_audit_events audit
+      ON audit.workflow_run_id = event.workflow_run_id
+     AND audit.event_type = 'event_validated'
+    WHERE event.id = '84000000-0000-0000-0000-000000000001'
+  ),
+  '{"eventIssue":"rule:recent_sales_spike","auditIssue":"rule:recent_sales_spike","legacyWarning":"Recent sales spike requires human acknowledgement."}'::JSONB,
+  'structured validation issues and legacy messages persist in event and audit JSONB'
 );
 SELECT is(
   (

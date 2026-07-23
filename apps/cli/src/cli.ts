@@ -7,6 +7,7 @@ import {
   applyJsonPointerAssignments,
   createControlIntentCandidate,
   jsonObjectSchema,
+  normalizeValidationResult,
   parseControlPhrase,
   parseJsonPointerAssignment,
   projectControlIntentForAudit,
@@ -1519,6 +1520,7 @@ function fixtureOutput(result: unknown): unknown {
   if (!source) return {}
   const duplicate = source.duplicate === true
   const workflowRun = asRecord(source.workflowRun)
+  const event = asRecord(source.event)
   const item = asRecord(source.item)
   const recommendation = asRecord(source.recommendation)
   const draft = asRecord(source.draft)
@@ -1536,6 +1538,7 @@ function fixtureOutput(result: unknown): unknown {
         }
       : null,
     eventId: firstUuid(source.eventId, asRecord(source.event)?.id) ?? null,
+    validation: fixtureValidationOutput(event),
     item:
       !duplicate && item
         ? {
@@ -1566,6 +1569,27 @@ function fixtureOutput(result: unknown): unknown {
             status: draft.status,
           }
         : null,
+  }
+}
+
+function fixtureValidationOutput(
+  event: Record<string, unknown> | undefined
+): unknown {
+  const raw = event?.validationResult ?? event?.validation_result
+  if (raw === undefined) return null
+  try {
+    const validation = normalizeValidationResult(raw)
+    return {
+      status: validation.status,
+      suppressRecommendation: validation.suppressRecommendation,
+      issues: validation.issues.map(({ code, message, kind }) => ({
+        code,
+        message,
+        kind,
+      })),
+    }
+  } catch {
+    return null
   }
 }
 

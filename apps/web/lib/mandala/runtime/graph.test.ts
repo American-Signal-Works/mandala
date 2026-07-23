@@ -61,6 +61,45 @@ describe("generic workflow runtime", () => {
     expect(result.output.errors).toContain(
       "Sandbox blocked a durable review persistence path."
     )
+    expect(result.output.validationIssues).toContainEqual({
+      code: "sandbox_persistence_blocked",
+      message: "Sandbox blocked a durable review persistence path.",
+      kind: "reason",
+    })
+  })
+
+  it("uses a source-owned code when a required capability is unavailable", async () => {
+    const unavailableManifest = {
+      ...manifest,
+      capabilityBindings: manifest.capabilityBindings.map((binding, index) =>
+        index === 0 ? { ...binding, healthy: false } : binding
+      ),
+    }
+    const runtime = createGenericWorkflowRuntime({
+      manifest: unavailableManifest,
+      dependencies: {
+        capabilityProvider: { load: vi.fn() },
+        contextRetriever: testContextRetriever(),
+        agentJudgment: vi.fn(),
+        reviewPersister: vi.fn(),
+      },
+    })
+
+    const result = await runtime.start({
+      companyId: TEST_CONTEXT_COMPANY_ID,
+      actorId: "actor-capability",
+      workflowDefinitionId: "workflow-capability",
+      workflowRunId: "run-capability",
+      manifestDigest: unavailableManifest.manifestDigest,
+      mode: "mock",
+      trigger: { id: "manual", kind: "manual", input: {} },
+    })
+
+    expect(result.output.validationIssues).toContainEqual({
+      code: "capability_unavailable",
+      message: "Capability catalog is unavailable.",
+      kind: "reason",
+    })
   })
   it("checkpoints at human approval and resumes without rerunning judgment", async () => {
     const checkpointer = new MemorySaver()
@@ -265,7 +304,7 @@ describe("generic workflow runtime", () => {
           proposal: { selectedSku: "DEMO-1" },
           rationale: "Canonical data supports a review.",
           confidence: 0.8,
-          warnings: [],
+          warnings: ["Agent confidence requires review."],
           context: {},
         }
       }
@@ -316,6 +355,11 @@ describe("generic workflow runtime", () => {
       "persist_review",
     ])
     expect(result.output.contextRetrieval).toEqual(retrieval)
+    expect(result.output.validationIssues).toContainEqual({
+      code: "agent_judgment_warning",
+      message: "Agent confidence requires review.",
+      kind: "warning",
+    })
     expect(retrieve).toHaveBeenCalledOnce()
     expect(judgment).toHaveBeenCalledOnce()
   })
@@ -374,6 +418,12 @@ describe("generic workflow runtime", () => {
       expect(judgment).toHaveBeenCalledOnce()
       expect(started.output.contextRetrieval).toEqual(result)
       expect(started.output.warnings.length > 0).toBe(expectsWarning)
+      expect(
+        started.output.validationIssues.some(
+          (issue) =>
+            issue.code === `operational_context_${fallbackReason ?? "failed"}`
+        )
+      ).toBe(expectsWarning)
     }
   )
 
@@ -416,7 +466,92 @@ describe("generic workflow runtime", () => {
       "Operational Context scope does not match this workspace.",
     ])
     expect(result.output.contextRetrieval).toBeNull()
+    expect(result.output.validationIssues).toContainEqual({
+      code: "operational_context_scope_mismatch",
+      message: "Operational Context scope does not match this workspace.",
+      kind: "reason",
+    })
     expect(judgment).not.toHaveBeenCalled()
+  })
+
+  it("bounds action failure identity and keeps its display message fixed", async () => {
+    const runFailure = async (code: string, workflowRunId: string) => {
+      const runtime = createGenericWorkflowRuntime({
+        manifest,
+        dependencies: {
+          capabilityProvider: {
+            load: async () => ({
+              data: {
+                catalog: {
+                  sku: "DEMO-1",
+                  quantity: 2,
+                  target: 21,
+                  pack: 6,
+                },
+              },
+              sourceRefs: [],
+            }),
+          },
+          contextRetriever: testContextRetriever(),
+          agentJudgment: async () => ({
+            proposal: { selectedSku: "DEMO-1" },
+            rationale: "Candidate selected.",
+            confidence: 0.8,
+            warnings: [],
+            context: {},
+          }),
+          reviewPersister: async () => ({
+            workflowItemId: `item-${workflowRunId}`,
+            recommendationId: `recommendation-${workflowRunId}`,
+            evidenceId: `evidence-${workflowRunId}`,
+            actionDraftId: `draft-${workflowRunId}`,
+          }),
+          actionHandler: async () => ({
+            attemptId: `attempt-${workflowRunId}`,
+            status: "failed",
+            output: {},
+            code,
+          }),
+        },
+      })
+      await runtime.start({
+        companyId: TEST_CONTEXT_COMPANY_ID,
+        actorId: "actor-action-failure",
+        workflowDefinitionId: "workflow-action-failure",
+        workflowRunId,
+        manifestDigest: manifest.manifestDigest,
+        mode: "mock",
+        sandboxEnabled: false,
+        trigger: { id: "manual", kind: "manual", input: {} },
+      })
+      return runtime.resume({
+        workflowRunId,
+        decision: {
+          decisionId: `decision-${workflowRunId}`,
+          decision: "approve",
+        },
+      })
+    }
+
+    const stable = await runFailure("executor_timeout", "run-action-stable")
+    expect(stable.output.validationIssues).toContainEqual({
+      code: "executor_timeout",
+      message: "Action execution failed.",
+      kind: "reason",
+    })
+
+    const unsafeCode = "ghp_examplecredential123"
+    const unsafe = await runFailure(unsafeCode, "run-action-unsafe")
+    const publicValidation = {
+      errors: unsafe.output.errors,
+      issues: unsafe.output.validationIssues,
+    }
+    expect(publicValidation.issues).toContainEqual({
+      code: "action_execution_failed",
+      message: "Action execution failed.",
+      kind: "reason",
+    })
+    expect(JSON.stringify(publicValidation)).not.toContain(unsafeCode)
   })
 
   it("uses identical fixed retrieval evidence in Sandbox On and Sandbox Off", async () => {

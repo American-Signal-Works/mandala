@@ -1,6 +1,5 @@
 import {
   WorkflowMemoryStore,
-  type ValidationResult,
   type WorkflowActionDraftRecord,
   type WorkflowAuditEventRecord,
   type WorkflowContextPacketRecord,
@@ -12,6 +11,11 @@ import {
   type WorkflowRecommendationRecord,
   type WorkflowRunRecord,
 } from "../engine"
+import {
+  createValidationResult,
+  type ValidationIssue,
+  type ValidationResult,
+} from "@workspace/control-plane"
 import { hashWorkflowValue, workflowUuidFor } from "../hash"
 import { compileWorkflowSkillMarkdown, type WorkflowSpec } from "../schema"
 import {
@@ -347,40 +351,57 @@ function createRun(
 function validateScenario(
   scenario: ProcurementFixtureScenario
 ): ValidationResult {
-  const reasons: string[] = []
-  const warnings: string[] = []
+  const issues: ValidationIssue[] = []
   const availableInventory =
     scenario.sku.inventoryOnHand + scenario.sku.inboundUnits
 
   if (scenario.sku.dataFreshnessHours > 72)
-    reasons.push("Source data is stale.")
+    issues.push({
+      code: "source_data_stale",
+      message: "Source data is stale.",
+      kind: "reason",
+    })
   if (scenario.sku.duplicateOpenOrderUnits > 0)
-    reasons.push("Existing open purchase order covers projected need.")
+    issues.push({
+      code: "duplicate_open_purchase_order",
+      message: "Existing open purchase order covers projected need.",
+      kind: "reason",
+    })
   if (availableInventory > scenario.sku.reorderPoint)
-    reasons.push("Available inventory is above reorder point.")
+    issues.push({
+      code: "inventory_above_reorder_point",
+      message: "Available inventory is above reorder point.",
+      kind: "reason",
+    })
   if (scenario.sku.recentSpikeMultiplier >= 1.5)
-    warnings.push("Recent sales spike requires human acknowledgement.")
+    issues.push({
+      code: "sales_spike_acknowledgement_required",
+      message: "Recent sales spike requires human acknowledgement.",
+      kind: "warning",
+    })
 
   if (
     scenario.sku.dataFreshnessHours > 72 ||
     scenario.sku.duplicateOpenOrderUnits > 0
   ) {
-    return {
+    return createValidationResult({
       status: "blocked",
-      reasons,
-      warnings,
+      issues,
       suppressRecommendation: true,
-    }
+    })
   }
   if (availableInventory > scenario.sku.reorderPoint) {
-    return { status: "pass", reasons, warnings, suppressRecommendation: true }
+    return createValidationResult({
+      status: "pass",
+      issues,
+      suppressRecommendation: true,
+    })
   }
-  return {
-    status: warnings.length > 0 ? "warn" : "pass",
-    reasons,
-    warnings,
+  return createValidationResult({
+    status: issues.some((issue) => issue.kind === "warning") ? "warn" : "pass",
+    issues,
     suppressRecommendation: false,
-  }
+  })
 }
 
 function createEvent(
