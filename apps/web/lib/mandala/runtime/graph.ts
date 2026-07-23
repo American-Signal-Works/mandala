@@ -11,6 +11,7 @@ import {
   contextRetrievalResultSchema,
   type ContextPacketProvenance,
   type ContextRetrievalResult,
+  type ValidationIssue,
 } from "@workspace/control-plane"
 import type {
   CompiledAgentManifest,
@@ -165,17 +166,31 @@ export function createRuntimeHandlerRegistry(input: {
         (binding) => !binding.granted || !binding.healthy
       )
       if (unavailable.length > 0) {
+        const errors = unavailable.map(
+          (binding) => `Capability ${binding.alias} is unavailable.`
+        )
         return {
           status: "blocked",
-          errors: unavailable.map(
-            (binding) => `Capability ${binding.alias} is unavailable.`
+          errors,
+          validationIssues: appendValidationIssues(
+            state,
+            "reason",
+            "capability_unavailable",
+            errors
           ),
         }
       }
       if (state.manifestDigest !== manifest.manifestDigest) {
+        const errors = ["Workflow run does not match the compiled manifest."]
         return {
           status: "blocked",
-          errors: ["Workflow run does not match the compiled manifest."],
+          errors,
+          validationIssues: appendValidationIssues(
+            state,
+            "reason",
+            "manifest_digest_mismatch",
+            errors
+          ),
         }
       }
       return { status: "bindings_resolved" }
@@ -187,10 +202,17 @@ export function createRuntimeHandlerRegistry(input: {
         bindings: manifest.capabilityBindings,
         allowedTools: toolsFor("load_data"),
       })
+      const warnings = loaded.warnings ?? []
       return {
         data: loaded.data,
         sourceRefs: loaded.sourceRefs,
-        warnings: loaded.warnings ?? [],
+        warnings,
+        validationIssues: appendValidationIssues(
+          state,
+          "warning",
+          "capability_data_warning",
+          warnings
+        ),
         status: "data_loaded",
       }
     },
@@ -199,10 +221,17 @@ export function createRuntimeHandlerRegistry(input: {
         .filter((binding) => binding.access === "read")
         .filter((binding) => !Object.hasOwn(state.data, binding.alias))
       if (missing.length > 0) {
+        const errors = missing.map(
+          (binding) => `Capability ${binding.alias} returned no data.`
+        )
         return {
           status: "blocked",
-          errors: missing.map(
-            (binding) => `Capability ${binding.alias} returned no data.`
+          errors,
+          validationIssues: appendValidationIssues(
+            state,
+            "reason",
+            "capability_data_missing",
+            errors
           ),
         }
       }
@@ -238,22 +267,42 @@ export function createRuntimeHandlerRegistry(input: {
         retrieved.provenance.scope.companyId !== state.companyId ||
         retrieved.provenance.scope.workspaceScopeId !== state.companyId
       ) {
+        const errors = [
+          "Operational Context scope does not match this workspace.",
+        ]
         return {
           status: "blocked",
-          errors: ["Operational Context scope does not match this workspace."],
+          errors,
+          validationIssues: appendValidationIssues(
+            state,
+            "reason",
+            "operational_context_scope_mismatch",
+            errors
+          ),
         }
       }
+      const contextIssues = retrievalIssues(retrieved)
       return {
         contextRetrieval: retrieved,
-        warnings: state.warnings.concat(retrievalWarnings(retrieved)),
+        warnings: state.warnings.concat(
+          contextIssues.map((issue) => issue.message)
+        ),
+        validationIssues: state.validationIssues.concat(contextIssues),
         status: "context_retrieved",
       }
     },
     agent_judgment: async (state) => {
       if (!state.contextRetrieval) {
+        const errors = ["Operational Context retrieval is missing."]
         return {
           status: "blocked",
-          errors: ["Operational Context retrieval is missing."],
+          errors,
+          validationIssues: appendValidationIssues(
+            state,
+            "reason",
+            "operational_context_missing",
+            errors
+          ),
         }
       }
       const judgment = await dependencies.agentJudgment({
@@ -286,14 +335,27 @@ export function createRuntimeHandlerRegistry(input: {
       return {
         agent: judgment,
         warnings: state.warnings.concat(judgment.warnings),
+        validationIssues: appendValidationIssues(
+          state,
+          "warning",
+          "agent_judgment_warning",
+          judgment.warnings
+        ),
         status: "judgment_ready",
       }
     },
     apply_rules: (state) => {
       if (!state.agent) {
+        const errors = ["Agent judgment is missing."]
         return {
           status: "blocked",
-          errors: ["Agent judgment is missing."],
+          errors,
+          validationIssues: appendValidationIssues(
+            state,
+            "reason",
+            "agent_judgment_missing",
+            errors
+          ),
         }
       }
       const result = applyDeterministicRules({
@@ -311,13 +373,23 @@ export function createRuntimeHandlerRegistry(input: {
               : "rules_applied",
         warnings: state.warnings.concat(result.warnings),
         errors: result.errors.concat(result.messages),
+        validationIssues: state.validationIssues.concat(result.issues),
       }
     },
     project_records: (state) => {
       if (!state.ruleResult?.ok) {
+        const errors = state.ruleResult?.errors ?? ["Rule result is missing."]
         return {
           status: "blocked",
-          errors: state.ruleResult?.errors ?? ["Rule result is missing."],
+          errors,
+          validationIssues: state.ruleResult
+            ? state.validationIssues
+            : appendValidationIssues(
+                state,
+                "reason",
+                "rule_result_missing",
+                errors
+              ),
         }
       }
       return {
@@ -331,18 +403,32 @@ export function createRuntimeHandlerRegistry(input: {
     },
     persist_review: async (state) => {
       if (!state.review) {
+        const errors = ["Review projection is missing."]
         return {
           status: "blocked",
-          errors: ["Review projection is missing."],
+          errors,
+          validationIssues: appendValidationIssues(
+            state,
+            "reason",
+            "review_projection_missing",
+            errors
+          ),
         }
       }
       if (
         resolveRuntimeSandboxEnabled(state) &&
         dependencies.mutationBoundary?.persistence !== "ephemeral"
       ) {
+        const errors = ["Sandbox blocked a durable review persistence path."]
         return {
           status: "blocked",
-          errors: ["Sandbox blocked a durable review persistence path."],
+          errors,
+          validationIssues: appendValidationIssues(
+            state,
+            "reason",
+            "sandbox_persistence_blocked",
+            errors
+          ),
         }
       }
       const persistedReview = await dependencies.reviewPersister({
@@ -362,9 +448,16 @@ export function createRuntimeHandlerRegistry(input: {
     },
     human_approval: (state) => {
       if (!state.persistedReview) {
+        const errors = ["Persisted review is missing."]
         return {
           status: "blocked",
-          errors: ["Persisted review is missing."],
+          errors,
+          validationIssues: appendValidationIssues(
+            state,
+            "reason",
+            "persisted_review_missing",
+            errors
+          ),
         }
       }
       const decision = interrupt<
@@ -396,18 +489,32 @@ export function createRuntimeHandlerRegistry(input: {
     },
     execute_action: async (state) => {
       if (!state.review?.draft) {
+        const errors = ["Action draft is missing."]
         return {
           status: "blocked",
-          errors: ["Action draft is missing."],
+          errors,
+          validationIssues: appendValidationIssues(
+            state,
+            "reason",
+            "action_draft_missing",
+            errors
+          ),
         }
       }
       const action = manifest.actions.find(
         (candidate) => candidate.id === state.review!.draft!.action
       )
       if (!action) {
+        const errors = ["Draft references an undeclared action."]
         return {
           status: "blocked",
-          errors: ["Draft references an undeclared action."],
+          errors,
+          validationIssues: appendValidationIssues(
+            state,
+            "reason",
+            "undeclared_action",
+            errors
+          ),
         }
       }
       const actionBindings = manifest.capabilityBindings.filter(
@@ -415,35 +522,65 @@ export function createRuntimeHandlerRegistry(input: {
           candidate.id === action.capability && candidate.access !== "read"
       )
       if (actionBindings.length !== 1) {
+        const errors = [
+          actionBindings.length === 0
+            ? "Action capability binding is unavailable."
+            : "Action must target exactly one frozen connector binding.",
+        ]
         return {
           status: "blocked",
-          errors: [
+          errors,
+          validationIssues: appendValidationIssues(
+            state,
+            "reason",
             actionBindings.length === 0
-              ? "Action capability binding is unavailable."
-              : "Action must target exactly one frozen connector binding.",
-          ],
+              ? "action_capability_binding_unavailable"
+              : "action_capability_binding_ambiguous",
+            errors
+          ),
         }
       }
       const binding = actionBindings[0]!
       if (action.requires_approval && state.status !== "approved") {
+        const errors = ["Action requires a recorded human approval."]
         return {
           status: "blocked",
-          errors: ["Action requires a recorded human approval."],
+          errors,
+          validationIssues: appendValidationIssues(
+            state,
+            "reason",
+            "human_approval_required",
+            errors
+          ),
         }
       }
       if (!dependencies.actionHandler) {
+        const errors = ["No action handler is configured."]
         return {
           status: "blocked",
-          errors: ["No action handler is configured."],
+          errors,
+          validationIssues: appendValidationIssues(
+            state,
+            "reason",
+            "action_handler_missing",
+            errors
+          ),
         }
       }
       if (
         resolveRuntimeSandboxEnabled(state) &&
         dependencies.mutationBoundary?.externalActions !== "simulate"
       ) {
+        const errors = ["Sandbox blocked a live or unclassified action path."]
         return {
           status: "blocked",
-          errors: ["Sandbox blocked a live or unclassified action path."],
+          errors,
+          validationIssues: appendValidationIssues(
+            state,
+            "reason",
+            "sandbox_action_blocked",
+            errors
+          ),
         }
       }
       const actionResult = await dependencies.actionHandler({
@@ -452,16 +589,20 @@ export function createRuntimeHandlerRegistry(input: {
         action,
         binding,
       })
+      const errors =
+        actionResult.status === "succeeded" ? [] : ["Action execution failed."]
       return {
         actionResult,
         status: actionResult.status === "succeeded" ? "executed" : "failed",
-        ...(actionResult.status !== "succeeded"
+        ...(errors.length > 0
           ? {
-              errors: [
-                actionResult.code
-                  ? `Action execution failed (${actionResult.code}).`
-                  : "Action execution failed.",
-              ],
+              errors,
+              validationIssues: appendValidationIssues(
+                state,
+                "reason",
+                safeActionFailureCode(actionResult.code),
+                errors
+              ),
             }
           : {}),
       }
@@ -700,7 +841,7 @@ function defaultAuditEvent(state: RuntimeState): RuntimeAuditEvent {
   }
 }
 
-function retrievalWarnings(result: ContextRetrievalResult): string[] {
+function retrievalIssues(result: ContextRetrievalResult): ValidationIssue[] {
   const { status, fallbackReason } = result.provenance
   if (status === "disabled" || status === "complete" || status === "empty") {
     return []
@@ -716,9 +857,49 @@ function retrievalWarnings(result: ContextRetrievalResult): string[] {
             ? "was rejected by local policy"
             : "failed"
   return [
-    `Operational Context ${reason}; canonical capability data remains authoritative.`,
+    {
+      code: `operational_context_${fallbackReason ?? "failed"}`,
+      message: `Operational Context ${reason}; canonical capability data remains authoritative.`,
+      kind: "warning",
+    },
   ]
 }
+
+function appendValidationIssues(
+  state: RuntimeState,
+  kind: ValidationIssue["kind"],
+  code: string,
+  messages: readonly string[]
+): ValidationIssue[] {
+  return state.validationIssues.concat(
+    messages.map((message) => ({ code, message, kind }))
+  )
+}
+
+function safeActionFailureCode(code: string | undefined): string {
+  return code && publicActionFailureCodes.has(code)
+    ? code
+    : "action_execution_failed"
+}
+
+const publicActionFailureCodes = new Set([
+  "agent_not_active",
+  "approval_invalid",
+  "capability_not_granted",
+  "connector_unhealthy",
+  "execution_context_stale",
+  "execution_in_progress",
+  "execution_input_invalid",
+  "execution_mode_not_allowed",
+  "execution_output_invalid",
+  "executor_internal_error",
+  "executor_not_registered",
+  "executor_timeout",
+  "executor_timeout_outcome_unknown",
+  "idempotency_key_reused",
+  "live_adapter_unavailable",
+  "policy_denied",
+])
 
 function assertSupportedManifest(manifest: CompiledAgentManifest): void {
   const handlers = new Set(manifest.graph.map((node) => node.handler))

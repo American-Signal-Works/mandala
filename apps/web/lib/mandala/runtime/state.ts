@@ -1,5 +1,8 @@
 import { Annotation } from "@langchain/langgraph"
-import type { ContextRetrievalResult } from "@workspace/control-plane"
+import type {
+  ContextRetrievalResult,
+  ValidationIssue,
+} from "@workspace/control-plane"
 
 export type RuntimeMode = "mock" | "dry_run" | "shadow"
 export type RuntimeOperatingMode = "sandbox" | "live"
@@ -100,6 +103,7 @@ export type RuntimeRuleResult = {
   errors: string[]
   warnings: string[]
   messages: string[]
+  issues: ValidationIssue[]
 }
 
 export type RuntimeReviewProjection = {
@@ -198,6 +202,10 @@ export const RuntimeStateAnnotation = Annotation.Root({
     reducer: (_current, update) => update,
     default: () => [],
   }),
+  validationIssues: Annotation<ValidationIssue[]>({
+    reducer: (_current, update) => update,
+    default: () => [],
+  }),
   agent: Annotation<RuntimeAgentJudgment | null>({
     reducer: (_current, update) => update,
     default: () => null,
@@ -268,6 +276,7 @@ export function createRuntimeStartState(
     sourceRefs: [],
     contextRetrieval: null,
     warnings: [],
+    validationIssues: [],
     agent: null,
     ruleResult: null,
     review: null,

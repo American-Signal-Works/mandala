@@ -46,9 +46,9 @@ Returns rows for a collection owned by the current user.
 
 Query parameters:
 
-| Parameter | Default | Purpose |
-| --- | --- | --- |
-| `limit` | `100` | Maximum number of rows to return |
+| Parameter | Default | Purpose                          |
+| --------- | ------- | -------------------------------- |
+| `limit`   | `100`   | Maximum number of rows to return |
 
 ## GET /api/collections/:id/rows/:rowId
 
@@ -109,3 +109,41 @@ Grouped response:
 The aggregate route validates request bodies with Zod. Invalid input returns `400`. Runtime aggregate failures return `500` with an error message.
 
 Collection read routes currently return empty arrays when no rows or fields are found.
+
+## POST /api/mandala/workflows/fixtures
+
+Runs one registered Mandala workflow fixture for an authorized company. The
+response is private and is not cached.
+
+The returned workflow event includes a bounded validation result:
+
+```json
+{
+  "status": "blocked",
+  "issues": [
+    {
+      "code": "source_data_stale",
+      "message": "Source data is stale.",
+      "kind": "reason"
+    }
+  ],
+  "reasons": ["Source data is stale."],
+  "warnings": [],
+  "suppressRecommendation": true
+}
+```
+
+Use `issues[].code` for automation, filtering, and routing. Codes are stable
+identifiers; `message` is reader-facing wording and may change. `kind` is
+either `reason` or `warning`.
+
+The `reasons` and `warnings` arrays remain as compatibility projections for
+existing consumers. New results derive those arrays from `issues`. Historical
+message-only results remain readable and receive a safe
+`legacy_unclassified_reason` or `legacy_unclassified_warning` code when
+normalized.
+
+The same validation object is stored in the workflow event and its
+`event_validated` audit payload. The Mandala CLI fixture command renders only
+the bounded status, suppression state, and code/message issue rows; it does not
+render raw event, audit, source, or customer payloads.

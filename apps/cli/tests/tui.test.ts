@@ -305,7 +305,24 @@ describe("interactive TUI", () => {
         args[1] === "fixture" &&
         args[2] === "run"
       ) {
-        return { ok: true, data: { scenario: args[3], status: "created" } }
+        return {
+          ok: true,
+          data: {
+            scenario: args[3],
+            status: "blocked",
+            validation: {
+              status: "blocked",
+              suppressRecommendation: true,
+              issues: [
+                {
+                  code: "source_data_stale",
+                  message: "Source data is stale.",
+                  kind: "reason",
+                },
+              ],
+            },
+          },
+        }
       }
       return base(args)
     }) as NonNullable<TuiDependencies["execute"]> & ReturnType<typeof vi.fn>
@@ -351,6 +368,8 @@ describe("interactive TUI", () => {
       "clean_reorder",
     ])
     expect(stdout.value).toContain("Open /inbox")
+    expect(stdout.value).toContain("source_data_stale")
+    expect(stdout.value).toContain("Source data is stale.")
   })
 
   it("explains the Mandala Bean Co. test-agent run in the guided picker", async () => {

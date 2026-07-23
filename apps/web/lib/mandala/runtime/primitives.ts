@@ -3,6 +3,10 @@ import type {
   SkillRule,
   SkillValueSource,
 } from "../skills/schema"
+import {
+  identifierSchema,
+  type ValidationIssue,
+} from "@workspace/control-plane"
 import type { RuntimeRuleResult, RuntimeRuleTrace } from "./state"
 
 const allowedRoots = new Set(["trigger", "data", "agent", "rules", "context"])
@@ -30,6 +34,7 @@ export function applyDeterministicRules(input: {
   const errors: string[] = []
   const warnings: string[] = []
   const messages: string[] = []
+  const issues: ValidationIssue[] = []
   let disposition: RuntimeRuleResult["disposition"] = "continue"
 
   for (const rule of input.rules) {
@@ -43,9 +48,20 @@ export function applyDeterministicRules(input: {
         typeof output.value === "boolean" &&
         output.value === (rule.outcome.when === "true")
       ) {
-        if (rule.outcome.effect === "warn") warnings.push(rule.outcome.message)
-        else {
+        if (rule.outcome.effect === "warn") {
+          warnings.push(rule.outcome.message)
+          issues.push({
+            code: ruleValidationCode(rule.id),
+            message: rule.outcome.message,
+            kind: "warning",
+          })
+        } else {
           messages.push(rule.outcome.message)
+          issues.push({
+            code: ruleValidationCode(rule.id),
+            message: rule.outcome.message,
+            kind: "reason",
+          })
           disposition =
             rule.outcome.effect === "block" ? "blocked" : "suppressed"
         }
@@ -62,7 +78,18 @@ export function applyDeterministicRules(input: {
     } catch (error) {
       const message =
         error instanceof Error ? error.message : "Rule execution failed."
-      errors.push(`${rule.id}: ${message}`)
+      const validationMessage = `${rule.id}: ${message}`
+      errors.push(validationMessage)
+      issues.push({
+        code: ruleValidationCode(
+          rule.id,
+          error instanceof RuntimePrimitiveError
+            ? error.code
+            : "execution_failed"
+        ),
+        message: validationMessage,
+        kind: "reason",
+      })
       traces.push({
         ruleId: rule.id,
         operation: rule.operation,
@@ -83,7 +110,20 @@ export function applyDeterministicRules(input: {
     errors,
     warnings,
     messages,
+    issues,
   }
+}
+
+function ruleValidationCode(ruleId: string, detail?: string): string {
+  const candidates = [
+    detail ? `rule:${ruleId}:${detail}` : `rule:${ruleId}`,
+    ruleId,
+  ]
+  return (
+    candidates.find(
+      (candidate) => identifierSchema.safeParse(candidate).success
+    ) ?? "rule_validation_failed"
+  )
 }
 
 export function resolveValueSource(

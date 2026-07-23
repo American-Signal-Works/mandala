@@ -15,6 +15,7 @@ import { runCompiledWorkflowInMemory } from "./memory-runner"
 import {
   TEST_CONTEXT_COMPANY_ID,
   testCompleteContextResult,
+  testContextResult,
   testContextRetriever,
 } from "./context-test-support"
 
@@ -107,6 +108,31 @@ describe("compiled workflow memory runner", () => {
     expect(store.drafts).toHaveLength(1)
   })
 
+  it("persists a source-owned context warning in event and audit validation", async () => {
+    const result = await runProcurement({
+      store: new WorkflowMemoryStore(),
+      scenario: getProcurementFixtureScenario("clean_reorder").sku,
+      manifest: procurementManifest,
+      triggerId: "context-timeout",
+      contextResult: testContextResult({
+        status: "timeout",
+        fallbackReason: "timeout",
+      }),
+    })
+    const issue = {
+      code: "operational_context_timeout",
+      message:
+        "Operational Context timed out; canonical capability data remains authoritative.",
+      kind: "warning",
+    }
+
+    expect(result.event.validationResult.issues).toContainEqual(issue)
+    expect(
+      result.auditEvents.find((event) => event.eventType === "event_validated")
+        ?.payload.validation
+    ).toEqual(result.event.validationResult)
+  })
+
   it.each([
     ["stale_inventory", "blocked"],
     ["no_action", "suppressed"],
@@ -135,6 +161,19 @@ describe("compiled workflow memory runner", () => {
       expect(result.event.validationResult.suppressRecommendation).toBe(
         status === "suppressed"
       )
+      expect(result.event.validationResult.issues).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            code: expect.stringMatching(/^rule:/),
+            kind: "reason",
+          }),
+        ])
+      )
+      expect(
+        result.auditEvents.find(
+          (event) => event.eventType === "event_validated"
+        )?.payload.validation
+      ).toEqual(result.event.validationResult)
       if (status === "blocked") {
         expect(result.event.validationStatus).toBe("blocked")
         expect(result.event.freshnessState).toBe("stale")
