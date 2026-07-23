@@ -452,7 +452,9 @@ function hasActionEvidence(
           ? /\b(?:reject|decline)\b/i
           : candidate.decision === "request_rework"
             ? /\b(?:rework|revise|send\s+back)\b/i
-            : /\b(?:edit|change|update|adjust|set)\b/i,
+            : candidate.decision === "resolve"
+              ? /\b(?:resolve|complete|close)\b/i
+              : /\b(?:edit|change|update|adjust|set)\b/i,
     execute_mock_action: /\b(?:execute|perform|carry\s+out)\b/i,
   }
   return patterns[candidate.kind].test(phrase)
