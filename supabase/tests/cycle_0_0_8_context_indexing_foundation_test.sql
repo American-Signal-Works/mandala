@@ -1,5 +1,6 @@
 BEGIN;
 SELECT plan(79);
+SELECT set_config('test.context_worker_now', now()::TEXT, true);
 
 -- Structure, RLS, and public surface.
 SELECT has_table('public', 'context_index_operation_controls', 'operation controls exist');
@@ -126,46 +127,50 @@ SET worker_enabled = true, canary_record_limit = 100,
     daily_cost_cap_microunits = 100000, requests_per_minute = 100,
     daily_operation_cap = 100, max_attempts = 2
 WHERE company_id = 'e2000000-0000-4000-8000-000000000001';
-SELECT is(jsonb_array_length(public.claim_context_index_work_v1('worker-a', 10, 60, '2026-07-18 12:00:00+00')->'claims'), 0, 'not-ready provider blocks every claim');
+SELECT is(jsonb_array_length(public.claim_context_index_work_v1('worker-a', 10, 60, current_setting('test.context_worker_now')::TIMESTAMPTZ)->'claims'), 0, 'not-ready provider blocks every claim');
 UPDATE public.context_workspace_settings SET readiness = 'ready' WHERE company_id = 'e2000000-0000-4000-8000-000000000001';
 UPDATE public.context_index_operation_controls SET worker_enabled = false WHERE company_id = 'e2000000-0000-4000-8000-000000000001';
-SELECT is(jsonb_array_length(public.claim_context_index_work_v1('worker-a', 10, 60, '2026-07-18 12:00:00+00')->'claims'), 0, 'worker kill switch blocks every claim');
+SELECT is(jsonb_array_length(public.claim_context_index_work_v1('worker-a', 10, 60, current_setting('test.context_worker_now')::TIMESTAMPTZ)->'claims'), 0, 'worker kill switch blocks every claim');
 UPDATE public.context_index_operation_controls SET worker_enabled = true, daily_cost_cap_microunits = 0 WHERE company_id = 'e2000000-0000-4000-8000-000000000001';
-SELECT is(jsonb_array_length(public.claim_context_index_work_v1('worker-a', 10, 60, '2026-07-18 12:00:00+00')->'claims'), 0, 'zero daily cost cap is a hard claim block');
+SELECT is(jsonb_array_length(public.claim_context_index_work_v1('worker-a', 10, 60, current_setting('test.context_worker_now')::TIMESTAMPTZ)->'claims'), 0, 'zero daily cost cap is a hard claim block');
 UPDATE public.context_index_operation_controls SET daily_cost_cap_microunits = 999, estimated_operation_cost_microunits = 1000 WHERE company_id = 'e2000000-0000-4000-8000-000000000001';
-SELECT is(jsonb_array_length(public.claim_context_index_work_v1('worker-a', 10, 60, '2026-07-18 12:00:00+00')->'claims'), 0, 'claim cannot overshoot a near-exhausted cost cap');
+SELECT is(jsonb_array_length(public.claim_context_index_work_v1('worker-a', 10, 60, current_setting('test.context_worker_now')::TIMESTAMPTZ)->'claims'), 0, 'claim cannot overshoot a near-exhausted cost cap');
 UPDATE public.context_index_operation_controls SET daily_cost_cap_microunits = 100000 WHERE company_id = 'e2000000-0000-4000-8000-000000000001';
-SELECT is(jsonb_array_length(public.claim_context_index_work_v1('worker-a', 1, 60, '2026-07-18 12:00:00+00')->'claims'), 1, 'all server-owned gates permit one bounded claim');
+SELECT is(jsonb_array_length(public.claim_context_index_work_v1('worker-a', 1, 60, current_setting('test.context_worker_now')::TIMESTAMPTZ)->'claims'), 1, 'all server-owned gates permit one bounded claim');
 SELECT is((SELECT delivery_state FROM public.context_index_outbox WHERE canonical_record_id = 'e4000000-0000-4000-8000-000000000001'), 'leased', 'claim owns an explicit lease');
 SELECT is((SELECT attempt_count FROM public.context_index_outbox WHERE canonical_record_id = 'e4000000-0000-4000-8000-000000000001'), 1, 'claim atomically increments attempt count');
 SELECT is((SELECT reserved_cost_microunits FROM public.context_index_outbox WHERE canonical_record_id = 'e4000000-0000-4000-8000-000000000001'), 1000::bigint, 'claim reserves bounded cost before dispatch');
 SELECT throws_ok(
   $$SELECT public.complete_context_index_work_v1(
     'worker-b', (SELECT lease_id FROM public.context_index_outbox WHERE canonical_record_id = 'e4000000-0000-4000-8000-000000000001'),
-    '{"providerDocumentId":"doc-a1","estimatedCostMicrounits":0}', '2026-07-18 12:00:01+00'
+    '{"providerDocumentId":"doc-a1","estimatedCostMicrounits":0}',
+    current_setting('test.context_worker_now')::TIMESTAMPTZ + INTERVAL '1 second'
   )$$,
   '40001', 'context_index_lease_not_owned_or_expired', 'wrong worker cannot complete another lease'
 );
 SELECT throws_ok(
   $$SELECT public.complete_context_index_work_v1(
     'worker-a', (SELECT lease_id FROM public.context_index_outbox WHERE canonical_record_id = 'e4000000-0000-4000-8000-000000000001'),
-    '{"providerDocumentId":"doc-a1","estimatedCostMicrounits":0}', '2026-07-18 12:01:01+00'
+    '{"providerDocumentId":"doc-a1","estimatedCostMicrounits":0}',
+    current_setting('test.context_worker_now')::TIMESTAMPTZ + INTERVAL '61 seconds'
   )$$,
   '40001', 'context_index_lease_not_owned_or_expired', 'expired lease cannot complete'
 );
 SELECT is(
   public.fail_context_index_work_v1(
     'worker-a', (SELECT lease_id FROM public.context_index_outbox WHERE canonical_record_id = 'e4000000-0000-4000-8000-000000000001'),
-    'transient', 'provider_timeout', '2026-07-18 12:00:02+00'
+    'transient', 'provider_timeout',
+    current_setting('test.context_worker_now')::TIMESTAMPTZ + INTERVAL '2 seconds'
   )->>'status',
   'retry', 'known transient failure schedules retry'
 );
 SELECT is((SELECT delivery_state FROM public.context_index_outbox WHERE canonical_record_id = 'e4000000-0000-4000-8000-000000000001'), 'retry', 'retry clears the lease and remains nonterminal');
-SELECT is(jsonb_array_length(public.claim_context_index_work_v1('worker-a', 1, 60, '2026-07-18 12:00:33+00')->'claims'), 1, 'backoff-expired retry can be reclaimed');
+SELECT is(jsonb_array_length(public.claim_context_index_work_v1('worker-a', 1, 60, current_setting('test.context_worker_now')::TIMESTAMPTZ + INTERVAL '33 seconds')->'claims'), 1, 'backoff-expired retry can be reclaimed');
 SELECT is(
   public.fail_context_index_work_v1(
     'worker-a', (SELECT lease_id FROM public.context_index_outbox WHERE canonical_record_id = 'e4000000-0000-4000-8000-000000000001'),
-    'transient', 'provider_timeout', '2026-07-18 12:00:34+00'
+    'transient', 'provider_timeout',
+    current_setting('test.context_worker_now')::TIMESTAMPTZ + INTERVAL '34 seconds'
   )->>'status',
   'dead_letter', 'bounded attempts turn repeated transient failure into dead letter'
 );
@@ -174,11 +179,12 @@ SELECT is((SELECT delivery_state FROM public.context_index_outbox WHERE canonica
 -- Successful fake-provider path followed by privacy-safe deletion.
 INSERT INTO public.external_records(id, company_id, source_id, record_type, external_id, payload)
 VALUES ('e4000000-0000-4000-8000-000000000003', 'e2000000-0000-4000-8000-000000000001', 'e3000000-0000-4000-8000-000000000001', 'support_ticket', 'A-DELETE', '{"ticket_id":"A-DELETE","summary":"delete me"}');
-SELECT is(jsonb_array_length(public.claim_context_index_work_v1('worker-a', 1, 60, '2026-07-18 12:02:00+00')->'claims'), 1, 'fake provider add is claimable locally');
+SELECT is(jsonb_array_length(public.claim_context_index_work_v1('worker-a', 1, 60, current_setting('test.context_worker_now')::TIMESTAMPTZ + INTERVAL '2 minutes')->'claims'), 1, 'fake provider add is claimable locally');
 SELECT is(
   public.complete_context_index_work_v1(
     'worker-a', (SELECT lease_id FROM public.context_index_outbox WHERE canonical_record_id = 'e4000000-0000-4000-8000-000000000003'),
-    '{"providerDocumentId":"provider-doc-delete","estimatedCostMicrounits":500}', '2026-07-18 12:02:01+00'
+    '{"providerDocumentId":"provider-doc-delete","estimatedCostMicrounits":500}',
+    current_setting('test.context_worker_now')::TIMESTAMPTZ + INTERVAL '121 seconds'
   )->>'status',
   'completed', 'fake provider completion persists exact ledger evidence'
 );
@@ -212,11 +218,12 @@ SELECT is((SELECT count(*)::integer FROM public.context_index_tombstones WHERE c
 SELECT is((SELECT operation FROM public.context_index_outbox WHERE canonical_record_id = 'e4000000-0000-4000-8000-000000000003' AND delivery_state = 'pending'), 'delete', 'delete work survives disabled policy');
 SELECT set_config('request.jwt.claim.sub', '', true);
 SELECT set_config('request.jwt.claims', '{"role":"service_role"}', true);
-SELECT is((public.claim_context_index_work_v1('worker-a', 1, 60, '2026-07-18 12:04:00+00')->'claims'->0->>'operation'), 'delete', 'disabled/advanced policy cannot strand deletion claim');
+SELECT is((public.claim_context_index_work_v1('worker-a', 1, 60, current_setting('test.context_worker_now')::TIMESTAMPTZ + INTERVAL '4 minutes')->'claims'->0->>'operation'), 'delete', 'disabled/advanced policy cannot strand deletion claim');
 SELECT is(
   public.complete_context_index_work_v1(
     'worker-a', (SELECT lease_id FROM public.context_index_outbox WHERE canonical_record_id = 'e4000000-0000-4000-8000-000000000003' AND operation = 'delete'),
-    '{"estimatedCostMicrounits":0}', '2026-07-18 12:04:01+00'
+    '{"estimatedCostMicrounits":0}',
+    current_setting('test.context_worker_now')::TIMESTAMPTZ + INTERVAL '241 seconds'
   )->>'deletionConfirmed',
   'true', 'delete completion confirms the surviving tombstone'
 );
@@ -234,11 +241,15 @@ INSERT INTO public.external_records(id, company_id, source_id, record_type, exte
 VALUES ('e4000000-0000-4000-8000-000000000004', 'e2000000-0000-4000-8000-000000000001', 'e3000000-0000-4000-8000-000000000001', 'support_ticket', 'A-ADVANCE', '{"ticket_id":"A-ADVANCE","summary":"advance policy"}');
 SELECT set_config('request.jwt.claim.sub', '', true);
 SELECT set_config('request.jwt.claims', '{"role":"service_role"}', true);
-SELECT public.claim_context_index_work_v1('worker-a', 2, 60, '2026-07-18 12:06:00+00');
+SELECT public.claim_context_index_work_v1(
+  'worker-a', 2, 60,
+  current_setting('test.context_worker_now')::TIMESTAMPTZ + INTERVAL '6 minutes'
+);
 SELECT is(
   public.complete_context_index_work_v1(
     'worker-a', (SELECT lease_id FROM public.context_index_outbox WHERE canonical_record_id = 'e4000000-0000-4000-8000-000000000004'),
-    '{"providerDocumentId":"provider-doc-advance","estimatedCostMicrounits":0}', '2026-07-18 12:06:01+00'
+    '{"providerDocumentId":"provider-doc-advance","estimatedCostMicrounits":0}',
+    current_setting('test.context_worker_now')::TIMESTAMPTZ + INTERVAL '361 seconds'
   )->>'status',
   'completed', 'second fake provider document is durably indexed before policy advance'
 );
@@ -252,10 +263,10 @@ SELECT public.publish_context_indexing_policy_v1(
 DELETE FROM public.external_records WHERE id = 'e4000000-0000-4000-8000-000000000004';
 SELECT set_config('request.jwt.claim.sub', '', true);
 SELECT set_config('request.jwt.claims', '{"role":"service_role"}', true);
-SELECT is((public.claim_context_index_work_v1('worker-a', 1, 60, '2026-07-18 12:08:00+00')->'claims'->0->>'operation'), 'delete', 'version-advanced policy cannot strand deletion claim');
+SELECT is((public.claim_context_index_work_v1('worker-a', 1, 60, current_setting('test.context_worker_now')::TIMESTAMPTZ + INTERVAL '8 minutes')->'claims'->0->>'operation'), 'delete', 'version-advanced policy cannot strand deletion claim');
 
 -- Reconciliation records frozen hashes/counts but cannot invent coverage.
-SELECT is((public.reconcile_context_index_work_v1('e2000000-0000-4000-8000-000000000001', 'dry_run', 100000, '2026-07-18 12:05:00+00')->>'queuedCount')::integer, 0, 'full-corpus dry-run reconciliation never queues provider work');
+SELECT is((public.reconcile_context_index_work_v1('e2000000-0000-4000-8000-000000000001', 'dry_run', 100000, current_setting('test.context_worker_now')::TIMESTAMPTZ + INTERVAL '5 minutes')->>'queuedCount')::integer, 0, 'full-corpus dry-run reconciliation never queues provider work');
 SELECT ok((SELECT snapshot_hash ~ '^[a-f0-9]{64}$' AND query_hash ~ '^[a-f0-9]{64}$' FROM public.context_index_jobs WHERE company_id = 'e2000000-0000-4000-8000-000000000001' ORDER BY created_at DESC LIMIT 1), 'reconciliation persists frozen snapshot and query evidence');
 SELECT set_config('request.jwt.claim.sub', 'e1000000-0000-4000-8000-000000000002', true);
 SELECT set_config('request.jwt.claims', '{"sub":"e1000000-0000-4000-8000-000000000002","role":"authenticated"}', true);

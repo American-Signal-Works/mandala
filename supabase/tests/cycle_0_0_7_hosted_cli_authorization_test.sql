@@ -43,11 +43,17 @@ VALUES
   ('91000000-0000-4000-8000-000000000002', 'authenticated', 'authenticated', 'cli-other@example.test', '', now(), '{}', '{}', now(), now());
 
 INSERT INTO public.companies (id, name, created_by)
-VALUES (
-  '92000000-0000-4000-8000-000000000001',
-  'CLI Workspace',
-  '91000000-0000-4000-8000-000000000001'
-);
+VALUES
+  (
+    '92000000-0000-4000-8000-000000000001',
+    'CLI Workspace',
+    '91000000-0000-4000-8000-000000000001'
+  ),
+  (
+    '92000000-0000-4000-8000-000000000002',
+    'Inaccessible CLI Workspace',
+    '91000000-0000-4000-8000-000000000002'
+  );
 INSERT INTO public.company_memberships (company_id, user_id, role, status)
 VALUES
   (
@@ -182,7 +188,97 @@ SELECT is(
   'true',
   'the issued Mandala-only access token is accepted before revocation'
 );
-SAVEPOINT membership_removed;
+SELECT set_config(
+  'test.cli_session_id',
+  (SELECT id::TEXT FROM public.cli_sessions WHERE access_token_hash = repeat('5', 64)),
+  true
+);
+SELECT is(
+  (
+    SELECT selected_company_id::TEXT
+    FROM public.cli_sessions
+    WHERE id = current_setting('test.cli_session_id')::UUID
+  ),
+  NULL,
+  'browser authorization creates an unbound hosted CLI session'
+);
+
+SAVEPOINT unbound_membership_removed;
+RESET ROLE;
+DELETE FROM public.company_memberships
+WHERE company_id = '92000000-0000-4000-8000-000000000001'
+  AND user_id = '91000000-0000-4000-8000-000000000001';
+SET LOCAL ROLE service_role;
+SELECT is(
+  public.validate_cli_session_v1(repeat('5', 64)) ->> 'allowed',
+  'true',
+  'removing a membership does not revoke a still-unbound CLI session'
+);
+RESET ROLE;
+SELECT is(
+  (SELECT count(*)::INTEGER FROM auth.sessions WHERE id = '94000000-0000-4000-8000-000000000001'),
+  1,
+  'an unbound CLI session keeps its valid internal actor session'
+);
+ROLLBACK TO SAVEPOINT unbound_membership_removed;
+SET LOCAL ROLE service_role;
+
+SELECT is(
+  public.select_cli_session_company_v1(
+    '91000000-0000-4000-8000-000000000001',
+    current_setting('test.cli_session_id')::UUID,
+    '92000000-0000-4000-8000-000000000002'
+  ) ->> 'error',
+  'forbidden',
+  'terminal selection rejects a workspace without an active membership'
+);
+
+SAVEPOINT inactive_membership;
+RESET ROLE;
+UPDATE public.company_memberships
+SET status = 'disabled'
+WHERE company_id = '92000000-0000-4000-8000-000000000001'
+  AND user_id = '91000000-0000-4000-8000-000000000001';
+SET LOCAL ROLE service_role;
+SELECT is(
+  public.select_cli_session_company_v1(
+    '91000000-0000-4000-8000-000000000001',
+    current_setting('test.cli_session_id')::UUID,
+    '92000000-0000-4000-8000-000000000001'
+  ) ->> 'error',
+  'forbidden',
+  'terminal selection rejects an inactive workspace membership'
+);
+RESET ROLE;
+ROLLBACK TO SAVEPOINT inactive_membership;
+SET LOCAL ROLE service_role;
+
+SELECT is(
+  public.select_cli_session_company_v1(
+    '91000000-0000-4000-8000-000000000001',
+    current_setting('test.cli_session_id')::UUID,
+    '92000000-0000-4000-8000-000000000001'
+  ) -> 'company' ->> 'id',
+  '92000000-0000-4000-8000-000000000001',
+  'terminal selection binds an accessible workspace to the hosted CLI session'
+);
+
+SAVEPOINT unrelated_membership_removed;
+RESET ROLE;
+DELETE FROM public.company_memberships
+WHERE company_id = '92000000-0000-4000-8000-000000000001'
+  AND user_id = '91000000-0000-4000-8000-000000000002';
+SET LOCAL ROLE service_role;
+SELECT is(
+  public.validate_cli_session_v1(repeat('5', 64)) ->> 'allowed',
+  'true',
+  'removing another user membership does not revoke the bound CLI session'
+);
+RESET ROLE;
+ROLLBACK TO SAVEPOINT unrelated_membership_removed;
+SET LOCAL ROLE service_role;
+
+SAVEPOINT selected_membership_removed;
 RESET ROLE;
 DELETE FROM public.company_memberships
 WHERE company_id = '92000000-0000-4000-8000-000000000001'
@@ -191,16 +287,17 @@ SET LOCAL ROLE service_role;
 SELECT is(
   public.validate_cli_session_v1(repeat('5', 64)) ->> 'allowed',
   'false',
-  'removing workspace membership immediately invalidates the CLI session'
+  'removing the selected workspace membership invalidates the bound CLI session'
 );
 RESET ROLE;
 SELECT is(
   (SELECT count(*)::INTEGER FROM auth.sessions WHERE id = '94000000-0000-4000-8000-000000000001'),
   0,
-  'membership removal also revokes the internal actor session'
+  'selected membership removal also revokes the internal actor session'
 );
-ROLLBACK TO SAVEPOINT membership_removed;
+ROLLBACK TO SAVEPOINT selected_membership_removed;
 SET LOCAL ROLE service_role;
+
 SAVEPOINT actor_banned;
 RESET ROLE;
 UPDATE auth.users
@@ -256,7 +353,7 @@ SELECT is(
 SET LOCAL ROLE service_role;
 
 SELECT set_config(
-  'test.cli_session_id',
+  'test.rotated_cli_session_id',
   (SELECT id::TEXT FROM public.cli_sessions WHERE access_token_hash = repeat('7', 64)),
   true
 );
@@ -264,7 +361,7 @@ SELECT lives_ok(
   format(
     'SELECT public.revoke_cli_session_v1(%L, %L)',
     '91000000-0000-4000-8000-000000000001',
-    current_setting('test.cli_session_id')
+    current_setting('test.rotated_cli_session_id')
   ),
   'the server can revoke the owner''s installed CLI session'
 );
