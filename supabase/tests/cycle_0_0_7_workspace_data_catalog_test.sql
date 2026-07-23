@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(22);
+SELECT plan(24);
 
 SELECT has_table('public', 'workspace_data_catalogs', 'workspace imports have a generic catalog');
 SELECT has_table('public', 'workspace_capability_mapping_versions', 'capability mappings are versioned');
@@ -182,6 +182,48 @@ SELECT is(
      AND record_type = 'support_ticket'),
   'drifted',
   'a changed schema remains blocked until a mapping is confirmed again'
+);
+SELECT public.publish_workspace_capability_mapping_v1(
+  'c2000000-0000-4000-8000-000000000001',
+  'workspace.records.read.tickets',
+  (SELECT capability_version_id
+   FROM public.workspace_capability_mapping_versions
+   WHERE id = (current_setting('test.mapping_result')::JSONB ->> 'mappingVersionId')::UUID),
+  0.95,
+  (SELECT spec
+   FROM public.workspace_capability_mapping_versions
+   WHERE id = (current_setting('test.mapping_result')::JSONB ->> 'mappingVersionId')::UUID),
+  '{"kind":"test_fixture","note":"review pending"}'::JSONB,
+  false
+);
+SELECT is(
+  (SELECT profile_status FROM public.workspace_data_catalogs
+   WHERE company_id = 'c2000000-0000-4000-8000-000000000001'
+     AND source_key = 'helpdesk'
+     AND record_type = 'support_ticket'),
+  'drifted',
+  'an unconfirmed mapping does not acknowledge genuine catalog drift'
+);
+SELECT public.publish_workspace_capability_mapping_v1(
+  'c2000000-0000-4000-8000-000000000001',
+  'workspace.records.read.tickets',
+  (SELECT capability_version_id
+   FROM public.workspace_capability_mapping_versions
+   WHERE id = (current_setting('test.mapping_result')::JSONB ->> 'mappingVersionId')::UUID),
+  0.95,
+  (SELECT spec
+   FROM public.workspace_capability_mapping_versions
+   WHERE id = (current_setting('test.mapping_result')::JSONB ->> 'mappingVersionId')::UUID),
+  '{"kind":"test_fixture","note":"reviewed schema"}'::JSONB,
+  true
+);
+SELECT is(
+  (SELECT profile_status FROM public.workspace_data_catalogs
+   WHERE company_id = 'c2000000-0000-4000-8000-000000000001'
+     AND source_key = 'helpdesk'
+     AND record_type = 'support_ticket'),
+  'ready',
+  'a confirmed mapping acknowledges the exact reviewed catalog hash'
 );
 
 RESET ROLE;
