@@ -56,6 +56,58 @@ describe("Supabase Context index repository", () => {
     })
   })
 
+  it("uses the bounded replacement RPC and rejects contradictory provider identities", async () => {
+    const replacement = {
+      ...claim(),
+      operation: "replace",
+      providerDocumentId: "provider-doc-1",
+    }
+    const rpc = vi
+      .fn<ContextIndexRpcExecutor["rpc"]>()
+      .mockResolvedValueOnce({ data: { claims: [replacement] }, error: null })
+      .mockResolvedValueOnce({
+        data: {
+          claims: [
+            {
+              ...claim(),
+              providerDocumentId: "provider-doc-should-not-be-on-add",
+            },
+          ],
+        },
+        error: null,
+      })
+    const repository = new SupabaseContextIndexRepository({ rpc })
+
+    await expect(
+      repository.claim({
+        workerId: "worker-1",
+        limit: 25,
+        leaseSeconds: 120,
+        now,
+      })
+    ).resolves.toEqual([
+      expect.objectContaining({
+        event: expect.objectContaining({
+          operation: "replace",
+          providerDocumentId: "provider-doc-1",
+        }),
+      }),
+    ])
+    expect(rpc).toHaveBeenNthCalledWith(
+      1,
+      "claim_context_index_replace_v1",
+      expect.objectContaining({ p_limit: 25 })
+    )
+    await expect(
+      repository.claimAddBatch({
+        workerId: "worker-1",
+        limit: 25,
+        leaseSeconds: 120,
+        now,
+      })
+    ).rejects.toMatchObject({ code: "repository_invalid_response" })
+  })
+
   it("maps the bounded RPC lifecycle and preserves one injected clock", async () => {
     const rpc = vi
       .fn<ContextIndexRpcExecutor["rpc"]>()
