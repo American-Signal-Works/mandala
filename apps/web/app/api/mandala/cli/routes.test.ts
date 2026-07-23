@@ -16,6 +16,7 @@ import {
   revokeCliSession as revokeCliSessionRpc,
 } from "@/actions/admin/cli-auth"
 import { getAuthSessionId } from "@/lib/mandala/cli-auth"
+import { listAccessibleCompanies } from "@/lib/mandala/control-plane/queries"
 import { authenticateRequest } from "@/lib/supabase/request"
 import { POST as createDeviceAuthorization } from "./device-authorizations/route"
 import { POST as decideDeviceAuthorization } from "./device-authorizations/decision/route"
@@ -46,6 +47,9 @@ vi.mock("@/actions/admin/cli-auth", () => ({
   selectCliSessionCompany: vi.fn(),
 }))
 vi.mock("@/lib/supabase/request", () => ({ authenticateRequest: vi.fn() }))
+vi.mock("@/lib/mandala/control-plane/queries", () => ({
+  listAccessibleCompanies: vi.fn(),
+}))
 vi.mock("@/lib/mandala/cli-auth", async () => {
   const actual = await vi.importActual<typeof import("@/lib/mandala/cli-auth")>(
     "@/lib/mandala/cli-auth"
@@ -405,11 +409,7 @@ describe("hosted CLI HTTP boundaries", () => {
     } as never)
 
     const response = await selectCliCompany(
-      request(
-        "/api/mandala/cli/sessions/company",
-        { companyId },
-        "PUT"
-      )
+      request("/api/mandala/cli/sessions/company", { companyId }, "PUT")
     )
 
     expect(response.status).toBe(200)
@@ -421,6 +421,72 @@ describe("hosted CLI HTTP boundaries", () => {
     await expect(response.json()).resolves.toEqual({
       company: { id: companyId, name: "Example Company", role: "owner" },
     })
+  })
+
+  it("lets a local bearer session select an accessible workspace locally", async () => {
+    const supabase = {}
+    vi.mocked(authenticateRequest).mockResolvedValue({
+      authMode: "bearer",
+      supabase,
+      user: { id: userId },
+    } as never)
+    vi.mocked(listAccessibleCompanies).mockResolvedValue([
+      {
+        id: companyId,
+        name: "Example Company",
+        role: "owner",
+        updatedAt: "2026-07-23T20:00:00.000Z",
+      },
+    ])
+
+    const response = await selectCliCompany(
+      request("/api/mandala/cli/sessions/company", { companyId }, "PUT")
+    )
+
+    expect(response.status).toBe(200)
+    expect(listAccessibleCompanies).toHaveBeenCalledWith({
+      supabase,
+      userId,
+    })
+    expect(selectCliSessionCompany).not.toHaveBeenCalled()
+    await expect(response.json()).resolves.toEqual({
+      company: { id: companyId, name: "Example Company", role: "owner" },
+    })
+  })
+
+  it("denies an inaccessible workspace to a local bearer session", async () => {
+    vi.mocked(authenticateRequest).mockResolvedValue({
+      authMode: "bearer",
+      supabase: {},
+      user: { id: userId },
+    } as never)
+    vi.mocked(listAccessibleCompanies).mockResolvedValue([])
+
+    const response = await selectCliCompany(
+      request("/api/mandala/cli/sessions/company", { companyId }, "PUT")
+    )
+
+    expect(response.status).toBe(403)
+    expect(selectCliSessionCompany).not.toHaveBeenCalled()
+    await expect(response.json()).resolves.toEqual({
+      error: "company_not_accessible",
+    })
+  })
+
+  it("keeps cookie sessions outside the CLI workspace-selection route", async () => {
+    vi.mocked(authenticateRequest).mockResolvedValue({
+      authMode: "cookie",
+      supabase: {},
+      user: { id: userId },
+    } as never)
+
+    const response = await selectCliCompany(
+      request("/api/mandala/cli/sessions/company", { companyId }, "PUT")
+    )
+
+    expect(response.status).toBe(401)
+    expect(listAccessibleCompanies).not.toHaveBeenCalled()
+    expect(selectCliSessionCompany).not.toHaveBeenCalled()
   })
 
   it("revokes only the requested CLI session", async () => {
