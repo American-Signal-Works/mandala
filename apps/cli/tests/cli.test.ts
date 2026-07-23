@@ -435,11 +435,28 @@ describe("CLI commands", () => {
     expect(await command(["work", "show", itemId], api)).toBe(0)
 
     expect(stdout.value).toContain("Draft")
-    expect(stdout.value).toContain("payload.lines")
+    expect(stdout.value).toContain("Payload")
     expect(stdout.value).toContain("quantity")
     expect(stdout.value).toContain("12")
     expect(stdout.value).not.toContain('"ok":true')
   })
+
+  it.each(["inspect", "show"])(
+    "bounds non-JSON work %s output for a large real-shaped context",
+    async (action) => {
+      const api = fakeApi({
+        getWorkItem: vi.fn(async () => largeDetail()),
+      })
+
+      expect(await command(["work", action, itemId], api)).toBe(0)
+
+      expect(stdout.value.split("\n").length).toBeLessThanOrEqual(240)
+      expect(Buffer.byteLength(stdout.value)).toBeLessThanOrEqual(24_000)
+      expect(stdout.value).toContain("Maximum results")
+      expect(stdout.value).toContain("Full structured detail")
+      expect(stdout.value).not.toContain("raw-provider-payload")
+    }
+  )
 
   it("renders non-JSON command errors as one sentence instead of a table", async () => {
     const api = fakeApi({
@@ -1467,6 +1484,72 @@ function detail() {
     },
     attempt: null,
     auditEvents: [],
+  }
+}
+
+function largeDetail() {
+  return {
+    ...detail(),
+    contextPacket: {
+      id: "a1000000-0000-4000-8000-000000000001",
+      sources: Array.from({ length: 2_000 }, (_, index) => ({
+        source: "shiphero",
+        recordId: `record-${index}`,
+        payload: `raw-provider-payload-${index}-${"x".repeat(1_000)}`,
+      })),
+      facts: Object.fromEntries(
+        Array.from({ length: 1_000 }, (_, index) => [
+          `field-${index}`,
+          `fact-${index}`,
+        ])
+      ),
+      memoryRefs: [],
+      operationalContext: {
+        provider: "supermemory" as const,
+        status: "complete" as const,
+        requestId: "a2000000-0000-4000-8000-000000000001",
+        scope: { companyId, workspaceScopeId: companyId },
+        queryHash: "a".repeat(64),
+        filterHash: "b".repeat(64),
+        policyVersion: 1,
+        bounds: {
+          maximumResults: 5,
+          maximumCharacters: 12_000,
+          maximumTokens: 4_000,
+          maximumAgeHours: 8_760,
+          minimumConfidence: 0.72,
+          timeoutMs: 2_000,
+        },
+        resultCount: 1,
+        characterCount: 120,
+        tokenEstimate: 30,
+        latencyMs: 125,
+        fallbackReason: null,
+        indexSnapshotMarker: "snapshot-1",
+        citations: [
+          {
+            providerReference: "provider-reference-1",
+            providerDocumentId: "provider-document-1",
+            stableCustomId: `ctx_${"c".repeat(64)}`,
+            canonicalRecordId: "a3000000-0000-4000-8000-000000000001",
+            canonicalRecordVersion: "version-1",
+            sourceId: "a4000000-0000-4000-8000-000000000001",
+            sourceKey: "shiphero",
+            recordType: "inventory_item",
+            rank: 1,
+            score: 0.91,
+            providerUpdatedAt: "2026-07-23T19:00:00.000Z",
+            sourceObservedAt: "2026-07-23T18:59:00.000Z",
+            freshness: "fresh" as const,
+            contentHash: "d".repeat(64),
+            policyHash: "e".repeat(64),
+          },
+        ],
+      },
+      freshnessState: "fresh" as const,
+      warnings: [],
+      createdAt: "2026-07-23T19:00:00.000Z",
+    },
   }
 }
 

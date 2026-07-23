@@ -11,19 +11,23 @@ import {
   wrapTerminalText,
 } from "./table.js"
 
-const WORK_ITEM_DETAIL_SECTIONS = [
-  ["item", "Item"],
-  ["contextPacket", "Context Packet"],
-  ["recommendation", "Recommendation"],
-  ["evidence", "Evidence"],
-  ["draft", "Draft"],
-  ["decision", "Decision"],
-  ["attempt", "Attempt"],
-  ["auditEvents", "Audit Events"],
-] as const
-
 const WORK_LIST_PRIMARY_FIELDS = ["id", "status", "title"] as const
 const WORK_LIST_WIDE_FIELDS = ["priority", "warningCount"] as const
+const WORK_ITEM_DETAIL_KEYS = [
+  "item",
+  "contextPacket",
+  "recommendation",
+  "evidence",
+  "draft",
+  "decision",
+  "attempt",
+  "auditEvents",
+] as const
+const WORK_ITEM_DETAIL_COLLECTION_LIMIT = 6
+const WORK_ITEM_DETAIL_FIELD_LIMIT = 6
+const WORK_ITEM_DETAIL_VALUE_LIMIT = 320
+const WORK_ITEM_DETAIL_MAX_LINES = 240
+const WORK_ITEM_DETAIL_MAX_BYTES = 24_000
 
 // Compact quadrant-block raster generated from the supplied 65x65 Mandala mark.
 const TERMINAL_LOGO = [
@@ -1957,15 +1961,294 @@ function renderWorkItemDetail(value: unknown, width: number): string {
   if (!isRecord(value))
     return renderStructuredSection("Work Item Detail", value, width)
 
-  const sections = WORK_ITEM_DETAIL_SECTIONS.map(([key, title]) =>
-    renderStructuredSection(title, value[key], width)
-  )
-  const knownKeys = new Set(WORK_ITEM_DETAIL_SECTIONS.map(([key]) => key))
-  for (const [key, entry] of Object.entries(value)) {
-    if (!knownKeys.has(key as (typeof WORK_ITEM_DETAIL_SECTIONS)[number][0]))
-      sections.push(renderStructuredSection(key, entry, width))
+  const item = recordOrEmpty(value.item)
+  const context = recordOrEmpty(value.contextPacket)
+  const operationalContext = recordOrEmpty(context.operationalContext)
+  const bounds = recordOrEmpty(operationalContext.bounds)
+  const recommendation = recordOrEmpty(value.recommendation)
+  const evidence = recordOrEmpty(value.evidence)
+  const draft = recordOrEmpty(value.draft)
+  const decision = recordOrEmpty(value.decision)
+  const attempt = recordOrEmpty(value.attempt)
+  const auditEvents = Array.isArray(value.auditEvents)
+    ? value.auditEvents.filter(isRecord)
+    : []
+  const warnings = collectWarnings({
+    contextPacket: context,
+    recommendation,
+    evidence,
+  })
+  const sections = [
+    renderProductSections(
+      `Work item · ${boundedValueText(read(item, ["title"]), "Untitled item")}`,
+      [
+        ["ID", read(item, ["id"])],
+        ["Type", read(item, ["itemType", "type"])],
+        ["Status", read(item, ["status", "state"])],
+        ["Priority", read(item, ["priority", "urgency"])],
+        ["Created", read(item, ["createdAt"])],
+        ["Updated", read(item, ["updatedAt"])],
+      ],
+      width
+    ),
+    renderProductSections(
+      "Recommendation",
+      [
+        [
+          "Summary",
+          boundedValueText(
+            read(recommendation, [
+              "rationaleSummary",
+              "summary",
+              "recommendation",
+            ])
+          ),
+        ],
+        ["Status", read(recommendation, ["status", "warningState"])],
+        [
+          "Confidence",
+          read(recommendation, ["confidenceMarker", "confidence"]),
+        ],
+        ["Freshness", read(recommendation, ["freshnessState", "freshness"])],
+        [
+          "Output",
+          boundedValueText(read(recommendation, ["output", "result"])),
+        ],
+        ["Warnings", boundedValueText(warnings.all)],
+      ],
+      width
+    ),
+    renderProductSections(
+      "Context & evidence",
+      [
+        ["Freshness", read(context, ["freshnessState", "freshness"])],
+        ["Captured", read(context, ["createdAt", "capturedAt"])],
+        [
+          "Sources",
+          boundedValueText(
+            read(context, ["sources", "sourceRefs"]),
+            "Not provided",
+            true
+          ),
+        ],
+        [
+          "Facts",
+          boundedValueText(read(context, ["facts"]), "Not provided", true),
+        ],
+        [
+          "Memory refs",
+          boundedValueText(read(context, ["memoryRefs"]), "Not provided", true),
+        ],
+        [
+          "Evidence",
+          boundedValueText(
+            read(evidence, ["evidence", "sourceRefs", "requirements"]),
+            "Not provided",
+            true
+          ),
+        ],
+        ["Assumptions", boundedValueText(read(evidence, ["assumptions"]))],
+      ],
+      width
+    ),
+    renderProductSections(
+      "Context retrieval",
+      [
+        ["Provider", read(operationalContext, ["provider"])],
+        ["Status", read(operationalContext, ["status"])],
+        ["Fallback", read(operationalContext, ["fallbackReason"])],
+        ["Maximum results", read(bounds, ["maximumResults"])],
+        ["Maximum characters", read(bounds, ["maximumCharacters"])],
+        ["Maximum tokens", read(bounds, ["maximumTokens"])],
+        ["Maximum age (hours)", read(bounds, ["maximumAgeHours"])],
+        ["Minimum confidence", read(bounds, ["minimumConfidence"])],
+        ["Timeout (ms)", read(bounds, ["timeoutMs"])],
+        ["Result count", read(operationalContext, ["resultCount"])],
+        ["Characters used", read(operationalContext, ["characterCount"])],
+        ["Tokens used", read(operationalContext, ["tokenEstimate"])],
+        ["Latency (ms)", read(operationalContext, ["latencyMs"])],
+        [
+          "Citations",
+          boundedValueText(
+            read(operationalContext, ["citations"]),
+            "Not provided",
+            true
+          ),
+        ],
+      ],
+      width
+    ),
+    renderProductSections(
+      "Draft",
+      [
+        ["Reference", read(draft, ["id"])],
+        ["Action", read(draft, ["actionType", "action", "type"])],
+        ["Status", read(draft, ["status"])],
+        ["Payload", boundedValueText(read(draft, ["payload"]))],
+        ["Editable fields", boundedValueText(read(draft, ["editPolicy"]))],
+        ["Updated", read(draft, ["updatedAt"])],
+      ],
+      width
+    ),
+    renderProductSections(
+      "Decision",
+      [
+        ["Decision", read(decision, ["decision", "action", "status"])],
+        ["Reason", boundedValueText(read(decision, ["reason"]))],
+        ["Warnings acknowledged", read(decision, ["warningsAcknowledged"])],
+        ["Recorded", read(decision, ["createdAt", "decidedAt"])],
+        ["Reference", read(decision, ["id"])],
+      ],
+      width
+    ),
+    renderProductSections(
+      "Execution outcome",
+      [
+        ["Status", read(attempt, ["status", "attemptStatus"])],
+        ["Mode", read(attempt, ["mode"])],
+        [
+          "Outcome",
+          boundedValueText(
+            read(attempt, ["resultPayload", "result", "outcome", "message"])
+          ),
+        ],
+        ["Error", boundedValueText(read(attempt, ["error", "errorMessage"]))],
+        ["Completed", read(attempt, ["completedAt", "createdAt"])],
+        ["Reference", read(attempt, ["id", "mockExternalId", "externalId"])],
+      ],
+      width
+    ),
+    renderProductSections(
+      `Recent activity · ${auditEvents.length} total`,
+      recentActivityRows(auditEvents),
+      width
+    ),
+    wrapTerminalText(
+      "Full structured detail: rerun this command with --json.",
+      width
+    ),
+  ]
+  return boundWorkItemDetailOutput(sections.join("\n\n"), width)
+}
+
+function recentActivityRows(
+  auditEvents: readonly Record<string, unknown>[]
+): ProductRow[] {
+  const recent = auditEvents.slice(-WORK_ITEM_DETAIL_COLLECTION_LIMIT)
+  if (recent.length === 0) return [["Latest", "No activity recorded"]]
+  return recent.map((event, index) => [
+    String(auditEvents.length - recent.length + index + 1),
+    boundedValueText(
+      [
+        read(event, ["createdAt", "timestamp", "updatedAt"]),
+        read(event, ["eventType", "type", "status"]),
+        read(event, ["summary", "reason", "message"]),
+        read(event, ["id", "auditReference", "auditEventId"]),
+      ].filter(hasProductValue)
+    ),
+  ])
+}
+
+function boundedValueText(
+  value: unknown,
+  fallback = "Not provided",
+  omitRawFields = false
+): string {
+  const rendered = boundedValue(value, 0, omitRawFields)
+  if (!rendered) return fallback
+  const characters = Array.from(rendered)
+  if (characters.length <= WORK_ITEM_DETAIL_VALUE_LIMIT) return rendered
+  return `${characters.slice(0, WORK_ITEM_DETAIL_VALUE_LIMIT - 1).join("")}…`
+}
+
+function boundedValue(
+  value: unknown,
+  depth: number,
+  omitRawFields: boolean
+): string {
+  if (value === undefined || value === null || value === "") return ""
+  if (
+    typeof value === "string" ||
+    typeof value === "number" ||
+    typeof value === "boolean" ||
+    typeof value === "bigint"
+  ) {
+    return sanitizeTerminalText(String(value))
   }
-  return sections.join("\n\n")
+  if (depth >= 3) {
+    if (Array.isArray(value)) return `${value.length} items`
+    if (isRecord(value)) return `${Object.keys(value).length} fields`
+    return sanitizeTerminalText(String(value))
+  }
+  if (Array.isArray(value)) {
+    if (value.length === 0) return "None"
+    const visible = value
+      .slice(0, WORK_ITEM_DETAIL_COLLECTION_LIMIT)
+      .map(
+        (entry) => boundedValue(entry, depth + 1, omitRawFields) || "Unknown"
+      )
+    if (value.length > visible.length)
+      visible.push(`… +${value.length - visible.length} more`)
+    return visible.join(" · ")
+  }
+  if (isRecord(value)) {
+    const preferred = read(value, [
+      "label",
+      "name",
+      "title",
+      "summary",
+      "message",
+      "value",
+      "id",
+    ])
+    if (preferred !== undefined)
+      return boundedValue(preferred, depth + 1, omitRawFields)
+    const entries = Object.entries(value).filter(
+      ([key]) =>
+        !omitRawFields ||
+        !/^(?:body|content|excerpt|payload|providerPayload|raw|text)$/i.test(
+          key
+        )
+    )
+    const visible = entries
+      .slice(0, WORK_ITEM_DETAIL_FIELD_LIMIT)
+      .map(
+        ([key, entry]) =>
+          `${sanitizeTerminalText(key)}: ${boundedValue(entry, depth + 1, omitRawFields) || "Unknown"}`
+      )
+    if (entries.length > visible.length)
+      visible.push(`… +${entries.length - visible.length} fields`)
+    return visible.join(" · ")
+  }
+  return sanitizeTerminalText(String(value))
+}
+
+function boundWorkItemDetailOutput(value: string, width: number): string {
+  const notice = wrapTerminalText(
+    "Output was shortened to the terminal review limit. Use --json for full structured detail.",
+    width
+  )
+  const noticeLines = notice.split("\n")
+  const reservedNoticeLines = noticeLines.length + 1
+  const lines = value.split("\n")
+  const output: string[] = []
+  let bytes = 0
+  let shortened = false
+  for (const line of lines) {
+    const lineBytes = Buffer.byteLength(line) + (output.length > 0 ? 1 : 0)
+    const needsNotice =
+      output.length + 1 + reservedNoticeLines <= WORK_ITEM_DETAIL_MAX_LINES &&
+      bytes + lineBytes + Buffer.byteLength(notice) + 2 <=
+        WORK_ITEM_DETAIL_MAX_BYTES
+    if (!needsNotice) {
+      shortened = true
+      break
+    }
+    output.push(line)
+    bytes += lineBytes
+  }
+  if (shortened) output.push("", ...noticeLines)
+  return output.join("\n")
 }
 
 function renderWorkItemList(
@@ -2064,9 +2347,7 @@ function renderGenericResult(
 }
 
 function isWorkItemDetail(value: unknown): value is Record<string, unknown> {
-  return (
-    isRecord(value) && WORK_ITEM_DETAIL_SECTIONS.every(([key]) => key in value)
-  )
+  return isRecord(value) && WORK_ITEM_DETAIL_KEYS.every((key) => key in value)
 }
 
 function isSandboxSession(value: unknown): value is Record<string, unknown> {
