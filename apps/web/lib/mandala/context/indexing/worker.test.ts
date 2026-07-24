@@ -439,6 +439,8 @@ function repositoryFor(leases: ContextIndexLease[]): ContextIndexRepository {
       preparedAt: now.toISOString(),
     }),
     reconcile: vi.fn(),
+    claimReconciliation: vi.fn().mockResolvedValue([]),
+    confirmReconciliation: vi.fn(),
     claimProcessing: vi.fn().mockResolvedValue([]),
     claimCleanup: vi.fn().mockResolvedValue([]),
     claimAddBatch: vi.fn().mockResolvedValue([]),

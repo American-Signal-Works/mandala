@@ -3,6 +3,7 @@ import "server-only"
 import {
   createContextIndexProviderResolver,
   runContextIndexBatch,
+  runContextIndexReconciliation,
   SupabaseContextIndexRepository,
   type ContextIndexRpcExecutor,
 } from "@/lib/mandala/context/indexing"
@@ -55,10 +56,18 @@ export async function runContextIndexMaintenance() {
     now: now.toISOString(),
     limit: 100,
   })
+  const workerId = `vercel-context-index-${process.env.VERCEL_REGION ?? "local"}`
+  const reconciliation = await runContextIndexReconciliation({
+    repository,
+    provider,
+    workerId,
+    limit: 100,
+    now,
+  })
   const batch = await runContextIndexBatch({
     repository,
     resolveProvider: createContextIndexProviderResolver([provider]),
-    workerId: `vercel-context-index-${process.env.VERCEL_REGION ?? "local"}`,
+    workerId,
     // Live verification shows 200-document Supermemory batches finish in
     // roughly 12 seconds. Larger payloads approach the 30-second provider
     // timeout, while this still preserves high-throughput bulk ingestion.
@@ -69,6 +78,7 @@ export async function runContextIndexMaintenance() {
   })
   return {
     preparation,
+    reconciliation,
     batch,
     providerOperational: health.status === "healthy",
   }

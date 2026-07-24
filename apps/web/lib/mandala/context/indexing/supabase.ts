@@ -18,6 +18,9 @@ import {
   type ContextIndexRepository,
   type ContextIndexLeaseReference,
   type ContextIndexProcessingLease,
+  type ContextIndexReconciliationClaim,
+  type ContextIndexReconciliationConfirmation,
+  type ContextIndexReconciliationDocument,
 } from "./repository"
 
 export const contextIndexRpcNames = {
@@ -26,6 +29,8 @@ export const contextIndexRpcNames = {
   claimAddBatch: "claim_context_index_add_batch_v1",
   claimCleanup: "claim_context_index_cleanup_v1",
   claimProcessing: "claim_context_index_processing_v1",
+  claimReconciliation: "claim_context_index_reconciliation_v1",
+  confirmReconciliation: "confirm_context_provider_batch_outcomes_v1",
   accept: "accept_context_index_work_v1",
   deferProcessing: "defer_context_index_processing_v1",
   complete: "complete_context_index_work_v1",
@@ -91,6 +96,52 @@ const processingClaimEnvelopeSchema = z
     claims: z.array(processingClaimSchema).max(CONTEXT_INDEX_MAX_BATCH_SIZE),
   })
   .strict()
+const reconciliationClaimRequestSchema = z
+  .object({
+    workerId: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,119}$/),
+    limit: z.number().int().min(1).max(100),
+    now: z.string().datetime({ offset: true }),
+  })
+  .strict()
+const reconciliationClaimSchema = z
+  .object({
+    outboxId: z.string().uuid(),
+    companyId: z.string().uuid(),
+    provider: z.literal("supermemory"),
+    stableCustomId: z.string().regex(/^ctx_[0-9a-f]{64}$/),
+    attempt: z.number().int().positive().max(1_000),
+    nextAttemptAt: z.string().datetime({ offset: true }),
+  })
+  .strict()
+const reconciliationClaimEnvelopeSchema = z
+  .object({ claims: z.array(reconciliationClaimSchema).max(100) })
+  .strict()
+const reconciliationDocumentSchema = z
+  .object({
+    stableCustomId: z.string().regex(/^ctx_[0-9a-f]{64}$/),
+    providerDocumentId: providerDocumentIdSchema,
+    status: z.literal("complete"),
+  })
+  .strict()
+const reconciliationConfirmationSchema = z
+  .object({
+    companyId: z.string().uuid(),
+    suppliedCount: z.number().int().positive().max(100),
+    settledCount: z.number().int().nonnegative().max(100),
+    unmatchedCount: z.number().int().nonnegative().max(100),
+  })
+  .strict()
+  .superRefine((summary, context) => {
+    if (
+      summary.settledCount + summary.unmatchedCount !==
+      summary.suppliedCount
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Reconciliation counts do not balance.",
+      })
+    }
+  })
 const acceptResultSchema = z
   .object({
     outboxId: z.string().uuid(),
@@ -336,6 +387,57 @@ export class SupabaseContextIndexRepository implements ContextIndexRepository {
         pollAttempt: claim.pollAttempt,
         maximumPollAttempts: claim.maximumPollAttempts,
       }))
+    } catch (error) {
+      throw invalidResponse(error)
+    }
+  }
+
+  async claimReconciliation(input: {
+    workerId: string
+    limit: number
+    now: string
+  }): Promise<ContextIndexReconciliationClaim[]> {
+    const request = reconciliationClaimRequestSchema.parse(input)
+    const data = await this.call(contextIndexRpcNames.claimReconciliation, {
+      p_worker_id: request.workerId,
+      p_limit: request.limit,
+      p_now: request.now,
+    })
+    try {
+      return reconciliationClaimEnvelopeSchema.parse(data).claims
+    } catch (error) {
+      throw invalidResponse(error)
+    }
+  }
+
+  async confirmReconciliation(input: {
+    companyId: string
+    documents: readonly ContextIndexReconciliationDocument[]
+    now: string
+  }): Promise<ContextIndexReconciliationConfirmation> {
+    const request = z
+      .object({
+        companyId: z.string().uuid(),
+        documents: z.array(reconciliationDocumentSchema).min(1).max(100),
+        now: z.string().datetime({ offset: true }),
+      })
+      .strict()
+      .parse(input)
+    const data = await this.call(contextIndexRpcNames.confirmReconciliation, {
+      p_company_id: request.companyId,
+      p_documents: request.documents.map((document) => ({
+        customId: document.stableCustomId,
+        providerDocumentId: document.providerDocumentId,
+        status: document.status,
+      })),
+      p_now: request.now,
+    })
+    try {
+      const result = reconciliationConfirmationSchema.parse(data)
+      if (result.companyId !== request.companyId) {
+        throw new Error("Reconciliation tenant did not match the request.")
+      }
+      return result
     } catch (error) {
       throw invalidResponse(error)
     }

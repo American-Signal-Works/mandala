@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest"
 
 const mocks = vi.hoisted(() => ({
   prepare: vi.fn(),
+  runReconciliation: vi.fn(),
   runBatch: vi.fn(),
   health: vi.fn(),
   rpc: vi.fn(),
@@ -23,6 +24,7 @@ vi.mock("@/lib/mandala/context/indexing", () => ({
   },
   createContextIndexProviderResolver: () => vi.fn(),
   runContextIndexBatch: mocks.runBatch,
+  runContextIndexReconciliation: mocks.runReconciliation,
 }))
 
 import { runContextIndexMaintenance } from "./context-index-maintenance"
@@ -34,6 +36,13 @@ describe("Context index maintenance composition", () => {
     vi.clearAllMocks()
     mocks.prepare.mockResolvedValue({ recoveredCount: 0 })
     mocks.runBatch.mockResolvedValue({ claimed: 0 })
+    mocks.runReconciliation.mockResolvedValue({
+      claimedCount: 0,
+      providerMatchedCount: 0,
+      settledCount: 0,
+      unmatchedCount: 0,
+      providerStatus: "not_called",
+    })
     mocks.rpc
       .mockResolvedValueOnce({ data: { reserved: true }, error: null })
       .mockResolvedValueOnce({ data: {}, error: null })
@@ -53,6 +62,7 @@ describe("Context index maintenance composition", () => {
     await expect(runContextIndexMaintenance()).resolves.toMatchObject({
       providerOperational: true,
       batch: { claimed: 0 },
+      reconciliation: { providerStatus: "not_called" },
     })
     expect(mocks.rpc).toHaveBeenNthCalledWith(
       1,
@@ -72,6 +82,9 @@ describe("Context index maintenance composition", () => {
     )
     expect(mocks.runBatch).toHaveBeenCalledWith(
       expect.objectContaining({ limit: 200, concurrency: 20 })
+    )
+    expect(mocks.runReconciliation.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.runBatch.mock.invocationCallOrder[0]!
     )
   })
 
@@ -93,6 +106,7 @@ describe("Context index maintenance composition", () => {
     expect(mocks.rpc).toHaveBeenCalledTimes(2)
     expect(mocks.prepare).not.toHaveBeenCalled()
     expect(mocks.runBatch).not.toHaveBeenCalled()
+    expect(mocks.runReconciliation).not.toHaveBeenCalled()
   })
 
   it("does not call the provider without a reserved request slot", async () => {
@@ -108,5 +122,6 @@ describe("Context index maintenance composition", () => {
     expect(mocks.health).not.toHaveBeenCalled()
     expect(mocks.prepare).not.toHaveBeenCalled()
     expect(mocks.runBatch).not.toHaveBeenCalled()
+    expect(mocks.runReconciliation).not.toHaveBeenCalled()
   })
 })

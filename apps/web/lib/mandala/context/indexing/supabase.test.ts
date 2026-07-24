@@ -10,6 +10,112 @@ import {
 const now = "2026-07-17T03:00:00.000Z"
 
 describe("Supabase Context index repository", () => {
+  it("claims only bounded payload-free reconciliation references", async () => {
+    const rpc = vi.fn<ContextIndexRpcExecutor["rpc"]>().mockResolvedValue({
+      data: {
+        claims: [
+          {
+            outboxId: "30000000-0000-4000-8000-000000000001",
+            companyId: "20000000-0000-4000-8000-000000000001",
+            provider: "supermemory",
+            stableCustomId: `ctx_${"c".repeat(64)}`,
+            attempt: 2,
+            nextAttemptAt: "2026-07-17T03:10:00.000Z",
+          },
+        ],
+      },
+      error: null,
+    })
+    const repository = new SupabaseContextIndexRepository({ rpc })
+
+    const claims = await repository.claimReconciliation({
+      workerId: "worker-1",
+      limit: 100,
+      now,
+    })
+
+    expect(claims).toHaveLength(1)
+    expect(rpc).toHaveBeenCalledWith(contextIndexRpcNames.claimReconciliation, {
+      p_worker_id: "worker-1",
+      p_limit: 100,
+      p_now: now,
+    })
+    expect(JSON.stringify(claims)).not.toMatch(
+      /canonicalPayload|projectedContent|externalId|providerDocumentId/
+    )
+  })
+
+  it("confirms only exact completed inventory identities without payload data", async () => {
+    const rpc = vi.fn<ContextIndexRpcExecutor["rpc"]>().mockResolvedValue({
+      data: {
+        companyId: "20000000-0000-4000-8000-000000000001",
+        suppliedCount: 1,
+        settledCount: 1,
+        unmatchedCount: 0,
+      },
+      error: null,
+    })
+    const repository = new SupabaseContextIndexRepository({ rpc })
+
+    await expect(
+      repository.confirmReconciliation({
+        companyId: "20000000-0000-4000-8000-000000000001",
+        documents: [
+          {
+            stableCustomId: `ctx_${"c".repeat(64)}`,
+            providerDocumentId: "provider-doc-1",
+            status: "complete",
+          },
+        ],
+        now,
+      })
+    ).resolves.toMatchObject({ settledCount: 1, unmatchedCount: 0 })
+    expect(rpc).toHaveBeenCalledWith(
+      contextIndexRpcNames.confirmReconciliation,
+      {
+        p_company_id: "20000000-0000-4000-8000-000000000001",
+        p_documents: [
+          {
+            customId: `ctx_${"c".repeat(64)}`,
+            providerDocumentId: "provider-doc-1",
+            status: "complete",
+          },
+        ],
+        p_now: now,
+      }
+    )
+    expect(JSON.stringify(rpc.mock.calls)).not.toMatch(
+      /canonicalPayload|projectedContent|payload/
+    )
+  })
+
+  it("rejects malformed or unbalanced reconciliation responses", async () => {
+    const rpc = vi.fn<ContextIndexRpcExecutor["rpc"]>().mockResolvedValue({
+      data: {
+        companyId: "20000000-0000-4000-8000-000000000001",
+        suppliedCount: 1,
+        settledCount: 1,
+        unmatchedCount: 1,
+      },
+      error: null,
+    })
+    const repository = new SupabaseContextIndexRepository({ rpc })
+
+    await expect(
+      repository.confirmReconciliation({
+        companyId: "20000000-0000-4000-8000-000000000001",
+        documents: [
+          {
+            stableCustomId: `ctx_${"c".repeat(64)}`,
+            providerDocumentId: "provider-doc-1",
+            status: "complete",
+          },
+        ],
+        now,
+      })
+    ).rejects.toMatchObject({ code: "repository_invalid_response" })
+  })
+
   it("accepts provider processing batches up to the 600-document ceiling", async () => {
     const rpc = vi.fn<ContextIndexRpcExecutor["rpc"]>().mockResolvedValue({
       data: { claims: [] },
