@@ -24,6 +24,7 @@ const fixture = {
         required: true,
         modelAllowed: true,
         classification: "internal",
+        format: "non-empty-string",
       },
       {
         name: "severity",
@@ -82,6 +83,23 @@ describe("workspaceCapabilityMappingSpecSchema", () => {
               required: true,
               modelAllowed: true,
               classification: "internal",
+            },
+          ],
+        },
+      })
+    ).toThrow()
+  })
+
+  it("rejects undeclared output validation formats", () => {
+    expect(() =>
+      workspaceCapabilityMappingSpecSchema.parse({
+        ...fixture,
+        output: {
+          ...fixture.output,
+          fields: [
+            {
+              ...fixture.output.fields[0],
+              format: "customer-specific-validator",
             },
           ],
         },

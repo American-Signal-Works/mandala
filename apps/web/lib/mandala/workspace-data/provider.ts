@@ -4,6 +4,7 @@ import type {
   WorkspaceMappingFilter,
 } from "@workspace/control-plane"
 import { workspaceCapabilityMappingSpecSchema } from "@workspace/control-plane"
+import { z } from "zod"
 import type {
   CompiledAgentManifest,
   CompiledCapabilityBinding,
@@ -19,6 +20,7 @@ const maximumExpressionDepth = 16
 const maximumExpressionOperations = 500
 const maximumSourceRefsPerDatasetEntity = 3
 const unsafeSegments = new Set(["__proto__", "constructor", "prototype"])
+const dateTimeValue = z.string().datetime({ offset: true })
 
 export type WorkspaceExternalRecord = {
   id: string
@@ -358,6 +360,13 @@ export class WorkspaceDatasetProvider implements RuntimeCapabilityProvider {
           }
           continue
         }
+        if (!validFieldFormat(value, field.format)) {
+          if (field.required) valid = false
+          warnings.push(
+            `Entity ${entity} has an invalid value for field ${field.name}.`
+          )
+          continue
+        }
         output[field.name] = value
       }
       if (normalizedOpenOrders) {
@@ -419,6 +428,16 @@ export class WorkspaceDatasetProvider implements RuntimeCapabilityProvider {
       coverageComplete,
     }
   }
+}
+
+function validFieldFormat(
+  value: unknown,
+  format: "non-empty-string" | "date-time" | undefined
+): boolean {
+  if (!format) return true
+  if (format === "non-empty-string")
+    return typeof value === "string" && value.trim().length > 0
+  return dateTimeValue.safeParse(value).success
 }
 
 function inferCoverage(

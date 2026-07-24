@@ -36,13 +36,15 @@ const withinDays = (days: number): WorkspaceMappingFilter => ({
 const field = (
   name: string,
   expression: WorkspaceMappingExpression,
-  classification: "internal" | "confidential" = "confidential"
+  classification: "internal" | "confidential" = "confidential",
+  format?: "non-empty-string" | "date-time"
 ) => ({
   name,
   expression,
   required: true,
   modelAllowed: true,
   classification,
+  ...(format ? { format } : {}),
 })
 const bounds = {
   maximumInputRows: 9_000,
@@ -173,6 +175,38 @@ const templates: Record<string, WorkspaceCapabilityMappingSpec> = {
               math("max_of", trailingSales, literal(1))
             )
           ),
+          "internal"
+        ),
+      ],
+    },
+    bounds,
+  },
+  "commerce.events.read@1.0.0": {
+    schemaVersion: "mandala.workspace-data/v1",
+    capabilityKey: "commerce.events.read",
+    capabilityVersion: "1.0.0",
+    datasets: [salesDataset],
+    output: {
+      collection: "events",
+      entityKey: "sku",
+      fields: [
+        field(
+          "id",
+          first("sales", "/$externalId"),
+          "internal",
+          "non-empty-string"
+        ),
+        field("sku", first("sales", "/sku"), "internal", "non-empty-string"),
+        field("type", literal("sales_order"), "internal"),
+        field(
+          "occurredAt",
+          first("sales", "/$parent/order_date"),
+          "internal",
+          "date-time"
+        ),
+        field(
+          "description",
+          literal("A sales order was observed for this product."),
           "internal"
         ),
       ],

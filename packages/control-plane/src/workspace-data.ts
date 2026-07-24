@@ -125,6 +125,7 @@ export const workspaceOutputFieldSchema = z
       "confidential",
       "restricted",
     ]),
+    format: z.enum(["non-empty-string", "date-time"]).optional(),
   })
   .strict()
 
