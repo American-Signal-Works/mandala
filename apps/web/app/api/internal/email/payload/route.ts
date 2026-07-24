@@ -20,16 +20,21 @@ const invitationReference = /^company_invitation:([0-9a-f-]{36}):(\d+)$/
 const acceptedReference = /^company_invitation_accepted:([0-9a-f-]{36})$/
 
 export async function POST(request: Request) {
-  if (!isAuthorized(request)) return Response.json({ error: "unauthorized" }, { status: 401 })
+  if (!isAuthorized(request))
+    return Response.json({ error: "unauthorized" }, { status: 401 })
   const parsed = requestSchema.safeParse(await request.json().catch(() => null))
-  if (!parsed.success) return Response.json({ error: "invalid_request" }, { status: 400 })
+  if (!parsed.success)
+    return Response.json({ error: "invalid_request" }, { status: 400 })
   try {
     const rendered = await resolveInvitationPayload(parsed.data)
     return Response.json(rendered, {
       headers: { "cache-control": "private, no-store" },
     })
   } catch (error) {
-    const code = error instanceof PayloadResolutionError ? error.code : "payload_unavailable"
+    const code =
+      error instanceof PayloadResolutionError
+        ? error.code
+        : "payload_unavailable"
     const status = code === "payload_not_found" ? 404 : 422
     return Response.json({ error: code }, { status })
   }
@@ -41,21 +46,37 @@ async function resolveInvitationPayload(input: z.infer<typeof requestSchema>) {
 
   if (input.templateKey === "workspace_invite") {
     const reference = invitationReference.exec(input.payloadReference)
-    if (!reference) throw new PayloadResolutionError("invalid_payload_reference")
+    if (!reference)
+      throw new PayloadResolutionError("invalid_payload_reference")
     const [, invitationId, versionText] = reference
     const version = Number(versionText)
     const { data: invitation, error } = await admin
       .from("company_invitations")
-      .select("id, company_id, recipient_email, inviter_user_id, version, state")
+      .select(
+        "id, company_id, recipient_email, inviter_user_id, version, state"
+      )
       .eq("id", invitationId!)
       .eq("company_id", input.companyId)
       .maybeSingle()
-    if (error || !invitation || invitation.version !== version || invitation.state !== "pending") {
+    if (
+      error ||
+      !invitation ||
+      invitation.version !== version ||
+      invitation.state !== "pending"
+    ) {
       throw new PayloadResolutionError("payload_not_found")
     }
     const [{ data: company }, { data: inviterProfile }] = await Promise.all([
-      admin.from("companies").select("name").eq("id", input.companyId).maybeSingle(),
-      admin.from("profiles").select("display_name").eq("user_id", invitation.inviter_user_id).maybeSingle(),
+      admin
+        .from("companies")
+        .select("name")
+        .eq("id", input.companyId)
+        .maybeSingle(),
+      admin
+        .from("profiles")
+        .select("display_name")
+        .eq("user_id", invitation.inviter_user_id)
+        .maybeSingle(),
     ])
     if (!company) throw new PayloadResolutionError("payload_not_found")
     const token = invitationToken({ invitationId: invitation.id, version })
@@ -82,15 +103,30 @@ async function resolveInvitationPayload(input: z.infer<typeof requestSchema>) {
     .eq("id", invitationId)
     .eq("company_id", input.companyId)
     .maybeSingle()
-  if (error || !invitation || invitation.state !== "accepted" || !invitation.accepted_user_id) {
+  if (
+    error ||
+    !invitation ||
+    invitation.state !== "accepted" ||
+    !invitation.accepted_user_id
+  ) {
     throw new PayloadResolutionError("payload_not_found")
   }
-  const [{ data: company }, { data: memberProfile }, { data: inviter }] = await Promise.all([
-    admin.from("companies").select("name").eq("id", input.companyId).maybeSingle(),
-    admin.from("profiles").select("display_name").eq("user_id", invitation.accepted_user_id).maybeSingle(),
-    admin.auth.admin.getUserById(invitation.inviter_user_id),
-  ])
-  if (!company || !inviter.user?.email) throw new PayloadResolutionError("payload_not_found")
+  const [{ data: company }, { data: memberProfile }, { data: inviter }] =
+    await Promise.all([
+      admin
+        .from("companies")
+        .select("name")
+        .eq("id", input.companyId)
+        .maybeSingle(),
+      admin
+        .from("profiles")
+        .select("display_name")
+        .eq("user_id", invitation.accepted_user_id)
+        .maybeSingle(),
+      admin.auth.admin.getUserById(invitation.inviter_user_id),
+    ])
+  if (!company || !inviter.user?.email)
+    throw new PayloadResolutionError("payload_not_found")
   return withoutRecipient(
     createInviteAcceptedEmailPayload({
       fromAddress,
@@ -102,7 +138,9 @@ async function resolveInvitationPayload(input: z.infer<typeof requestSchema>) {
   )
 }
 
-function withoutRecipient<T extends { to: string[] }>(payload: T): Omit<T, "to"> {
+function withoutRecipient<T extends { to: string[] }>(
+  payload: T
+): Omit<T, "to"> {
   const rendered = { ...payload } as Partial<T>
   delete rendered.to
   return rendered as Omit<T, "to">
@@ -110,7 +148,9 @@ function withoutRecipient<T extends { to: string[] }>(payload: T): Omit<T, "to">
 
 function isAuthorized(request: Request) {
   const authorization = request.headers.get("authorization") ?? ""
-  const supplied = authorization.startsWith("Bearer ") ? authorization.slice(7) : ""
+  const supplied = authorization.startsWith("Bearer ")
+    ? authorization.slice(7)
+    : ""
   const expected = process.env.EMAIL_PAYLOAD_RESOLVER_SECRET?.trim() ?? ""
   const suppliedBytes = Buffer.from(supplied)
   const expectedBytes = Buffer.from(expected)

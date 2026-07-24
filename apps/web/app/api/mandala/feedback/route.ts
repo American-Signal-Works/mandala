@@ -33,9 +33,7 @@ export async function POST(request: Request) {
     })
     if (
       !membership ||
-      !new Set(["owner", "admin", "approver", "member"]).has(
-        membership.role
-      )
+      !new Set(["owner", "admin", "approver", "member"]).has(membership.role)
     )
       return feedbackJson({ error: "forbidden" }, 403)
     const scopedUserId = memorySuggestionUserId(body)

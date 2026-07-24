@@ -104,13 +104,10 @@ function askForConfirmation(
     input.once("close", failClosed)
     input.once("error", failClosed)
     prompt.once("error", failClosed)
-    prompt.question("Continue? [y/N] ").then(
-      (answer) => {
-        cleanup()
-        resolve(answer)
-      },
-      failClosed
-    )
+    prompt.question("Continue? [y/N] ").then((answer) => {
+      cleanup()
+      resolve(answer)
+    }, failClosed)
   })
 }
 

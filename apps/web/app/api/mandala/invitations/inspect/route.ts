@@ -8,7 +8,8 @@ export async function POST(request: Request) {
   const parsed = invitationTokenRequestSchema.safeParse(
     await request.json().catch(() => null)
   )
-  if (!parsed.success) return privateInvitationJson({ error: "invalid_request" }, 400)
+  if (!parsed.success)
+    return privateInvitationJson({ error: "invalid_request" }, 400)
   const supabase = createClient<Database>(
     requiredEnvironment("NEXT_PUBLIC_SUPABASE_URL"),
     requiredEnvironment("NEXT_PUBLIC_SUPABASE_ANON_KEY"),

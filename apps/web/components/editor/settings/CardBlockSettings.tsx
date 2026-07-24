@@ -1,52 +1,92 @@
 // apps/web/components/editor/settings/CardBlockSettings.tsx
-"use client";
-import { useEffect, useState } from "react";
-import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetFooter } from "@workspace/ui/components/sheet";
-import { Button } from "@workspace/ui/components/button";
-import { Field, FieldGroup, FieldLabel } from "@workspace/ui/components/field";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@workspace/ui/components/select";
-import type { CardBlockProps } from "../blocks/CardBlockElement";
+"use client"
+import { useEffect, useState } from "react"
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+  SheetFooter,
+} from "@workspace/ui/components/sheet"
+import { Button } from "@workspace/ui/components/button"
+import { Field, FieldGroup, FieldLabel } from "@workspace/ui/components/field"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@workspace/ui/components/select"
+import type { CardBlockProps } from "../blocks/CardBlockElement"
 
-type CollectionLite = { id: string; name: string; fields: Array<{ id: string; name: string; type: string }> };
+type CollectionLite = {
+  id: string
+  name: string
+  fields: Array<{ id: string; name: string; type: string }>
+}
 
 export function CardBlockSettings({
-  open, onOpenChange, props, onSave,
+  open,
+  onOpenChange,
+  props,
+  onSave,
 }: {
-  open: boolean;
-  onOpenChange: (v: boolean) => void;
-  props: CardBlockProps;
-  onSave: (next: CardBlockProps) => void;
+  open: boolean
+  onOpenChange: (v: boolean) => void
+  props: CardBlockProps
+  onSave: (next: CardBlockProps) => void
 }) {
-  const [collections, setCollections] = useState<CollectionLite[]>([]);
-  const [draft, setDraft] = useState<CardBlockProps>(props);
-
-  // eslint-disable-next-line react-hooks/set-state-in-effect
-  useEffect(() => { setDraft(props); }, [props, open]);
+  const [collections, setCollections] = useState<CollectionLite[]>([])
+  const [draft, setDraft] = useState<CardBlockProps>(props)
 
   useEffect(() => {
-    if (!open) return;
-    fetch("/api/collections").then((r) => r.json()).then((data) => setCollections(Array.isArray(data) ? data : []));
-  }, [open]);
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- Reset the editor draft when the selected block changes.
+    setDraft(props)
+  }, [props, open])
 
-  const collection = collections.find((c) => c.id === draft.collectionId);
-  const numericFields = collection?.fields.filter((f) => ["number", "currency"].includes(f.type)) ?? [];
+  useEffect(() => {
+    if (!open) return
+    fetch("/api/collections")
+      .then((r) => r.json())
+      .then((data) => setCollections(Array.isArray(data) ? data : []))
+  }, [open])
+
+  const collection = collections.find((c) => c.id === draft.collectionId)
+  const numericFields =
+    collection?.fields.filter((f) => ["number", "currency"].includes(f.type)) ??
+    []
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent>
-        <SheetHeader><SheetTitle>Card settings</SheetTitle></SheetHeader>
+        <SheetHeader>
+          <SheetTitle>Card settings</SheetTitle>
+        </SheetHeader>
         <div className="py-4">
           <FieldGroup>
             <Field>
               <FieldLabel>Collection</FieldLabel>
               <Select
                 value={draft.collectionId || "__none__"}
-                onValueChange={(v) => setDraft({ ...draft, collectionId: v === "__none__" ? "" : v })}
+                onValueChange={(v) =>
+                  setDraft({
+                    ...draft,
+                    collectionId: v === "__none__" ? "" : v,
+                  })
+                }
               >
-                <SelectTrigger><SelectValue placeholder="Pick a collection" /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue placeholder="Pick a collection" />
+                </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__none__" disabled>Pick a collection</SelectItem>
-                  {collections.map((c) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+                  <SelectItem value="__none__" disabled>
+                    Pick a collection
+                  </SelectItem>
+                  {collections.map((c) => (
+                    <SelectItem key={c.id} value={c.id}>
+                      {c.name}
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </Field>
@@ -55,14 +95,22 @@ export function CardBlockSettings({
               <FieldLabel>Metric</FieldLabel>
               <Select
                 value={draft.metric.kind}
-                onValueChange={(v) => setDraft({
-                  ...draft,
-                  metric: v === "count"
-                    ? { kind: "count" }
-                    : { kind: v as "sum"|"avg"|"min"|"max", fieldId: numericFields[0]?.id ?? "" },
-                })}
+                onValueChange={(v) =>
+                  setDraft({
+                    ...draft,
+                    metric:
+                      v === "count"
+                        ? { kind: "count" }
+                        : {
+                            kind: v as "sum" | "avg" | "min" | "max",
+                            fieldId: numericFields[0]?.id ?? "",
+                          },
+                  })
+                }
               >
-                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="count">Count of rows</SelectItem>
                   <SelectItem value="sum">Sum</SelectItem>
@@ -77,18 +125,37 @@ export function CardBlockSettings({
               <Field>
                 <FieldLabel>Field</FieldLabel>
                 <Select
-                  value={(draft.metric as { fieldId: string }).fieldId || "__none__"}
-                  onValueChange={(v) => setDraft({
-                    ...draft,
-                    metric: { ...(draft.metric as { kind: "sum"|"avg"|"min"|"max"; fieldId: string }), fieldId: v === "__none__" ? "" : v },
-                  })}
+                  value={
+                    (draft.metric as { fieldId: string }).fieldId || "__none__"
+                  }
+                  onValueChange={(v) =>
+                    setDraft({
+                      ...draft,
+                      metric: {
+                        ...(draft.metric as {
+                          kind: "sum" | "avg" | "min" | "max"
+                          fieldId: string
+                        }),
+                        fieldId: v === "__none__" ? "" : v,
+                      },
+                    })
+                  }
                 >
-                  <SelectTrigger><SelectValue placeholder="Pick a numeric field" /></SelectTrigger>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Pick a numeric field" />
+                  </SelectTrigger>
                   <SelectContent>
-                    {numericFields.length === 0
-                      ? <SelectItem value="__none__" disabled>No numeric fields</SelectItem>
-                      : numericFields.map((f) => <SelectItem key={f.id} value={f.id}>{f.name}</SelectItem>)
-                    }
+                    {numericFields.length === 0 ? (
+                      <SelectItem value="__none__" disabled>
+                        No numeric fields
+                      </SelectItem>
+                    ) : (
+                      numericFields.map((f) => (
+                        <SelectItem key={f.id} value={f.id}>
+                          {f.name}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
               </Field>
@@ -96,8 +163,15 @@ export function CardBlockSettings({
 
             <Field>
               <FieldLabel>Format</FieldLabel>
-              <Select value={draft.format} onValueChange={(v) => setDraft({ ...draft, format: v as "number"|"currency" })}>
-                <SelectTrigger><SelectValue /></SelectTrigger>
+              <Select
+                value={draft.format}
+                onValueChange={(v) =>
+                  setDraft({ ...draft, format: v as "number" | "currency" })
+                }
+              >
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="number">Number</SelectItem>
                   <SelectItem value="currency">Currency</SelectItem>
@@ -107,9 +181,11 @@ export function CardBlockSettings({
           </FieldGroup>
         </div>
         <SheetFooter>
-          <Button onClick={() => onSave(draft)} disabled={!draft.collectionId}>Save</Button>
+          <Button onClick={() => onSave(draft)} disabled={!draft.collectionId}>
+            Save
+          </Button>
         </SheetFooter>
       </SheetContent>
     </Sheet>
-  );
+  )
 }

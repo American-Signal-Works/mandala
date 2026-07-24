@@ -80,8 +80,7 @@ describe("magic-link request route", () => {
     expect(signInWithOtp).toHaveBeenCalledWith({
       email: "person@example.test",
       options: {
-        emailRedirectTo:
-          "https://mandala.test/callback",
+        emailRedirectTo: "https://mandala.test/callback",
         shouldCreateUser: true,
       },
     })

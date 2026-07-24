@@ -1,34 +1,34 @@
-'use client';
+"use client"
 
-import * as React from 'react';
+import * as React from "react"
 
 import {
   formatDateValue,
   getDateDisplayLabel,
   parseCanonicalDateValue,
-} from '@platejs/date';
-import type { TDateElement } from 'platejs';
-import type { PlateElementProps } from 'platejs/react';
+} from "@platejs/date"
+import type { TDateElement } from "platejs"
+import type { PlateElementProps } from "platejs/react"
 
-import { PlateElement, useReadOnly } from 'platejs/react';
+import { PlateElement, useReadOnly } from "platejs/react"
 
-import { Calendar } from '@workspace/ui/components/calendar';
+import { Calendar } from "@workspace/ui/components/calendar"
 import {
   Popover,
   PopoverContent,
   PopoverTrigger,
-} from '@workspace/ui/components/popover';
-import { cn } from '@workspace/ui/lib/utils';
-import { inlineSuggestionVariants } from '@workspace/ui/components/suggestion';
+} from "@workspace/ui/components/popover"
+import { cn } from "@workspace/ui/lib/utils"
+import { inlineSuggestionVariants } from "@workspace/ui/components/suggestion"
 
 export function DateElement(props: PlateElementProps<TDateElement>) {
-  const { editor, element } = props;
-  const readOnly = useReadOnly();
+  const { editor, element } = props
+  const readOnly = useReadOnly()
 
   const trigger = (
     <span
       className={cn(
-        'w-fit cursor-pointer rounded-sm bg-muted px-1 text-muted-foreground',
+        "w-fit cursor-pointer rounded-sm bg-muted px-1 text-muted-foreground",
         inlineSuggestionVariants()
       )}
       contentEditable={false}
@@ -40,7 +40,7 @@ export function DateElement(props: PlateElementProps<TDateElement>) {
         <span>Pick a date</span>
       )}
     </span>
-  );
+  )
 
   return (
     <PlateElement
@@ -58,14 +58,14 @@ export function DateElement(props: PlateElementProps<TDateElement>) {
           <PopoverTrigger asChild>{trigger}</PopoverTrigger>
           <PopoverContent className="w-auto p-0">
             <Calendar
-              selected={parseCanonicalDateValue(element.date ?? '')}
+              selected={parseCanonicalDateValue(element.date ?? "")}
               onSelect={(date) => {
-                if (!date) return;
+                if (!date) return
 
                 editor.tf.setNodes(
                   { date: formatDateValue(date), rawDate: undefined },
                   { at: element }
-                );
+                )
               }}
               mode="single"
               initialFocus
@@ -75,5 +75,5 @@ export function DateElement(props: PlateElementProps<TDateElement>) {
       )}
       {props.children}
     </PlateElement>
-  );
+  )
 }

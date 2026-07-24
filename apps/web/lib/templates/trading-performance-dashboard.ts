@@ -1,13 +1,16 @@
 // apps/web/lib/templates/trading-performance-dashboard.ts
-import type { PageTemplate } from "./types";
+import type { PageTemplate } from "./types"
 
 export const performanceDashboard: PageTemplate = {
   id: "trading-performance-dashboard",
   name: "Performance Dashboard",
-  description: "KPIs, equity curve, P&L by symbol, recent trades — for IBKR-imported Trades.",
+  description:
+    "KPIs, equity curve, P&L by symbol, recent trades — for IBKR-imported Trades.",
   emoji: "📊",
   pageType: "dashboard",
-  requiresCollections: [{ name: "Trades", managed_by_connection: "ibkr-activity-statement" }],
+  requiresCollections: [
+    { name: "Trades", managed_by_connection: "ibkr-activity-statement" },
+  ],
   document: [
     { type: "h1", children: [{ text: "Performance Dashboard" }] },
     { type: "p", children: [{ text: "Top-line numbers, then breakdowns." }] },
@@ -23,7 +26,11 @@ export const performanceDashboard: PageTemplate = {
     {
       type: "card",
       children: [{ text: "" }],
-      cardProps: { collectionId: "__TRADES__", metric: { kind: "count" }, format: "number" },
+      cardProps: {
+        collectionId: "__TRADES__",
+        metric: { kind: "count" },
+        format: "number",
+      },
     },
     { type: "h2", children: [{ text: "Equity curve" }] },
     {
@@ -53,7 +60,12 @@ export const performanceDashboard: PageTemplate = {
     {
       type: "data-table",
       children: [{ text: "" }],
-      tableProps: { collectionId: "__TRADES__", visibleFields: [], pageSize: 25, title: "Recent trades" },
+      tableProps: {
+        collectionId: "__TRADES__",
+        visibleFields: [],
+        pageSize: 25,
+        title: "Recent trades",
+      },
     },
   ],
-};
+}

@@ -1,24 +1,24 @@
-'use client';
+"use client"
 
-import { MathRules } from '@platejs/math';
-import { EquationPlugin, InlineEquationPlugin } from '@platejs/math/react';
+import { MathRules } from "@platejs/math"
+import { EquationPlugin, InlineEquationPlugin } from "@platejs/math/react"
 
 import {
   EquationElement,
   InlineEquationElement,
-} from '@workspace/ui/components/equation-node';
+} from "@workspace/ui/components/equation-node"
 
 export const MathKit = [
   InlineEquationPlugin.configure({
-    inputRules: [MathRules.markdown({ variant: '$' })],
+    inputRules: [MathRules.markdown({ variant: "$" })],
     node: {
       component: InlineEquationElement,
     },
   }),
   EquationPlugin.configure({
-    inputRules: [MathRules.markdown({ on: 'break', variant: '$$' })],
+    inputRules: [MathRules.markdown({ on: "break", variant: "$$" })],
     node: {
       component: EquationElement,
     },
   }),
-];
+]

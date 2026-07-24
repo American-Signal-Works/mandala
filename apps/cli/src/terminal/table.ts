@@ -85,12 +85,7 @@ export function renderAsciiTable(
   const safeRows = rows.map((row) =>
     safeHeaders.map((_, index) => sanitizeTerminalText(row[index] ?? ""))
   )
-  const colWidths = allocateColumnWidths(
-    width,
-    safeHeaders,
-    safeRows,
-    weights
-  )
+  const colWidths = allocateColumnWidths(width, safeHeaders, safeRows, weights)
   const table = new Table({
     chars: ASCII_CHARS,
     colWidths,
@@ -132,7 +127,10 @@ export function isScalar(value: unknown): boolean {
   return value === null || typeof value !== "object"
 }
 
-export function wrapTerminalText(value: string, requestedWidth?: number): string {
+export function wrapTerminalText(
+  value: string,
+  requestedWidth?: number
+): string {
   const width = normalizeTerminalWidth(requestedWidth)
   const safe = sanitizeTerminalText(value)
   return safe
@@ -148,7 +146,10 @@ export function terminalTextWidth(value: string): number {
   let width = 0
   for (const { segment } of GRAPHEME_SEGMENTER.segment(safe)) {
     if (segment === "\n") continue
-    if (/\p{Extended_Pictographic}/u.test(segment) || containsWideCharacter(segment))
+    if (
+      /\p{Extended_Pictographic}/u.test(segment) ||
+      containsWideCharacter(segment)
+    )
       width += 2
     else if (!/^\p{Mark}+$/u.test(segment)) width += 1
   }
@@ -184,7 +185,10 @@ function wrapTerminalLine(value: string, width: number): string[] {
 }
 
 function graphemesWidth(graphemes: readonly string[]): number {
-  return graphemes.reduce((total, grapheme) => total + terminalTextWidth(grapheme), 0)
+  return graphemes.reduce(
+    (total, grapheme) => total + terminalTextWidth(grapheme),
+    0
+  )
 }
 
 function containsWideCharacter(value: string): boolean {
@@ -259,14 +263,7 @@ function flattenValue(
       return
     }
     value.forEach((entry, index) =>
-      flattenValue(
-        entry,
-        `${path}[${index}]`,
-        rows,
-        grids,
-        width,
-        false
-      )
+      flattenValue(entry, `${path}[${index}]`, rows, grids, width, false)
     )
     return
   }

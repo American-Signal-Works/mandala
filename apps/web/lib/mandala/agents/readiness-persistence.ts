@@ -144,7 +144,8 @@ export async function recordAgentTestReadiness(input: {
     policyVersion: 1,
     bindingVersion: 1,
     bindingCurrent: capabilityChecks.every(
-      (capability) => capability.granted && capability.healthy && capability.schemaCompatible
+      (capability) =>
+        capability.granted && capability.healthy && capability.schemaCompatible
     ),
     sampleRun: {
       fixtureId: "sandbox-review",
@@ -178,5 +179,4 @@ export async function recordAgentTestReadiness(input: {
       : "Sandbox evaluation found activation blockers.",
   })
   if (recorded.error) throw new Error(recorded.error.message)
-
 }

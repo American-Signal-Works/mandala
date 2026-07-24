@@ -1,9 +1,9 @@
-'use client';
+"use client"
 
-import { SlashInputPlugin, SlashPlugin } from '@platejs/slash-command/react';
-import { type SlateEditor, KEYS } from 'platejs';
+import { SlashInputPlugin, SlashPlugin } from "@platejs/slash-command/react"
+import { type SlateEditor, KEYS } from "platejs"
 
-import { SlashInputElement } from '@workspace/ui/components/slash-node';
+import { SlashInputElement } from "@workspace/ui/components/slash-node"
 
 export const SlashKit = [
   SlashPlugin.configure({
@@ -15,4 +15,4 @@ export const SlashKit = [
     },
   }),
   SlashInputPlugin.withComponent(SlashInputElement),
-];
+]

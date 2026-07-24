@@ -129,13 +129,15 @@ describe("server-owned action dispatcher", () => {
   })
 
   it("rechecks policy and lifecycle again before every retry attempt", async () => {
-    const adapter = vi.fn().mockRejectedValueOnce(
-      new ExecutorFailure(
-        "temporarily_unavailable",
-        "retryable",
-        "Try again."
+    const adapter = vi
+      .fn()
+      .mockRejectedValueOnce(
+        new ExecutorFailure(
+          "temporarily_unavailable",
+          "retryable",
+          "Try again."
+        )
       )
-    )
     const recheckPolicy = vi
       .fn()
       .mockResolvedValueOnce(policy())

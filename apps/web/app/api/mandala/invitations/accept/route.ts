@@ -9,7 +9,8 @@ export async function POST(request: Request) {
   const parsed = invitationTokenRequestSchema.safeParse(
     await request.json().catch(() => null)
   )
-  if (!parsed.success) return privateInvitationJson({ error: "invalid_request" }, 400)
+  if (!parsed.success)
+    return privateInvitationJson({ error: "invalid_request" }, 400)
   try {
     const acceptance = await acceptCompanyInvitation({
       supabase: auth.supabase,

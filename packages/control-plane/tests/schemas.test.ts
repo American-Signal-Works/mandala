@@ -400,8 +400,14 @@ function activityEvent() {
       id: "50000000-0000-4000-8000-000000000001",
     },
     reason: "Stock is below target.",
-    priorState: { itemStatus: "active" as const, draftStatus: "pending_review" as const },
-    resultState: { itemStatus: "approved" as const, draftStatus: "approved" as const },
+    priorState: {
+      itemStatus: "active" as const,
+      draftStatus: "pending_review" as const,
+    },
+    resultState: {
+      itemStatus: "approved" as const,
+      draftStatus: "approved" as const,
+    },
     createdAt: "2026-07-09T12:00:00.000Z",
   }
 }

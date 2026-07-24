@@ -28,10 +28,9 @@ export async function GET(request: Request) {
       supabase: auth.supabase,
       userId: auth.user.id,
     })
-    return NextResponse.json(
-      companiesResponseSchema.parse({ companies }),
-      { headers: { "cache-control": "private, no-store" } }
-    )
+    return NextResponse.json(companiesResponseSchema.parse({ companies }), {
+      headers: { "cache-control": "private, no-store" },
+    })
   } catch {
     return NextResponse.json({ error: "company_list_failed" }, { status: 500 })
   }

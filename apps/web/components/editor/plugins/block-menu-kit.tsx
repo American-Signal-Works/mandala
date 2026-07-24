@@ -1,14 +1,14 @@
-'use client';
+"use client"
 
-import { BlockMenuPlugin } from '@platejs/selection/react';
+import { BlockMenuPlugin } from "@platejs/selection/react"
 
-import { BlockContextMenu } from '@workspace/ui/components/block-context-menu';
+import { BlockContextMenu } from "@workspace/ui/components/block-context-menu"
 
-import { BlockSelectionKit } from './block-selection-kit';
+import { BlockSelectionKit } from "./block-selection-kit"
 
 export const BlockMenuKit = [
   ...BlockSelectionKit,
   BlockMenuPlugin.configure({
     render: { aboveEditable: BlockContextMenu },
   }),
-];
+]

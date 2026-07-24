@@ -62,8 +62,7 @@ describe("auth callback route", () => {
     const response = await GET(
       new Request("https://mandala.md/callback?code=one-time-code", {
         headers: {
-          cookie:
-            "mandala-auth-continuation=%2Finvitation%2Fcomplete",
+          cookie: "mandala-auth-continuation=%2Finvitation%2Fcomplete",
         },
       })
     )

@@ -7,10 +7,7 @@ import {
 } from "@workspace/control-plane"
 import { createInvitationHandoffAdminClient } from "@/actions/admin/invitation-handoff"
 import type { Database } from "@/lib/supabase/types"
-import {
-  CompanyInvitationError,
-  invitationErrorFromRpc,
-} from "./invitations"
+import { CompanyInvitationError, invitationErrorFromRpc } from "./invitations"
 import { invitationTokenDigest } from "./invitation-token"
 
 export const INVITATION_HANDOFF_COOKIE = "mandala-invitation-handoff"

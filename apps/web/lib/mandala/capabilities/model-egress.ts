@@ -55,7 +55,8 @@ function copyAllowedPath(
 
   if (part.array) {
     if (!Array.isArray(value)) return
-    if (value.length > 5_000) throw new Error("Capability model-egress row limit exceeded.")
+    if (value.length > 5_000)
+      throw new Error("Capability model-egress row limit exceeded.")
     const rows = Array.isArray(target[part.key])
       ? (target[part.key] as unknown[])
       : value.map(() => ({}))
@@ -88,7 +89,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value)
 }
 
-function isSafeScalar(value: unknown): value is string | number | boolean | null {
+function isSafeScalar(
+  value: unknown
+): value is string | number | boolean | null {
   return (
     value === null ||
     typeof value === "string" ||

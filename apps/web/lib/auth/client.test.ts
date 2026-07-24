@@ -34,9 +34,11 @@ describe("auth client helpers", () => {
   })
 
   it("requests magic links through the same-origin endpoint", async () => {
-    const fetchMock = vi.fn().mockResolvedValue(
-      new Response(JSON.stringify({ accepted: true }), { status: 202 })
-    )
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValue(
+        new Response(JSON.stringify({ accepted: true }), { status: 202 })
+      )
     vi.stubGlobal("fetch", fetchMock)
 
     const result = await requestEmailMagicLink("person@example.com", {

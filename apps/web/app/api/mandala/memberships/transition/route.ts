@@ -45,14 +45,14 @@ export async function POST(request: Request) {
   }
 
   const authorization = await authorizeCompanyPermission({
-      supabase: auth.supabase,
-      companyId: parsed.data.companyId,
-      userId: auth.user.id,
-      permission:
-        parsed.data.action === "leave"
-          ? "company.context.read"
-          : "membership.manage",
-    })
+    supabase: auth.supabase,
+    companyId: parsed.data.companyId,
+    userId: auth.user.id,
+    permission:
+      parsed.data.action === "leave"
+        ? "company.context.read"
+        : "membership.manage",
+  })
   const permissionFailure = companyPermissionFailure(authorization)
   if (permissionFailure) {
     return NextResponse.json(

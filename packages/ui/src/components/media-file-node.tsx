@@ -1,29 +1,29 @@
-'use client';
+"use client"
 
-import * as React from 'react';
+import * as React from "react"
 
-import type { TFileElement } from 'platejs';
-import type { PlateElementProps } from 'platejs/react';
+import type { TFileElement } from "platejs"
+import type { PlateElementProps } from "platejs/react"
 
-import { useMediaState } from '@platejs/media/react';
-import { ResizableProvider } from '@platejs/resizable';
-import { FileUp } from 'lucide-react';
-import { PlateElement, useReadOnly, withHOC } from 'platejs/react';
+import { useMediaState } from "@platejs/media/react"
+import { ResizableProvider } from "@platejs/resizable"
+import { FileUp } from "lucide-react"
+import { PlateElement, useReadOnly, withHOC } from "platejs/react"
 
-import { cn } from '@workspace/ui/lib/utils';
-import { Caption, CaptionTextarea } from './caption';
+import { cn } from "@workspace/ui/lib/utils"
+import { Caption, CaptionTextarea } from "./caption"
 
 export const FileElement = withHOC(
   ResizableProvider,
   function FileElement(props: PlateElementProps<TFileElement>) {
-    const readOnly = useReadOnly();
-    const { name, unsafeUrl } = useMediaState();
+    const readOnly = useReadOnly()
+    const { name, unsafeUrl } = useMediaState()
 
     return (
       <PlateElement className="my-px rounded-sm" {...props}>
         <a
           className={cn(
-            'group relative m-0 flex cursor-pointer items-center rounded px-0.5 py-[3px] hover:bg-muted'
+            "group relative m-0 flex cursor-pointer items-center rounded px-0.5 py-[3px] hover:bg-muted"
           )}
           contentEditable={false}
           download={name}
@@ -32,7 +32,7 @@ export const FileElement = withHOC(
           role="button"
           target="_blank"
         >
-          <div className={cn('flex items-center gap-1 p-1')}>
+          <div className={cn("flex items-center gap-1 p-1")}>
             <FileUp className="size-5" />
             <div>{name}</div>
           </div>
@@ -47,6 +47,6 @@ export const FileElement = withHOC(
         </a>
         {props.children}
       </PlateElement>
-    );
+    )
   }
-);
+)

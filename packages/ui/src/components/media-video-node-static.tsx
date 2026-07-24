@@ -1,16 +1,16 @@
 // @ts-nocheck -- scaffolded by @plate registry; minor type narrowing issues from noUncheckedIndexedAccess
-import * as React from 'react';
+import * as React from "react"
 
-import type { TCaptionElement, TResizableProps, TVideoElement } from 'platejs';
-import type { SlateElementProps } from 'platejs/static';
+import type { TCaptionElement, TResizableProps, TVideoElement } from "platejs"
+import type { SlateElementProps } from "platejs/static"
 
-import { NodeApi } from 'platejs';
-import { SlateElement } from 'platejs/static';
+import { NodeApi } from "platejs"
+import { SlateElement } from "platejs/static"
 
 export function VideoElementStatic(
   props: SlateElementProps<TVideoElement & TCaptionElement & TResizableProps>
 ) {
-  const { align = 'center', caption, url, width } = props.element;
+  const { align = "center", caption, url, width } = props.element
 
   return (
     <SlateElement className="py-2.5" {...props}>
@@ -31,5 +31,5 @@ export function VideoElementStatic(
       </div>
       {props.children}
     </SlateElement>
-  );
+  )
 }

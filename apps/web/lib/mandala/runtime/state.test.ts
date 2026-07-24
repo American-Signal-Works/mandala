@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest"
-import {
-  createRuntimeStartState,
-  resolveRuntimeSandboxEnabled,
-} from "./state"
+import { createRuntimeStartState, resolveRuntimeSandboxEnabled } from "./state"
 
 describe("runtime Sandbox compatibility", () => {
   it.each([

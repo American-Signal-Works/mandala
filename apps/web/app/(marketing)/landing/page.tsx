@@ -1,10 +1,10 @@
 export default function MarketingHome() {
   return (
-    <div className="min-h-svh flex flex-col items-center justify-center gap-6 px-4 text-center">
+    <div className="flex min-h-svh flex-col items-center justify-center gap-6 px-4 text-center">
       <h1 className="text-4xl font-semibold">Mandala</h1>
-      <p className="text-lg text-muted-foreground max-w-md">
+      <p className="max-w-md text-lg text-muted-foreground">
         A workspace for your data. Pages of blocks, collections, connections.
       </p>
     </div>
-  );
+  )
 }

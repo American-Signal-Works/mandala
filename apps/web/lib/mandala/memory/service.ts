@@ -90,10 +90,7 @@ export function isCurrentApprovedCandidate(
   if (candidate.supersededById || candidate.forgottenAt || candidate.revokedAt)
     return false
   if (candidate.expiresAt && new Date(candidate.expiresAt) <= asOf) return false
-  if (
-    candidate.retentionUntil &&
-    new Date(candidate.retentionUntil) <= asOf
-  )
+  if (candidate.retentionUntil && new Date(candidate.retentionUntil) <= asOf)
     return false
 
   return (
