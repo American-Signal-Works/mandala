@@ -181,6 +181,141 @@ describe("interactive TUI", () => {
     expect(stdout.value).toContain("Nothing was written or sent")
   })
 
+  it("answers exact read-only questions about the selected Sandbox candidate locally", async () => {
+    const base = fakeExecute()
+    const execute = vi.fn(async (args: string[]): Promise<CliCommandResult> => {
+      if (args[0] === "sandbox" && args[1] === "open") {
+        return {
+          ok: true,
+          data: {
+            schemaVersion: 1,
+            mode: "sandbox",
+            ephemeral: true,
+            companyId,
+            sessionId: "a5000000-0000-4000-8000-000000000001",
+            createdAt: "2026-07-24T16:45:00.000Z",
+            dataAnchorAt: "2026-07-24",
+            recordCount: 82_166,
+            candidateCount: 1,
+            sources: [],
+            candidates: [
+              {
+                availableActions: [
+                  "approve",
+                  "edit",
+                  "request_rework",
+                  "reject",
+                ],
+                sku: "SB-B030063-ZC",
+                productName: "Selected product",
+                inventory: {
+                  onHand: 104,
+                  allocated: 17,
+                  available: 87,
+                  backorder: 0,
+                  reorderLevel: 300,
+                  reorderAmount: 967,
+                  pulledAt: "2026-07-24T16:40:00.000Z",
+                },
+                recentSalesUnits: 1_180,
+                openPurchaseOrders: { count: 2, units: 240 },
+                vendor: {
+                  name: "Example vendor",
+                  vendorSku: "V-SB-B030063-ZC",
+                  unitCost: 4,
+                },
+                recommendation: {
+                  quantity: 967,
+                  reasons: ["Available inventory is below the reorder point."],
+                  status: "ready_for_review",
+                  warnings: [],
+                },
+                sources: ["inventory_position", "sales_order"],
+              },
+            ],
+          },
+        }
+      }
+      return base(args)
+    }) as NonNullable<TuiDependencies["execute"]> & ReturnType<typeof vi.fn>
+    const contextualChatStream = vi.fn(async () => ({
+      route: "question" as const,
+      message: "Use the explicit Sandbox action and confirmation flow.",
+      companyId,
+      selectedItemId: null,
+      reviewVersion: null,
+      command: null,
+      confirmationRequired: false,
+      mutated: false,
+    }))
+    const stdout = new CaptureStream()
+    const stderr = new CaptureStream()
+    const selections = ["SB-B030063-ZC", "back", "done"]
+    const controller = createTuiSessionFactory(
+      {
+        execute,
+        api: agentControlApi(testAgentSummary(), {
+          contextualChatStream,
+        }),
+      },
+      stdout,
+      stderr
+    )({
+      append: (value) => stdout.write(`${value}\n`),
+      ask: async () => null,
+      choose: async (_prompt, choices) => {
+        const selected = selections.shift() ?? null
+        if (selected)
+          expect(choices.map(({ value }) => value)).toContain(selected)
+        return selected
+      },
+      clearScreen: () => undefined,
+      setLiveMessage: () => undefined,
+      onSnapshot: () => undefined,
+      renderOptions: { color: false, width: 100 },
+    })
+
+    await controller.start()
+    await controller.handleLine("/sandbox")
+    await controller.handleLine("Is 967 a good quantity for the selected item?")
+    await controller.handleLine(
+      "Explain the 967 reorder suggestion for the selected item"
+    )
+
+    expect(contextualChatStream).not.toHaveBeenCalled()
+    expect(stdout.value).toContain("SB-B030063-ZC")
+    expect(stdout.value).toContain("967 units")
+    expect(stdout.value).toContain("87 available")
+    expect(stdout.value).toContain("1,180 recent sales units")
+    expect(stdout.value).toContain("nothing was approved, changed, or sent")
+    expect(
+      commandCalls(execute).some(
+        (args) =>
+          args[0] === "chat" ||
+          (args[0] === "work" &&
+            ["ask", "approve", "edit", "reject", "rework", "execute"].includes(
+              args[1] ?? ""
+            ))
+      )
+    ).toBe(false)
+
+    await controller.handleLine("Can you approve 967 units?")
+
+    expect(contextualChatStream).toHaveBeenCalledOnce()
+    expect(stdout.value).toContain(
+      "Use the explicit Sandbox action and confirmation flow."
+    )
+    expect(
+      commandCalls(execute).some(
+        (args) =>
+          args[0] === "work" &&
+          ["approve", "edit", "reject", "rework", "execute"].includes(
+            args[1] ?? ""
+          )
+      )
+    ).toBe(false)
+  })
+
   it("guides audited workspace settings and confirms safety weakening", async () => {
     const base = fakeExecute()
     const status = {
@@ -1760,6 +1895,69 @@ describe("interactive TUI", () => {
       "chat",
       "Why this quantity?",
     ])
+  })
+
+  it("stops a contextual answer that exceeds the terminal response deadline", async () => {
+    vi.useFakeTimers()
+    try {
+      const execute = fakeExecute()
+      const transcript: string[] = []
+      const live: Array<string | null> = []
+      const contextualChatStream = vi.fn(
+        async (
+          _request: unknown,
+          _onDelta: (value: string) => void,
+          signal?: AbortSignal
+        ): Promise<never> => {
+          await new Promise<void>((_resolve, reject) => {
+            signal?.addEventListener(
+              "abort",
+              () =>
+                reject(new CliError("command_cancelled", "Answer stopped.")),
+              { once: true }
+            )
+          })
+          throw new Error("unreachable")
+        }
+      )
+      const controller = createTuiSessionFactory(
+        {
+          execute,
+          api: agentControlApi(testAgentSummary(), {
+            contextualChatStream,
+            getWorkItemReview: vi.fn(async () => testWorkItemReview()),
+          }),
+        },
+        new CaptureStream(),
+        new CaptureStream()
+      )({
+        append: (value) => transcript.push(value),
+        ask: async () => null,
+        clearScreen: () => undefined,
+        setLiveMessage: (value) => live.push(value),
+        onSnapshot: () => undefined,
+        renderOptions: { color: false, width: 100 },
+      })
+
+      await controller.start()
+      await controller.handleLine("/inbox")
+      await controller.handleLine("/open 1")
+      const pending = controller.handleLine(
+        "Explain this recommendation in more detail"
+      )
+
+      await vi.advanceTimersByTimeAsync(30_000)
+      await pending
+
+      expect(live.at(-1)).toBeNull()
+      expect(transcript.join("\n")).toContain("answer took too long")
+      expect(commandCalls(execute)).not.toContainEqual([
+        "chat",
+        "Explain this recommendation in more detail",
+      ])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("answers a greeting locally without invoking the workflow parser", async () => {
