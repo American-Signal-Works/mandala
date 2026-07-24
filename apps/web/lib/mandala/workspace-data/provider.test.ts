@@ -4,6 +4,7 @@ import type {
   WorkspaceMappingExpression,
 } from "@workspace/control-plane"
 import type { CompiledCapabilityBinding } from "../skills/compiler"
+import { getWorkspaceMappingTemplate } from "./mapping-templates"
 import { WorkspaceDatasetProvider, type WorkspaceDataStore } from "./provider"
 
 const binding: CompiledCapabilityBinding = {
@@ -66,6 +67,96 @@ const spec = {
 } satisfies WorkspaceCapabilityMappingSpec
 
 describe("WorkspaceDatasetProvider", () => {
+  it("projects real sales orders through the commerce event template", async () => {
+    const eventSpec = getWorkspaceMappingTemplate({
+      capabilityKey: "commerce.events.read",
+      capabilityVersion: "1.0.0",
+    })
+    const inventorySpec = getWorkspaceMappingTemplate({
+      capabilityKey: "commerce.inventory.read",
+      capabilityVersion: "1.0.0",
+    })
+    expect(eventSpec).not.toBeNull()
+    expect(inventorySpec).not.toBeNull()
+    const eventBinding = {
+      ...binding,
+      id: "commerce.events.read",
+      alias: "events",
+    }
+    const inventoryBinding = {
+      ...binding,
+      id: "commerce.inventory.read",
+      alias: "inventory",
+    }
+    const records = [
+      {
+        id: "inventory-record",
+        companyId: "company",
+        sourceId: "source",
+        sourceKey: "commerce",
+        recordType: "inventory_position",
+        externalId: "SKU-42@warehouse",
+        payload: {
+          sku: "SKU-42",
+          on_hand: 5,
+          reorder_level: 10,
+        },
+        pulledAt: "2026-07-23T12:05:00.000Z",
+      },
+      {
+        id: "order-record",
+        companyId: "company",
+        sourceId: "source",
+        sourceKey: "commerce",
+        recordType: "sales_order",
+        externalId: "order-42",
+        payload: {
+          order_date: "2026-07-23T12:00:00.000Z",
+          lines: [{ sku: "SKU-42", quantity: 7 }],
+        },
+        pulledAt: "2026-07-23T12:05:00.000Z",
+      },
+    ]
+    const store: WorkspaceDataStore = {
+      resolveMapping: async ({ capabilityKey }) => ({
+        mappingVersionId: "10000000-0000-4000-8000-000000000001",
+        mappingKey: `${capabilityKey}.test`,
+        specHash: "b".repeat(64),
+        catalogDigest: "c".repeat(64),
+        spec:
+          capabilityKey === "commerce.events.read"
+            ? eventSpec!
+            : inventorySpec!,
+      }),
+      loadRecords: async ({ recordType }) =>
+        records.filter((record) => record.recordType === recordType),
+    }
+    const provider = new WorkspaceDatasetProvider(
+      store,
+      () => new Date("2026-07-23T13:00:00.000Z")
+    )
+
+    const prepared = await provider.prepare({
+      companyId: "company",
+      bindings: [inventoryBinding, eventBinding],
+    })
+
+    expect(
+      prepared.projections.find(
+        (projection) =>
+          projection.binding.spec.capabilityKey === eventBinding.id
+      )?.records
+    ).toEqual([
+      {
+        id: "order-42",
+        sku: "SKU-42",
+        type: "sales_order",
+        occurredAt: "2026-07-23T12:00:00.000Z",
+        description: "A sales order was observed for this product.",
+      },
+    ])
+  })
+
   it("catalogs a differently shaped fixture through the same provider", async () => {
     const store: WorkspaceDataStore = {
       resolveMapping: async () => ({

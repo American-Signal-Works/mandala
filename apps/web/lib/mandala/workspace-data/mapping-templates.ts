@@ -179,6 +179,28 @@ const templates: Record<string, WorkspaceCapabilityMappingSpec> = {
     },
     bounds,
   },
+  "commerce.events.read@1.0.0": {
+    schemaVersion: "mandala.workspace-data/v1",
+    capabilityKey: "commerce.events.read",
+    capabilityVersion: "1.0.0",
+    datasets: [salesDataset],
+    output: {
+      collection: "events",
+      entityKey: "sku",
+      fields: [
+        field("id", first("sales", "/$externalId"), "internal"),
+        field("sku", first("sales", "/sku"), "internal"),
+        field("type", literal("sales_order"), "internal"),
+        field("occurredAt", first("sales", "/$parent/order_date"), "internal"),
+        field(
+          "description",
+          literal("A sales order was observed for this product."),
+          "internal"
+        ),
+      ],
+    },
+    bounds,
+  },
   "procurement.open-orders.read@1.0.0": {
     schemaVersion: "mandala.workspace-data/v1",
     capabilityKey: "procurement.open-orders.read",
