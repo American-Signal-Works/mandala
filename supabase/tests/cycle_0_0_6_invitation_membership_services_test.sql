@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(44);
+SELECT plan(56);
 
 INSERT INTO auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -28,6 +28,10 @@ INSERT INTO public.companies(id, name, created_by) VALUES
 INSERT INTO public.company_memberships(company_id,user_id,role,status) VALUES
   ('b2000000-0000-4000-8000-000000000001','b1000000-0000-4000-8000-000000000001','owner','active'),
   ('b2000000-0000-4000-8000-000000000001','b1000000-0000-4000-8000-000000000004','viewer','active');
+UPDATE public.company_memberships
+SET status='disabled'
+WHERE company_id='b2000000-0000-4000-8000-000000000001'
+  AND user_id='b1000000-0000-4000-8000-000000000004';
 
 SELECT has_table('public','company_invitations','invitation table exists');
 SELECT has_table('public','company_invitation_tokens','digest-only token table exists');
@@ -83,6 +87,9 @@ SELECT is(
 
 SET LOCAL ROLE anon;
 SELECT is((public.inspect_company_invitation(repeat('a',64))->>'state'),'valid','a valid token has a safe public classification');
+SELECT is((public.inspect_company_invitation('malformed')->>'state'),'missing','a malformed token has the same safe missing classification');
+SELECT is((public.inspect_company_invitation(repeat('f',64))->>'state'),'missing','an unknown token has the safe missing classification');
+SELECT ok(NOT (public.inspect_company_invitation(repeat('f',64)) ? 'recipientEmail'),'a missing token does not reveal a recipient');
 
 RESET ROLE;
 SELECT set_config('request.jwt.claim.sub','b1000000-0000-4000-8000-000000000003',true);
@@ -99,6 +106,8 @@ SELECT throws_ok($$SELECT public.accept_company_invitation(repeat('a',64))$$,'55
 RESET ROLE;
 SELECT is((SELECT state FROM public.company_invitations WHERE id='b3000000-0000-4000-8000-000000000001'),'accepted','invitation becomes accepted');
 SELECT is((SELECT state FROM public.company_invitation_tokens WHERE invitation_id='b3000000-0000-4000-8000-000000000001'),'used','accepted token is one-time');
+SELECT is((public.inspect_company_invitation(repeat('a',64))->>'state'),'used','an accepted invitation has the safe used classification');
+SELECT ok(NOT (public.inspect_company_invitation(repeat('a',64)) ? 'recipientEmail'),'a used token does not reveal a recipient');
 SELECT is((SELECT role FROM public.company_memberships WHERE company_id='b2000000-0000-4000-8000-000000000001' AND user_id='b1000000-0000-4000-8000-000000000002'),'owner','accepted member becomes an Owner');
 SELECT is((SELECT status FROM public.company_memberships WHERE company_id='b2000000-0000-4000-8000-000000000001' AND user_id='b1000000-0000-4000-8000-000000000002'),'active','accepted membership is active');
 SELECT is((SELECT count(*)::int FROM public.email_deliveries WHERE payload_reference='company_invitation_accepted:b3000000-0000-4000-8000-000000000001'),1,'acceptance confirmation is queued for the inviter');
@@ -123,9 +132,42 @@ SELECT is((SELECT state FROM public.company_invitation_tokens WHERE token_digest
 SELECT is((SELECT version FROM public.company_invitations WHERE id='b3000000-0000-4000-8000-000000000002'),2,'resend increments invitation version');
 SET LOCAL ROLE authenticated;
 SELECT is((public.inspect_company_invitation(repeat('b',64))->>'state'),'superseded','superseded tokens classify safely');
+SELECT is(jsonb_array_length(public.list_company_directory('b2000000-0000-4000-8000-000000000001')->'pendingInvitations'),1,'directory includes a pending invitation');
+SELECT ok(EXISTS(
+  SELECT 1
+  FROM jsonb_array_elements(public.list_company_directory('b2000000-0000-4000-8000-000000000001')->'members') member
+  WHERE member->>'status'='active'
+),'directory includes active members');
+SELECT ok(EXISTS(
+  SELECT 1
+  FROM jsonb_array_elements(public.list_company_directory('b2000000-0000-4000-8000-000000000001')->'members') member
+  WHERE member->>'status'='inactive'
+),'directory safely projects disabled or removed members as inactive');
 SELECT lives_ok($$SELECT public.revoke_company_invitation('b3000000-0000-4000-8000-000000000002')$$,'an Owner can revoke a pending invitation');
 SELECT is((public.inspect_company_invitation(repeat('c',64))->>'state'),'revoked','revoked tokens classify safely');
 SELECT is(jsonb_array_length(public.list_company_directory('b2000000-0000-4000-8000-000000000001')->'members'),3,'directory includes active and inactive human records');
+
+RESET ROLE;
+SELECT set_config('request.jwt.claim.sub','b1000000-0000-4000-8000-000000000003',true);
+SELECT set_config('request.jwt.claims','{"sub":"b1000000-0000-4000-8000-000000000003","role":"authenticated"}',true);
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT public.list_company_directory('b2000000-0000-4000-8000-000000000001')$$,
+  '42501',NULL,'an outsider cannot read another workspace directory'
+);
+
+RESET ROLE;
+INSERT INTO public.companies(id, name, created_by)
+VALUES ('b2000000-0000-4000-8000-000000000002','Other Workspace','b1000000-0000-4000-8000-000000000003');
+INSERT INTO public.company_memberships(company_id,user_id,role,status)
+VALUES ('b2000000-0000-4000-8000-000000000002','b1000000-0000-4000-8000-000000000003','owner','active');
+SELECT set_config('request.jwt.claim.sub','b1000000-0000-4000-8000-000000000001',true);
+SELECT set_config('request.jwt.claims','{"sub":"b1000000-0000-4000-8000-000000000001","role":"authenticated"}',true);
+SET LOCAL ROLE authenticated;
+SELECT throws_ok(
+  $$SELECT public.list_company_directory('b2000000-0000-4000-8000-000000000002')$$,
+  '42501',NULL,'an Owner cannot read a different workspace directory'
+);
 
 RESET ROLE;
 SELECT set_config('request.jwt.claim.sub','b1000000-0000-4000-8000-000000000004',true);
@@ -159,6 +201,10 @@ INSERT INTO public.company_invitations(
 );
 INSERT INTO public.company_invitation_tokens(company_id,invitation_id,version,token_digest,state,issued_at,expires_at)
 VALUES ('b2000000-0000-4000-8000-000000000001','b3000000-0000-4000-8000-000000000099',1,repeat('e',64),'active',now()-interval '101 days',now()-interval '100 days');
+SET LOCAL ROLE anon;
+SELECT is((public.inspect_company_invitation(repeat('e',64))->>'state'),'expired','an expired token is classified safely');
+SELECT ok(NOT (public.inspect_company_invitation(repeat('e',64)) ? 'recipientEmail'),'an expired token does not reveal a recipient');
+RESET ROLE;
 SELECT lives_ok(
   $$SELECT public.purge_company_invitation_pii(now()-interval '90 days')$$,
   'retention cleanup terminally expires old pending invitations before purging PII'
