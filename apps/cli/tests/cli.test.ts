@@ -1026,7 +1026,9 @@ describe("CLI commands", () => {
       workspace: { id: companyId, name: "Example Company" },
       summary: { total: 4, realWorkspace: 1, fixtures: 3 },
     })
-    expect(output.data.answer).toContain("Review reorder recommendation for TF21010")
+    expect(output.data.answer).toContain(
+      "Review reorder recommendation for TF21010"
+    )
     expect(output.data.answer).toContain("Fixture items")
     expect(output.data.items).toEqual(
       expect.arrayContaining([
@@ -1074,25 +1076,134 @@ describe("CLI commands", () => {
     expect(api.parseControlIntent).not.toHaveBeenCalled()
   })
 
-  it("renders a concise human chat answer without parser or raw table metadata", async () => {
+  it("answers the reported bare-items workspace and fixture comparison", async () => {
     const api = fakeApi({
       listWorkItems: vi.fn(async () => workSummaryQueue()),
     })
 
     expect(
       await command(
-        ["chat", "What active work items need review?"],
+        [
+          "chat",
+          "Which active items are real Dirt King work and which are test fixtures?",
+          "--json",
+        ],
         api
       )
     ).toBe(0)
 
+    const output = JSON.parse(stdout.value)
+    expect(output.data).toMatchObject({
+      answer: expect.stringContaining("1 from real workspace activity"),
+      summary: { total: 4, realWorkspace: 1, fixtures: 3 },
+    })
+    expect(output.data.answer).toContain("Real workspace item")
+    expect(output.data.answer).toContain("Fixture items")
+    expect(output.data).not.toHaveProperty("parser")
+    expect(output.data).not.toHaveProperty("result")
+    expect(api.listWorkItems).toHaveBeenCalledWith(companyId, "active")
+    expect(api.parseControlIntent).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    "What active items need review?",
+    "Which items are real workspace activity versus fixtures?",
+    "Summarize the test items and real-data items.",
+  ])("answers a read-only bare-items paraphrase: %s", async (phrase) => {
+    const api = fakeApi({
+      listWorkItems: vi.fn(async () => workSummaryQueue()),
+    })
+
+    expect(await command(["chat", phrase, "--json"], api)).toBe(0)
+
+    const output = JSON.parse(stdout.value)
+    expect(output.data.answer).toContain("Real workspace")
+    expect(output.data.answer).toContain("Fixture")
+    expect(api.listWorkItems).toHaveBeenCalled()
+    expect(api.parseControlIntent).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    "Approve the active items?",
+    "Edit the fixture items?",
+    "Reject the active items?",
+    "Resolve the workspace items?",
+    "Rework the test items?",
+    "Execute the active items?",
+    "Change the fixture items?",
+    "Update the workspace items?",
+    "Delete the active items?",
+    "Archive the fixture items?",
+    "Remove the workspace items?",
+    "Cancel the active items?",
+  ])(
+    "does not treat a mutation as a work-summary question: %s",
+    async (phrase) => {
+      const api = fakeApi()
+
+      expect(await command(["chat", phrase, "--json"], api)).toBe(0)
+
+      expect(api.listWorkItems).not.toHaveBeenCalled()
+      expect(api.parseControlIntent).toHaveBeenCalled()
+      expect(api.recordDecision).not.toHaveBeenCalled()
+      expect(api.execute).not.toHaveBeenCalled()
+    }
+  )
+
+  it("leaves an unrelated bare-items question to the conversational parser", async () => {
+    const api = fakeApi()
+
+    expect(
+      await command(["chat", "Which items are cheapest?", "--json"], api)
+    ).toBe(0)
+
+    expect(api.listWorkItems).not.toHaveBeenCalled()
+    expect(api.parseControlIntent).toHaveBeenCalled()
+  })
+
+  it("renders a concise human chat answer without parser or raw table metadata", async () => {
+    const api = fakeApi({
+      listWorkItems: vi.fn(async () => workSummaryQueue()),
+    })
+
+    expect(
+      await command(["chat", "What active work items need review?"], api)
+    ).toBe(0)
+
     expect(stdout.value).toContain("Mandala")
-    expect(stdout.value).toContain("In Example Company, I found 4 active work items")
+    expect(stdout.value).toContain(
+      "In Example Company, I found 4 active work items"
+    )
     expect(stdout.value).toContain("Real workspace item")
     expect(stdout.value).toContain("Fixture items")
     expect(stdout.value).not.toContain("parserKind")
     expect(stdout.value).not.toContain("sourceType")
     expect(stdout.value).not.toContain("controlRequestId")
+    expect(stdout.value).not.toContain("┌")
+  })
+
+  it("renders the reported bare-items phrase as a concise human answer", async () => {
+    const api = fakeApi({
+      listWorkItems: vi.fn(async () => workSummaryQueue()),
+    })
+
+    expect(
+      await command(
+        [
+          "chat",
+          "Which active items are real Dirt King work and which are test fixtures?",
+        ],
+        api
+      )
+    ).toBe(0)
+
+    expect(stdout.value).toContain(
+      "In Example Company, I found 4 active work items"
+    )
+    expect(stdout.value).toContain("Real workspace item")
+    expect(stdout.value).toContain("Fixture items")
+    expect(stdout.value).not.toContain("parserKind")
+    expect(stdout.value).not.toContain("sourceType")
     expect(stdout.value).not.toContain("┌")
   })
 
