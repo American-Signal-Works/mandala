@@ -4,7 +4,7 @@ kind: agent_workflow
 metadata:
   id: procurement-reorder
   name: Procurement Reorder Review
-  version: 1.0.1
+  version: 1.0.2
   description: Finds inventory at risk, investigates messy demand signals, and prepares a guarded mock purchase-order draft for human review.
 workflow:
   type: procurement_reorder
@@ -17,6 +17,26 @@ workflow:
     - id: synthetic-test
       kind: fixture
       description: Test against the Mandala Bean Co. synthetic commerce dataset.
+    - id: procurement-records-changed
+      kind: webhook
+      description: Re-evaluate bounded procurement candidates when normalized source records change.
+      source_kinds:
+        - inventory_platform
+        - erp
+        - project_board
+        - task_board
+      record_types:
+        - inventory_position
+        - sales_order
+        - purchase_order
+        - product_vendor
+        - sku_vendor_map
+        - board_card
+      changes:
+        - insert
+        - update
+        - delete
+      reconcile_every_minutes: 60
 capabilities:
   - id: commerce.catalog.read
     as: products

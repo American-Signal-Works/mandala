@@ -1,6 +1,7 @@
 export * from "./persistence"
 export * from "./test-run"
 export * from "./manual-run"
+export * from "./signal-run"
 export * from "./readiness"
 export * from "./readiness-persistence"
 export * from "./lifecycle-service"
