@@ -1004,6 +1004,98 @@ describe("CLI commands", () => {
     expect(stdout.value).toContain("openai/gpt-5.4-mini")
   })
 
+  it("answers an active real-versus-fixture summary without the action parser", async () => {
+    const api = fakeApi({
+      listWorkItems: vi.fn(async () => workSummaryQueue()),
+    })
+
+    expect(
+      await command(
+        [
+          "chat",
+          "Summarize the active real-data work item and clearly distinguish it from fixture items.",
+          "--json",
+        ],
+        api
+      )
+    ).toBe(0)
+
+    const output = JSON.parse(stdout.value)
+    expect(output.data).toMatchObject({
+      answer: expect.stringContaining("1 from real workspace activity"),
+      workspace: { id: companyId, name: "Example Company" },
+      summary: { total: 4, realWorkspace: 1, fixtures: 3 },
+    })
+    expect(output.data.answer).toContain("Review reorder recommendation for TF21010")
+    expect(output.data.answer).toContain("Fixture items")
+    expect(output.data.items).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          classification: "real_workspace",
+          title: "Review reorder recommendation for TF21010",
+        }),
+        expect.objectContaining({ classification: "fixture" }),
+      ])
+    )
+    expect(api.listWorkItems).toHaveBeenCalledWith(companyId, "active")
+    expect(api.parseControlIntent).not.toHaveBeenCalled()
+    expect(api.recordControlRequest).toHaveBeenCalledWith(
+      expect.objectContaining({
+        parserKind: "deterministic",
+        resolutionStatus: "executed",
+        riskClass: "read",
+      })
+    )
+    expect(stdout.value).not.toContain("parserKind")
+    expect(stdout.value).not.toContain("controlRequestId")
+    expect(stdout.value).not.toContain("trace")
+  })
+
+  it("answers equivalent active work-item wording instead of returning raw records", async () => {
+    const api = fakeApi({
+      listWorkItems: vi.fn(async () => workSummaryQueue()),
+    })
+
+    expect(
+      await command(
+        [
+          "chat",
+          "Which active work item comes from real workspace data, and which ones are fixture tests?",
+          "--json",
+        ],
+        api
+      )
+    ).toBe(0)
+
+    const output = JSON.parse(stdout.value)
+    expect(output.data.answer).toContain("Real workspace item")
+    expect(output.data.answer).toContain("Fixture items")
+    expect(output.data.items).toHaveLength(4)
+    expect(api.parseControlIntent).not.toHaveBeenCalled()
+  })
+
+  it("renders a concise human chat answer without parser or raw table metadata", async () => {
+    const api = fakeApi({
+      listWorkItems: vi.fn(async () => workSummaryQueue()),
+    })
+
+    expect(
+      await command(
+        ["chat", "What active work items need review?"],
+        api
+      )
+    ).toBe(0)
+
+    expect(stdout.value).toContain("Mandala")
+    expect(stdout.value).toContain("In Example Company, I found 4 active work items")
+    expect(stdout.value).toContain("Real workspace item")
+    expect(stdout.value).toContain("Fixture items")
+    expect(stdout.value).not.toContain("parserKind")
+    expect(stdout.value).not.toContain("sourceType")
+    expect(stdout.value).not.toContain("controlRequestId")
+    expect(stdout.value).not.toContain("┌")
+  })
+
   it("fails closed without mutating or duplicating the server audit when parsing is unavailable", async () => {
     const api = fakeApi({
       parseControlIntent: vi.fn(async () => {
@@ -1423,6 +1515,54 @@ function conversationalListResult() {
     durationMs: 12,
     trace: { traceId: controlId, runId: controlId },
     controlRequestId: controlId,
+  }
+}
+
+function workSummaryQueue() {
+  return {
+    items: [
+      workSummaryItem(
+        itemId,
+        "Review reorder recommendation for TF21010",
+        "manual"
+      ),
+      workSummaryItem(
+        "40000000-0000-4000-8000-000000000002",
+        "Review test-agent reorder for Fixture A",
+        "fixture"
+      ),
+      workSummaryItem(
+        "40000000-0000-4000-8000-000000000003",
+        "Review reorder recommendation for Fixture B",
+        "fixture"
+      ),
+      workSummaryItem(
+        "40000000-0000-4000-8000-000000000004",
+        "Review reorder recommendation for Fixture C",
+        "fixture"
+      ),
+    ],
+    nextCursor: null,
+  }
+}
+
+function workSummaryItem(id: string, title: string, sourceType: string) {
+  return {
+    id,
+    workflowRunId: runId,
+    itemKey: `procurement_reorder:${id}:review`,
+    itemType: "procurement_reorder_review",
+    title,
+    status: "active" as const,
+    priority: 50,
+    sourceType,
+    ownerRole: null,
+    assigneeId: null,
+    dueAt: null,
+    draft: null,
+    nextActions: ["resolve" as const, "approve" as const],
+    createdAt: "2026-07-23T20:00:00.000Z",
+    updatedAt: "2026-07-23T20:00:00.000Z",
   }
 }
 

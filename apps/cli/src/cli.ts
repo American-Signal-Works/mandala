@@ -23,6 +23,7 @@ import {
   type JsonPointerPatch,
   type JsonValue,
   type WorkItemDetail,
+  type WorkItemQueueData,
 } from "@workspace/control-plane"
 import { z } from "zod"
 import { ApiClient, type ControlApi } from "./api-client.js"
@@ -42,7 +43,11 @@ import { CliError, asCliError } from "./errors.js"
 import { registeredFixtureScenarios } from "./fixtures.js"
 import { redactSecretText, writeFailure, writeSuccess } from "./output.js"
 import { createRuntimeSecureStore, SecureStore } from "./persistence.js"
-import { formatErrorSentence, renderHumanResult } from "./terminal/index.js"
+import {
+  formatErrorSentence,
+  renderAssistantMessage,
+  renderHumanResult,
+} from "./terminal/index.js"
 
 type LoginFunction = typeof loginWithDeviceAuthorization
 type LocalLoginFunction = typeof loginWithMagicLink
@@ -88,6 +93,10 @@ export async function runCli(
   const json = argv.includes("--json")
   const output = { json, stdout, stderr }
   const result = await executeCliCommand(argv, dependencies)
+  const answer =
+    result.ok && !json && argv[0] === "chat"
+      ? chatAnswer(result.data)
+      : undefined
 
   if (result.ok) {
     if (json) writeSuccess(output, result.data)
@@ -97,6 +106,11 @@ export async function runCli(
           ? result.data.usage
           : `${result.data.usage}\n`
       )
+    } else if (answer) {
+      const rendered = renderAssistantMessage(answer, {
+        width: (stdout as Writable & { columns?: number }).columns,
+      })
+      stdout.write(rendered.endsWith("\n") ? rendered : `${rendered}\n`)
     } else {
       const rendered = renderHumanResult(result.data, {
         width: (stdout as Writable & { columns?: number }).columns,
@@ -944,6 +958,9 @@ async function handleChat(
   const phrase = args.length
     ? args.join(" ")
     : await readSingleLine(input.stdin)
+  if (isWorkspaceWorkSummaryQuestion(phrase)) {
+    return answerWorkspaceWorkSummary(phrase, input)
+  }
   const parsed = await parsePhrase(phrase, input)
   if (parsed.outcome.status !== "resolved") {
     if (!parsed.serverAudited) await recordPhraseOutcome(parsed.outcome, input)
@@ -955,6 +972,102 @@ async function handleChat(
   return parsed.serverResult
     ? { parser: conversationalParserMetadata(parsed.serverResult), result }
     : result
+}
+
+async function answerWorkspaceWorkSummary(
+  phrase: string,
+  input: Parameters<typeof executeCommand>[0]
+) {
+  input.audit.inputHash = hashInput(phrase)
+  input.audit.parserKind = "deterministic"
+  input.audit.risk = "read"
+  const config = await requireCompany(input.store, input.audit)
+  const status = /\bactive\b/i.test(phrase) ? "active" : undefined
+  const intent = await resolveCandidate(
+    { kind: "list_work_items", status },
+    { companyId: config.selectedCompany.id },
+    input
+  )
+  if (intent.kind !== "list_work_items")
+    throw new CliError("invalid_intent", "Expected a work-item list intent.")
+
+  const queue = (await executeResolvedIntent(
+    intent,
+    input
+  )) as WorkItemQueueData
+  const fixtures = queue.items.filter((item) => item.sourceType === "fixture")
+  const workspaceItems = queue.items.filter(
+    (item) => item.sourceType !== "fixture"
+  )
+  const scope = status ? "active " : ""
+  const total = queue.items.length
+  const countSentence =
+    total === 0
+      ? `In ${config.selectedCompany.name}, I found no ${scope}work items.`
+      : `In ${config.selectedCompany.name}, I found ${total} ${scope}work ${total === 1 ? "item" : "items"}: ${workspaceItems.length} from real workspace activity and ${fixtures.length} ${fixtures.length === 1 ? "fixture test" : "fixture tests"}.`
+  const workspaceSentence = classifiedItemSentence(
+    "Real workspace",
+    workspaceItems
+  )
+  const fixtureSentence = classifiedItemSentence("Fixture", fixtures)
+
+  return {
+    answer: [countSentence, workspaceSentence, fixtureSentence]
+      .filter(Boolean)
+      .join(" "),
+    workspace: {
+      id: config.selectedCompany.id,
+      name: config.selectedCompany.name,
+    },
+    summary: {
+      total,
+      realWorkspace: workspaceItems.length,
+      fixtures: fixtures.length,
+    },
+    items: queue.items.map((item) => ({
+      id: item.id,
+      title: item.title,
+      classification:
+        item.sourceType === "fixture" ? "fixture" : "real_workspace",
+    })),
+  }
+}
+
+function classifiedItemSentence(
+  label: "Real workspace" | "Fixture",
+  items: WorkItemQueueData["items"]
+): string {
+  if (items.length === 0) return ""
+  const identities = items
+    .map((item) => `“${item.title}” (${item.id})`)
+    .join("; ")
+  return `${label} ${items.length === 1 ? "item" : "items"}: ${identities}.`
+}
+
+function isWorkspaceWorkSummaryQuestion(phrase: string): boolean {
+  const normalized = phrase.trim()
+  if (
+    /\b(?:approve|edit|reject|resolve|rework|execute|perform|run|change|update)\b/i.test(
+      normalized
+    )
+  ) {
+    return false
+  }
+  return (
+    /\bwork items?\b/i.test(normalized) &&
+    /\b(?:active|review|real(?:-data)?|workspace|fixture|test|summary|summarize|which|what)\b/i.test(
+      normalized
+    ) &&
+    (normalized.endsWith("?") ||
+      /^(?:summarize|show|list|which|what|tell me|describe)\b/i.test(normalized))
+  )
+}
+
+function chatAnswer(value: unknown): string | undefined {
+  if (!value || typeof value !== "object" || Array.isArray(value))
+    return undefined
+  const answer = (value as { answer?: unknown }).answer
+  return typeof answer === "string" && answer.trim() ? answer : undefined
 }
 
 async function parsePhrase(
