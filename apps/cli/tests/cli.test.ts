@@ -33,6 +33,16 @@ beforeEach(async () => {
     mode: "mock",
     selectedCompany: { id: companyId, name: "Example Company" },
   })
+  await store.writeSession({
+    schemaVersion: 1,
+    accessToken: "access-secret",
+    refreshToken: "refresh-secret",
+    expiresAt: 2_000_000_000,
+    user: {
+      id: "10000000-0000-4000-8000-000000000001",
+      email: "user@example.com",
+    },
+  })
   stdout = new CaptureStream()
   stderr = new CaptureStream()
 })
@@ -162,6 +172,7 @@ describe("CLI commands", () => {
   })
 
   it("summarizes session, workspace, and endpoint health in one status command", async () => {
+    await store.deleteSession()
     const getContextWorkspaceStatus = vi.fn(async () => workspaceStatus())
     const api = fakeApi({ getContextWorkspaceStatus })
 
@@ -198,6 +209,60 @@ describe("CLI commands", () => {
       },
     })
   })
+
+  it.each([
+    ["company", "current"],
+    ["context", "status"],
+    ["sandbox", "status"],
+    ["sandbox", "open", "--limit", "1"],
+    ["work", "list"],
+  ])("requires sign-in before company selection for %s %s", async (...args) => {
+    await store.deleteSession()
+    const api = fakeApi()
+
+    expect(await command([...args, "--json"], api)).toBe(1)
+
+    expect(JSON.parse(stderr.value)).toMatchObject({
+      ok: false,
+      error: {
+        code: "unauthorized",
+        message: "Sign in with 'mandala auth login' first.",
+      },
+    })
+    expect(stderr.value).not.toContain("company use")
+    expect(stderr.value).not.toContain("Example Company")
+    expect(api.getContextWorkspaceStatus).not.toHaveBeenCalled()
+    expect(api.createSandboxSession).not.toHaveBeenCalled()
+    expect(api.listWorkItems).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    ["company", "current"],
+    ["context", "status"],
+    ["sandbox", "status"],
+    ["sandbox", "open", "--limit", "1"],
+    ["work", "list"],
+  ])(
+    "keeps company-selection guidance for authenticated %s %s",
+    async (...args) => {
+      await store.clearSelectedCompany()
+      const api = fakeApi()
+
+      expect(await command([...args, "--json"], api)).toBe(1)
+
+      expect(JSON.parse(stderr.value)).toMatchObject({
+        ok: false,
+        error: {
+          code: "company_required",
+          message: "Select a company with 'mandala company use'.",
+        },
+      })
+      expect(stderr.value).not.toContain("auth login")
+      expect(api.getContextWorkspaceStatus).not.toHaveBeenCalled()
+      expect(api.createSandboxSession).not.toHaveBeenCalled()
+      expect(api.listWorkItems).not.toHaveBeenCalled()
+    }
+  )
 
   it("refreshes an expired access token before reporting session health", async () => {
     await store.writeSession({
