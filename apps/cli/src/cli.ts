@@ -1047,19 +1047,29 @@ function classifiedItemSentence(
 function isWorkspaceWorkSummaryQuestion(phrase: string): boolean {
   const normalized = phrase.trim()
   if (
-    /\b(?:approve|edit|reject|resolve|rework|execute|perform|run|change|update)\b/i.test(
+    /\b(?:approve|edit|reject|resolve|rework|execute|perform|run|change|update|delete|archive|remove|cancel)\b/i.test(
       normalized
     )
   ) {
     return false
   }
-  return (
-    /\bwork items?\b/i.test(normalized) &&
-    /\b(?:active|review|real(?:-data)?|workspace|fixture|test|summary|summarize|which|what)\b/i.test(
+  const referencesWorkItems = /\bwork items?\b/i.test(normalized)
+  const referencesBareItems = /\bitems\b/i.test(normalized)
+  const hasWorkspaceSummaryQualifier =
+    /\b(?:active|review|real(?:-data)?|workspace|fixture|test|summary|summarize)\b/i.test(
       normalized
-    ) &&
+    )
+  const referencesItems =
+    (referencesWorkItems &&
+      (hasWorkspaceSummaryQualifier ||
+        /\b(?:which|what)\b/i.test(normalized))) ||
+    (referencesBareItems && hasWorkspaceSummaryQualifier)
+  return (
+    referencesItems &&
     (normalized.endsWith("?") ||
-      /^(?:summarize|show|list|which|what|tell me|describe)\b/i.test(normalized))
+      /^(?:summarize|show|list|which|what|tell me|describe)\b/i.test(
+        normalized
+      ))
   )
 }
 
