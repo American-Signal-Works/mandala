@@ -8,6 +8,10 @@
     {
       "path": "/api/internal/mandala/connector-sync/run",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/internal/mandala/signal-dispatch/run",
+      "schedule": "* * * * *"
     }
   ]
 }

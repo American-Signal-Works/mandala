@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(32);
+SELECT plan(44);
 
 SELECT ok((
   SELECT bool_and(relrowsecurity)
@@ -41,6 +41,26 @@ SELECT ok(has_function_privilege(
   'workflow_private.prepare_agent_signal_dispatches(timestamp with time zone,integer,integer)',
   'EXECUTE'
 ), 'service workers can prepare signal work');
+SELECT ok(NOT has_function_privilege(
+  'authenticated',
+  'public.persist_compiled_workflow_review_automation(uuid,uuid,uuid,jsonb,text)',
+  'EXECUTE'
+), 'authenticated clients cannot use automation persistence');
+SELECT ok(has_function_privilege(
+  'service_role',
+  'public.persist_compiled_workflow_review_automation(uuid,uuid,uuid,jsonb,text)',
+  'EXECUTE'
+), 'the service worker can use controlled automation persistence');
+SELECT ok(NOT has_function_privilege(
+  'authenticated',
+  'public.claim_agent_signal_dispatches_v1(text,integer,integer,timestamp with time zone)',
+  'EXECUTE'
+), 'authenticated clients cannot enter the signal worker queue');
+SELECT ok(has_function_privilege(
+  'service_role',
+  'public.claim_agent_signal_dispatches_v1(text,integer,integer,timestamp with time zone)',
+  'EXECUTE'
+), 'the service worker can claim through the public RPC bridge');
 SELECT is((
   SELECT count(*)::INTEGER FROM cron.job
   WHERE jobname = 'prepare-agent-signal-dispatches'
@@ -203,6 +223,23 @@ SELECT is(
   1,
   'the active change trigger also enqueues one reconciliation dispatch'
 );
+SELECT ok((
+  SELECT dispatched_at IS NOT NULL
+    AND last_evaluated_at IS NOT NULL
+    AND evaluation_count = 1
+  FROM public.agent_signal_change_windows
+  WHERE record_type = 'inventory_position'
+), 'a matched connector window is evaluated and marked dispatched');
+SELECT ok((
+  SELECT dispatched_at IS NULL
+  FROM public.agent_signal_change_windows
+  WHERE record_type = 'vendor'
+), 'an unmatched connector window is not falsely marked dispatched');
+SELECT is((
+  SELECT evaluation_count
+  FROM public.agent_signal_change_windows
+  WHERE record_type = 'vendor'
+), 1, 'an unmatched window records its bounded evaluation attempt');
 SELECT is((
   SELECT count(*)::INTEGER
   FROM public.agent_signal_dispatches
@@ -223,6 +260,37 @@ SELECT is(
   0,
   'rerunning the same heartbeat window is idempotent'
 );
+
+INSERT INTO public.workflow_binding_snapshots(
+  id,
+  company_id,
+  workflow_id,
+  manifest_hash,
+  grant_digest,
+  created_by
+) VALUES (
+  'd3100000-0000-4000-8000-000000000002',
+  'd2000000-0000-4000-8000-000000000001',
+  'd3000000-0000-4000-8000-000000000001',
+  repeat('8',64),
+  repeat('7',64),
+  'd1000000-0000-4000-8000-000000000001'
+);
+UPDATE public.agent_runtime_states
+SET binding_snapshot_id = 'd3100000-0000-4000-8000-000000000002'
+WHERE id = 'd3200000-0000-4000-8000-000000000001';
+SELECT is((
+  SELECT count(*)::INTEGER
+  FROM workflow_private.claim_agent_signal_dispatches(
+    'signal-worker-stale-binding',
+    10,
+    120,
+    now()
+  )
+), 0, 'a runtime on a stale binding snapshot cannot claim active dispatches');
+UPDATE public.agent_runtime_states
+SET binding_snapshot_id = 'd3100000-0000-4000-8000-000000000001'
+WHERE id = 'd3200000-0000-4000-8000-000000000001';
 
 CREATE TEMP TABLE signal_test_claims AS
 SELECT * FROM workflow_private.claim_agent_signal_dispatches(
@@ -307,6 +375,109 @@ SELECT set_config('request.jwt.claim.sub','d1000000-0000-4000-8000-000000000001'
 SELECT set_config('request.jwt.claims','{"sub":"d1000000-0000-4000-8000-000000000001","role":"authenticated"}',true);
 SELECT is((SELECT count(*)::INTEGER FROM public.agent_signal_dispatches), 3,
   'company members can inspect their own signal queue');
+RESET ROLE;
+
+SET LOCAL ROLE service_role;
+SELECT set_config(
+  'request.jwt.claims',
+  '{"role":"service_role"}',
+  true
+);
+SELECT throws_ok(
+  $$SELECT public.persist_compiled_workflow_review_automation(
+    'd2000000-0000-4000-8000-000000000002',
+    'd3000000-0000-4000-8000-000000000001',
+    'd3100000-0000-4000-8000-000000000001',
+    '{}'::JSONB,
+    repeat('a',64)
+  )$$,
+  '55000',
+  'signal_activation_not_current',
+  'automation persistence rejects a workflow from another tenant'
+);
+SELECT throws_ok(
+  $$SELECT public.persist_compiled_workflow_review_automation(
+    'd2000000-0000-4000-8000-000000000001',
+    'd3000000-0000-4000-8000-000000000001',
+    'd3100000-0000-4000-8000-000000000002',
+    '{}'::JSONB,
+    repeat('a',64)
+  )$$,
+  '55000',
+  'signal_activation_not_current',
+  'automation persistence rejects a stale binding snapshot'
+);
+RESET ROLE;
+
+UPDATE public.agent_runtime_states
+SET lifecycle_state = 'paused'
+WHERE id = 'd3200000-0000-4000-8000-000000000001';
+SET LOCAL ROLE service_role;
+SELECT set_config(
+  'request.jwt.claims',
+  '{"role":"service_role"}',
+  true
+);
+SELECT throws_ok(
+  $$SELECT public.persist_compiled_workflow_review_automation(
+    'd2000000-0000-4000-8000-000000000001',
+    'd3000000-0000-4000-8000-000000000001',
+    'd3100000-0000-4000-8000-000000000001',
+    '{}'::JSONB,
+    repeat('a',64)
+  )$$,
+  '55000',
+  'signal_activation_not_current',
+  'automation persistence rejects an inactive runtime'
+);
+RESET ROLE;
+UPDATE public.agent_runtime_states
+SET lifecycle_state = 'active'
+WHERE id = 'd3200000-0000-4000-8000-000000000001';
+
+INSERT INTO auth.users (
+  id, aud, role, email, encrypted_password, email_confirmed_at,
+  raw_app_meta_data, raw_user_meta_data, created_at, updated_at
+) VALUES (
+  'd1000000-0000-4000-8000-000000000003',
+  'authenticated',
+  'authenticated',
+  'signal-backup-owner@example.test',
+  '',
+  now(),
+  '{}',
+  '{}',
+  now(),
+  now()
+);
+INSERT INTO public.company_memberships(company_id,user_id,role)
+VALUES (
+  'd2000000-0000-4000-8000-000000000001',
+  'd1000000-0000-4000-8000-000000000003',
+  'owner'
+);
+UPDATE public.company_memberships
+SET role = 'member'
+WHERE company_id = 'd2000000-0000-4000-8000-000000000001'
+  AND user_id = 'd1000000-0000-4000-8000-000000000001';
+SET LOCAL ROLE service_role;
+SELECT set_config(
+  'request.jwt.claims',
+  '{"role":"service_role"}',
+  true
+);
+SELECT throws_ok(
+  $$SELECT public.persist_compiled_workflow_review_automation(
+    'd2000000-0000-4000-8000-000000000001',
+    'd3000000-0000-4000-8000-000000000001',
+    'd3100000-0000-4000-8000-000000000001',
+    '{}'::JSONB,
+    repeat('a',64)
+  )$$,
+  '42501',
+  'signal_activation_actor_forbidden',
+  'a removed or demoted activator is a terminal authorization outcome'
+);
 RESET ROLE;
 
 SELECT * FROM finish();

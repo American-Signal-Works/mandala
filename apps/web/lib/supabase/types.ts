@@ -1061,8 +1061,10 @@ export type Database = {
           company_id: string
           created_at: string
           dispatched_at: string | null
+          evaluation_count: number
           first_changed_at: string
           id: string
+          last_evaluated_at: string | null
           last_changed_at: string
           record_type: string
           sample_record_ids: string[]
@@ -1077,8 +1079,10 @@ export type Database = {
           company_id: string
           created_at?: string
           dispatched_at?: string | null
+          evaluation_count?: number
           first_changed_at?: string
           id?: string
+          last_evaluated_at?: string | null
           last_changed_at?: string
           record_type: string
           sample_record_ids?: string[]
@@ -1093,8 +1097,10 @@ export type Database = {
           company_id?: string
           created_at?: string
           dispatched_at?: string | null
+          evaluation_count?: number
           first_changed_at?: string
           id?: string
+          last_evaluated_at?: string | null
           last_changed_at?: string
           record_type?: string
           sample_record_ids?: string[]
@@ -6027,6 +6033,18 @@ export type Database = {
         }
         Returns: Json
       }
+      claim_agent_signal_dispatches_v1: {
+        Args: {
+          p_lease_seconds?: number
+          p_limit?: number
+          p_now?: string
+          p_worker_id: string
+        }
+        Returns: {
+          dispatch: Json
+          leaseId: string
+        }[]
+      }
       claim_due_email_deliveries: {
         Args: { p_lease_seconds?: number; p_limit?: number }
         Returns: {
@@ -6082,6 +6100,15 @@ export type Database = {
           p_lease_id: string
           p_now?: string
           p_result: Json
+          p_worker_id: string
+        }
+        Returns: Json
+      }
+      complete_agent_signal_dispatch_v1: {
+        Args: {
+          p_lease_id: string
+          p_outcome: string
+          p_result?: Json
           p_worker_id: string
         }
         Returns: Json
@@ -6300,6 +6327,15 @@ export type Database = {
         }
         Returns: Json
       }
+      fail_agent_signal_dispatch_v1: {
+        Args: {
+          p_error_code: string
+          p_lease_id: string
+          p_retryable: boolean
+          p_worker_id: string
+        }
+        Returns: Json
+      }
       forget_agent_memory_candidate_v1: {
         Args: {
           p_actor_id: string
@@ -6468,6 +6504,16 @@ export type Database = {
         }
         Returns: Json
       }
+      persist_compiled_workflow_review_automation: {
+        Args: {
+          p_binding_snapshot_id: string
+          p_company_id: string
+          p_input_hash: string
+          p_payload: Json
+          p_workflow_id: string
+        }
+        Returns: Json
+      }
       persist_workflow_fixture_run: { Args: { p_payload: Json }; Returns: Json }
       persist_workflow_fixture_run_controlled: {
         Args: {
@@ -6493,6 +6539,14 @@ export type Database = {
       }
       prepare_context_index_work_v1: {
         Args: { p_limit?: number; p_now?: string }
+        Returns: Json
+      }
+      prepare_agent_signal_dispatches_v1: {
+        Args: {
+          p_change_limit?: number
+          p_now: string
+          p_schedule_limit?: number
+        }
         Returns: Json
       }
       publish_context_indexing_policy_v1: {

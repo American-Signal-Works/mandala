@@ -46,6 +46,30 @@ export async function persistCompiledWorkflowReview(input: {
   return compiledReviewPersistenceSchema.parse(data)
 }
 
+export async function persistCompiledWorkflowReviewAutomation(input: {
+  supabase: WorkflowSupabaseClient
+  companyId: string
+  workflowId: string
+  bindingSnapshotId: string
+  result: WorkflowFixtureRunResult
+  inputHash: string
+}): Promise<CompiledReviewPersistenceResult> {
+  const { data, error } = await input.supabase.rpc(
+    "persist_compiled_workflow_review_automation",
+    {
+      p_company_id: input.companyId,
+      p_workflow_id: input.workflowId,
+      p_binding_snapshot_id: input.bindingSnapshotId,
+      p_payload: createWorkflowFixturePersistencePayload(input.result),
+      p_input_hash: input.inputHash,
+    }
+  )
+  if (error) {
+    throw new WorkflowRpcError(rpcErrorCode(error.message), error.code)
+  }
+  return compiledReviewPersistenceSchema.parse(data)
+}
+
 function rpcErrorCode(message: string): string {
   const knownCodes = [
     "unauthorized",
@@ -67,6 +91,8 @@ function rpcErrorCode(message: string): string {
     "compiled_event_key_conflict",
     "compiled_item_key_conflict",
     "idempotency_key_reused",
+    "signal_activation_not_current",
+    "signal_activation_actor_forbidden",
   ]
   return (
     knownCodes.find((candidate) => message.includes(candidate)) ??

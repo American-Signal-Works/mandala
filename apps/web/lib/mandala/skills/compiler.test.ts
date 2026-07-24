@@ -78,6 +78,40 @@ describe("Skill v1 compiler", () => {
     expect(first.manifest).toEqual(second.manifest)
   })
 
+  it("compiles the procurement connector trigger with bounded source records", async () => {
+    const source = await readFile(skillPath("procurement-reorder"), "utf8")
+    const result = compileAgentSkill({
+      source,
+      capabilities: availableCapabilities(),
+    })
+
+    expect(result.ok).toBe(true)
+    if (!result.ok) return
+    expect(result.manifest.identity.version).toBe("1.0.2")
+    expect(result.manifest.workflow.triggers).toContainEqual({
+      id: "procurement-records-changed",
+      kind: "webhook",
+      description:
+        "Re-evaluate bounded procurement candidates when normalized source records change.",
+      source_kinds: [
+        "inventory_platform",
+        "erp",
+        "project_board",
+        "task_board",
+      ],
+      record_types: [
+        "inventory_position",
+        "sales_order",
+        "purchase_order",
+        "product_vendor",
+        "sku_vendor_map",
+        "board_card",
+      ],
+      changes: ["insert", "update", "delete"],
+      reconcile_every_minutes: 60,
+    })
+  })
+
   it("freezes every suitable read connector under one business capability", async () => {
     const source = await readFile(skillPath("procurement-reorder"), "utf8")
     const capabilities = availableCapabilities()
