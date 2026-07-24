@@ -490,12 +490,7 @@ async function handleCompany(
   }
   if (action === "current") {
     requireNoArguments(args, "mandala company current")
-    const config = await input.store.readConfig()
-    if (!config.selectedCompany)
-      throw new CliError(
-        "company_required",
-        "Select a company with 'mandala company use'."
-      )
+    const config = await requireCompany(input.store, input.audit)
     return { company: config.selectedCompany, mode: config.mode }
   }
   throw new CliError(
@@ -1489,13 +1484,21 @@ async function readSingleLine(input: Readable): Promise<string> {
 }
 
 async function requireCompany(store: SecureStore, audit: AuditState) {
-  const config = await store.readConfig()
-  audit.companyId = config.selectedCompany?.id
+  const [config, session] = await Promise.all([
+    store.readConfig(),
+    store.readSession(),
+  ])
+  if (!session)
+    throw new CliError(
+      "unauthorized",
+      "Sign in with 'mandala auth login' first."
+    )
   if (!config.selectedCompany)
     throw new CliError(
       "company_required",
       "Select a company with 'mandala company use'."
     )
+  audit.companyId = config.selectedCompany.id
   return { ...config, selectedCompany: config.selectedCompany }
 }
 
