@@ -267,7 +267,7 @@ describe("interactive TUI", () => {
       "--reason",
       "Approved provider evaluation",
     ])
-    expect(stdout.value).toContain("Supermemory (not ready)")
+    expect(stdout.value).toContain("Supermemory · not ready")
     expect(stdout.value).toContain("unavailable")
 
     selections.push("sandbox", "off", "cancel")
@@ -279,6 +279,175 @@ describe("interactive TUI", () => {
     ).toBe(false)
     expect(stdout.value).toContain("Workspace settings were not changed")
   })
+
+  it("projects live ready Context coverage and synchronization in workspace settings", async () => {
+    const base = fakeExecute()
+    const status = {
+      schemaVersion: 1,
+      companyId,
+      provider: "supermemory",
+      sandboxEnabled: true,
+      readiness: "ready",
+      configurationVersion: 8,
+      updatedAt: "2026-07-24T16:52:00.000Z",
+      providerStatus: {
+        operational: true,
+        status: "ready",
+        detailCode: "provider_ready",
+      },
+      indexingCoverage: {
+        status: "available",
+        eligibleRecordCount: 91_006,
+        indexedRecordCount: 91_006,
+        percent: 100,
+      },
+      synchronization: {
+        status: "available",
+        lagSeconds: 538,
+        lastSynchronizedAt: "2026-07-24T16:43:02.000Z",
+        recentErrorCount: 0,
+      },
+    }
+    const execute = vi.fn(async (args: string[]): Promise<CliCommandResult> => {
+      if (args[0] === "context" && args[1] === "status")
+        return { ok: true, data: status }
+      return base(args)
+    }) as NonNullable<TuiDependencies["execute"]> & ReturnType<typeof vi.fn>
+    const stdout = new CaptureStream()
+    const stderr = new CaptureStream()
+    const choices: TuiChoice[] = []
+    const controller = createTuiSessionFactory(
+      { execute },
+      stdout,
+      stderr
+    )({
+      append: (value) => stdout.write(`${value}\n`),
+      ask: async () => null,
+      choose: async (_prompt, options) => {
+        choices.push(...options)
+        return "cancel"
+      },
+      clearScreen: () => undefined,
+      onSnapshot: () => undefined,
+      renderOptions: { color: false, width: 100 },
+    })
+
+    await controller.start()
+    await controller.handleLine("/settings")
+
+    expect(stdout.value).toContain("Supermemory · ready")
+    expect(stdout.value).toContain("91,006 of 91,006 records (100%)")
+    expect(stdout.value).toContain("538 seconds · 0 recent errors")
+    expect(stdout.value).not.toContain("indexingCoverage unavailable")
+    expect(stdout.value).not.toContain("synchronizationLag unavailable")
+    expect(choices).toContainEqual(
+      expect.objectContaining({
+        label: "Context provider",
+        description: "Supermemory · ready",
+      })
+    )
+    expect(commandCalls(execute)).not.toContainEqual([
+      "context",
+      "set",
+      expect.anything(),
+    ])
+    expect(commandCalls(execute)).not.toContainEqual([
+      "sandbox",
+      "set",
+      expect.anything(),
+    ])
+  })
+
+  it.each([
+    {
+      name: "evidence-only coverage",
+      readiness: "not_ready",
+      providerStatus: {
+        operational: false,
+        status: "not_ready",
+        detailCode: "provider_not_operational",
+      },
+      indexingCoverage: {
+        status: "evidence_only",
+        eligibleRecordCount: 100,
+        indexedRecordCount: 72,
+        percent: null,
+      },
+      synchronization: {
+        status: "unavailable",
+        lagSeconds: null,
+        lastSynchronizedAt: null,
+        recentErrorCount: null,
+      },
+      expected: [
+        "Supermemory · not ready",
+        "evidence only · 72 of 100 records",
+      ],
+    },
+    {
+      name: "provider error",
+      readiness: "error",
+      providerStatus: {
+        operational: false,
+        status: "error",
+        detailCode: "provider_error",
+      },
+      indexingCoverage: {
+        status: "unavailable",
+        eligibleRecordCount: null,
+        indexedRecordCount: null,
+        percent: null,
+      },
+      synchronization: {
+        status: "unavailable",
+        lagSeconds: null,
+        lastSynchronizedAt: null,
+        recentErrorCount: null,
+      },
+      expected: ["Supermemory · error", "unavailable"],
+    },
+  ])(
+    "renders $name without inventing readiness",
+    async ({ expected, ...overrides }) => {
+      const base = fakeExecute()
+      const execute = vi.fn(
+        async (args: string[]): Promise<CliCommandResult> => {
+          if (args[0] === "context" && args[1] === "status")
+            return {
+              ok: true,
+              data: {
+                schemaVersion: 1,
+                companyId,
+                provider: "supermemory",
+                sandboxEnabled: true,
+                configurationVersion: 8,
+                updatedAt: "2026-07-24T16:52:00.000Z",
+                ...overrides,
+              },
+            }
+          return base(args)
+        }
+      ) as NonNullable<TuiDependencies["execute"]> & ReturnType<typeof vi.fn>
+      const stdout = new CaptureStream()
+      const stderr = new CaptureStream()
+      const controller = createTuiSessionFactory(
+        { execute },
+        stdout,
+        stderr
+      )({
+        append: (value) => stdout.write(`${value}\n`),
+        ask: async () => null,
+        clearScreen: () => undefined,
+        onSnapshot: () => undefined,
+        renderOptions: { color: false, width: 100 },
+      })
+
+      await controller.start()
+      await controller.handleLine("/settings")
+
+      for (const text of expected) expect(stdout.value).toContain(text)
+    }
+  )
 
   it("uses a safe nested fixture picker before running sandbox data", async () => {
     const base = fakeExecute()

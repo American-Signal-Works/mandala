@@ -1991,7 +1991,10 @@ class TuiSession {
       {
         value: "context",
         label: "Context provider",
-        description: provider === "off" ? "Off" : "Supermemory · not ready",
+        description: contextProviderLabel(
+          provider,
+          stringValue(current.readiness)
+        ),
       },
       {
         value: "sandbox",
@@ -2013,7 +2016,10 @@ class TuiSession {
         },
         {
           value: "supermemory",
-          label: "Supermemory · not ready",
+          label:
+            provider === "supermemory"
+              ? contextProviderLabel(provider, stringValue(current.readiness))
+              : "Supermemory · not ready",
           description: "Save the selection only; no provider call is made",
         },
         { value: "cancel", label: "Cancel", description: "Change nothing" },
@@ -2022,7 +2028,10 @@ class TuiSession {
       if (nextProvider === provider) {
         this.write(
           renderAssistantMessage(
-            `Context is already ${nextProvider === "off" ? "Off" : "set to Supermemory (not ready)"}. Nothing changed.`,
+            `Context is already ${currentContextProviderDescription(
+              provider,
+              stringValue(current.readiness)
+            )}. Nothing changed.`,
             this.renderOptions
           )
         )
@@ -3530,22 +3539,79 @@ function workspaceSettingsSummary(
   const readiness = stringValue(status.readiness)
   const sandboxEnabled = status.sandboxEnabled === true
   const version = numericValue(status.configurationVersion)
+  const providerStatus = asRecord(status.providerStatus)
   return renderHumanResult(
     {
       context: {
-        provider:
-          provider === "supermemory" ? "Supermemory (not ready)" : "Off",
+        provider: contextProviderLabel(provider, readiness),
         readiness: readiness ?? "unavailable",
-        providerOperational:
-          asRecord(status.providerStatus)?.operational === true,
-        indexingCoverage: "unavailable",
-        synchronizationLag: "unavailable",
+        providerOperational: providerStatus?.operational === true,
+        indexingCoverage: indexingCoverageSummary(status.indexingCoverage),
+        synchronizationLag: synchronizationSummary(status.synchronization),
       },
       sandboxSafety: sandboxEnabled ? "On" : "Off",
       configurationVersion: version ?? "unavailable",
     },
     { ...options, title: "Workspace settings" }
   )
+}
+
+function contextProviderLabel(
+  provider: string | undefined,
+  readiness: string | undefined
+): string {
+  if (provider !== "supermemory") return "Off"
+  return `Supermemory · ${contextReadinessLabel(readiness)}`
+}
+
+function currentContextProviderDescription(
+  provider: string | undefined,
+  readiness: string | undefined
+): string {
+  if (provider !== "supermemory") return "Off"
+  return `set to Supermemory (${contextReadinessLabel(readiness)})`
+}
+
+function contextReadinessLabel(readiness: string | undefined): string {
+  if (readiness === "ready") return "ready"
+  if (readiness === "error") return "error"
+  return "not ready"
+}
+
+function indexingCoverageSummary(value: unknown): string {
+  const coverage = asRecord(value)
+  const status = stringValue(coverage?.status)
+  if (!coverage || status === "unavailable") return "unavailable"
+  const eligible = numericValue(coverage.eligibleRecordCount)
+  const indexed = numericValue(coverage.indexedRecordCount)
+  if (status === "evidence_only") {
+    const counts =
+      eligible === undefined || indexed === undefined
+        ? "counts unavailable"
+        : `${indexed.toLocaleString("en-US")} of ${eligible.toLocaleString("en-US")} records`
+    return `evidence only · ${counts}`
+  }
+  const percent = numericValue(coverage.percent)
+  if (eligible === undefined || indexed === undefined || percent === undefined)
+    return "unavailable"
+  return `${indexed.toLocaleString("en-US")} of ${eligible.toLocaleString("en-US")} records (${percent}%)`
+}
+
+function synchronizationSummary(value: unknown): string {
+  const synchronization = asRecord(value)
+  if (!synchronization || synchronization.status !== "available")
+    return "unavailable"
+  const lagSeconds = numericValue(synchronization.lagSeconds)
+  const recentErrorCount = numericValue(synchronization.recentErrorCount)
+  const lag =
+    lagSeconds === undefined
+      ? "lag unknown"
+      : `${lagSeconds.toLocaleString("en-US")} seconds`
+  const errors =
+    recentErrorCount === undefined
+      ? "recent errors unknown"
+      : `${recentErrorCount.toLocaleString("en-US")} recent ${recentErrorCount === 1 ? "error" : "errors"}`
+  return `${lag} · ${errors}`
 }
 
 function formatCount(value: number | undefined): string {
