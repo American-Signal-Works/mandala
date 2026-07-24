@@ -1,4 +1,5 @@
-// @ts-nocheck -- scaffolded by @plate registry; minor type narrowing issues from noUncheckedIndexedAccess
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment -- Plate registry scaffold requires follow-up type narrowing for noUncheckedIndexedAccess.
+// @ts-nocheck
 "use client"
 
 import * as React from "react"
@@ -68,7 +69,9 @@ export const BlockDraggable: RenderNodeWrapper = (props) => {
 
   if (!enabled) return
 
-  return (props) => <Draggable {...props} />
+  return function BlockDraggableWrapper(props) {
+    return <Draggable {...props} />
+  }
 }
 
 function Draggable(props: PlateElementProps) {

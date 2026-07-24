@@ -64,7 +64,7 @@ jobs:
         run: pnpm --filter web typecheck
 
       - name: Lint
-        run: pnpm --filter web lint
+        run: pnpm lint
 
       - name: Unit tests
         run: pnpm --filter web test

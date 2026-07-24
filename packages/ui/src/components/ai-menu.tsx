@@ -1,4 +1,5 @@
-// @ts-nocheck -- scaffolded by @plate registry; minor type narrowing issues from noUncheckedIndexedAccess
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment -- Plate registry scaffold requires follow-up type narrowing for noUncheckedIndexedAccess.
+// @ts-nocheck
 "use client"
 
 import * as React from "react"
@@ -142,7 +143,7 @@ export function AIMenu() {
     api.aiChat.stop()
 
     // remove when you implement the route /api/ai/command
-    ;(chat as any)._abortFakeStream()
+    ;(chat as { _abortFakeStream: () => void })._abortFakeStream()
   })
 
   const isLoading = status === "streaming" || status === "submitted"
@@ -655,7 +656,7 @@ export function AILoadingBar() {
     api.aiChat.stop()
 
     // remove when you implement the route /api/ai/command
-    ;(chat as any)._abortFakeStream()
+    ;(chat as { _abortFakeStream: () => void })._abortFakeStream()
   })
 
   if (

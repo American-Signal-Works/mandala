@@ -1,4 +1,5 @@
-// @ts-nocheck -- scaffolded by @plate registry; minor type narrowing issues from noUncheckedIndexedAccess
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment -- Plate registry scaffold requires follow-up type narrowing for noUncheckedIndexedAccess.
+// @ts-nocheck
 import * as React from "react"
 
 import type { TCaptionElement, TResizableProps, TVideoElement } from "platejs"

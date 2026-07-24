@@ -34,7 +34,9 @@ const config: Record<
 export const BlockList: RenderNodeWrapper = (props) => {
   if (!props.element.listStyleType) return
 
-  return (props) => <List {...props} />
+  return function BlockListWrapper(props) {
+    return <List {...props} />
+  }
 }
 
 function List(props: PlateElementProps & { lineBreakBadge?: React.ReactNode }) {

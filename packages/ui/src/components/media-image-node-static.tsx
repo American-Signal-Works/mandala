@@ -1,4 +1,5 @@
-// @ts-nocheck -- scaffolded by @plate registry; minor type narrowing issues from noUncheckedIndexedAccess
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment -- Plate registry scaffold requires follow-up type narrowing for noUncheckedIndexedAccess.
+// @ts-nocheck
 import * as React from "react"
 
 import type { TCaptionProps, TImageElement, TResizableProps } from "platejs"
@@ -27,7 +28,10 @@ export function ImageElementStatic(
                 "w-full max-w-full cursor-default object-cover px-0",
                 "rounded-sm"
               )}
-              alt={(props.attributes as any).alt}
+              alt={
+                (props.attributes as typeof props.attributes & { alt?: string })
+                  .alt
+              }
               src={url}
             />
           </div>
