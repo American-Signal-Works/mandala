@@ -11,6 +11,7 @@ import {
   loadCliCompany,
   loadCliSessions,
   releaseCliDeviceAuthorization,
+  revokeAllCliSessions as revokeAllCliSessionsRpc,
   revokeIssuedCliActorSession,
   rotateCliSessionCredentials,
   selectCliSessionCompany,
@@ -75,6 +76,14 @@ beforeEach(() => {
     data: { id: companyId, name: "Example Company" },
     error: null,
   } as never)
+  vi.mocked(listAccessibleCompanies).mockResolvedValue([
+    {
+      id: companyId,
+      name: "Example Company",
+      role: "owner",
+      updatedAt: "2026-07-24T10:00:00.000Z",
+    },
+  ])
 })
 
 describe("hosted CLI HTTP boundaries", () => {
@@ -631,8 +640,115 @@ describe("hosted CLI HTTP boundaries", () => {
     )
 
     expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body).toEqual({
+      sessions: [
+        expect.objectContaining({
+          id: cliSessionId,
+        }),
+      ],
+    })
+    expect(body.sessions[0]).not.toHaveProperty("selectedCompanyName")
+    expect(listAccessibleCompanies).not.toHaveBeenCalled()
+  })
+
+  it("shows a browser user all owned sessions with membership-scoped workspace names", async () => {
+    vi.mocked(authenticateRequest).mockResolvedValue({
+      authMode: "cookie",
+      supabase: {},
+      user: { id: userId },
+    } as never)
+    vi.mocked(loadCliSessions).mockResolvedValue({
+      data: [
+        cliSessionRow(cliSessionId),
+        {
+          ...cliSessionRow(authorizationId),
+          selected_company_id: "20000000-0000-4000-8000-000000000099",
+        },
+      ],
+      error: null,
+    } as never)
+
+    const response = await listCliSessions(
+      new Request("https://mandala.md/api/mandala/cli/sessions")
+    )
+
+    expect(response.status).toBe(200)
+    expect(loadCliSessions).toHaveBeenCalledWith(userId)
+    expect(listAccessibleCompanies).toHaveBeenCalledWith({
+      supabase: {},
+      userId,
+    })
     await expect(response.json()).resolves.toMatchObject({
-      sessions: [{ id: cliSessionId }],
+      sessions: [
+        {
+          id: cliSessionId,
+          selectedCompanyName: "Example Company",
+        },
+        {
+          id: authorizationId,
+          selectedCompanyName: null,
+        },
+      ],
+    })
+  })
+
+  it("fails closed when workspace memberships cannot be loaded", async () => {
+    vi.mocked(authenticateRequest).mockResolvedValue({
+      authMode: "cookie",
+      supabase: {},
+      user: { id: userId },
+    } as never)
+    vi.mocked(loadCliSessions).mockResolvedValue({
+      data: [cliSessionRow(cliSessionId)],
+      error: null,
+    } as never)
+    vi.mocked(listAccessibleCompanies).mockRejectedValue(
+      new Error("membership lookup failed")
+    )
+
+    const response = await listCliSessions(
+      new Request("https://mandala.md/api/mandala/cli/sessions")
+    )
+
+    expect(response.status).toBe(500)
+    await expect(response.json()).resolves.toEqual({
+      error: "session_list_failed",
+    })
+  })
+
+  it("lets a browser user revoke all owned CLI sessions idempotently", async () => {
+    vi.mocked(authenticateRequest).mockResolvedValue({
+      authMode: "cookie",
+      supabase: {},
+      user: { id: userId },
+    } as never)
+    vi.mocked(revokeAllCliSessionsRpc)
+      .mockResolvedValueOnce({
+        data: { revokedCount: 2 },
+        error: null,
+      } as never)
+      .mockResolvedValueOnce({
+        data: { revokedCount: 0 },
+        error: null,
+      } as never)
+
+    const first = await revokeCliSessionRoute(
+      request("/api/mandala/cli/sessions", { all: true }, "DELETE")
+    )
+    const repeated = await revokeCliSessionRoute(
+      request("/api/mandala/cli/sessions", { all: true }, "DELETE")
+    )
+
+    expect(first.status).toBe(200)
+    await expect(first.json()).resolves.toEqual({ revokedCount: 2 })
+    expect(repeated.status).toBe(200)
+    await expect(repeated.json()).resolves.toEqual({ revokedCount: 0 })
+    expect(revokeAllCliSessionsRpc).toHaveBeenNthCalledWith(1, {
+      p_actor_user_id: userId,
+    })
+    expect(revokeAllCliSessionsRpc).toHaveBeenNthCalledWith(2, {
+      p_actor_user_id: userId,
     })
   })
 

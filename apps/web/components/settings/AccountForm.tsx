@@ -1,13 +1,21 @@
-"use client";
-import { Button } from "@workspace/ui/components/button";
-import { Field, FieldGroup, FieldLabel, FieldDescription } from "@workspace/ui/components/field";
-import { Separator } from "@workspace/ui/components/separator";
-import { signOut } from "@/actions/auth";
-import { DeleteAccountDialog } from "./DeleteAccountDialog";
+"use client"
+
+import { Button } from "@workspace/ui/components/button"
+import {
+  Field,
+  FieldDescription,
+  FieldGroup,
+  FieldLabel,
+} from "@workspace/ui/components/field"
+import { Separator } from "@workspace/ui/components/separator"
+
+import { signOut } from "@/actions/auth"
+import { CliSessionsForm } from "./CliSessionsForm"
+import { DeleteAccountDialog } from "./DeleteAccountDialog"
 
 export function AccountForm({ email }: { email: string }) {
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col gap-6">
       <FieldGroup>
         <Field>
           <FieldLabel>Email</FieldLabel>
@@ -17,16 +25,24 @@ export function AccountForm({ email }: { email: string }) {
 
       <Separator />
 
+      <CliSessionsForm />
+
+      <Separator />
+
       <form action={signOut}>
-        <Button type="submit" variant="outline">Sign out</Button>
+        <Button type="submit" variant="outline">
+          Sign out
+        </Button>
       </form>
 
       <Separator />
 
-      <div>
-        <h2 className="text-base font-semibold text-destructive mb-2">Danger zone</h2>
+      <div className="flex flex-col gap-2">
+        <h2 className="text-base font-semibold text-destructive">
+          Danger zone
+        </h2>
         <DeleteAccountDialog />
       </div>
     </div>
-  );
+  )
 }

@@ -167,6 +167,7 @@ export const cliSessionSchema = z
   .object({
     id: z.string().uuid(),
     selectedCompanyId: z.string().uuid().nullable(),
+    selectedCompanyName: z.string().min(1).max(200).nullable().optional(),
     scopes: z.array(cliAuthorizationScopeSchema).min(1).max(10),
     clientName: z.string().min(1).max(120),
     clientVersion: z.string().min(1).max(40),
