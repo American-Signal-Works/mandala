@@ -69,6 +69,95 @@ VALUES
     'active'
   );
 
+-- Recreate the vulnerable pre-migration state, run the migration backfill, and
+-- prove that only sessions without browser-selected workspaces are revoked.
+ALTER TABLE public.cli_sessions
+  DROP CONSTRAINT cli_sessions_active_workspace_check;
+INSERT INTO auth.sessions (id, user_id, created_at, updated_at)
+VALUES
+  (
+    '90000000-0000-4000-8000-000000000001',
+    '91000000-0000-4000-8000-000000000001',
+    now(),
+    now()
+  ),
+  (
+    '90000000-0000-4000-8000-000000000002',
+    '91000000-0000-4000-8000-000000000001',
+    now(),
+    now()
+  );
+INSERT INTO public.cli_sessions (
+  id, access_token_hash, refresh_token_hash, actor_auth_session_id,
+  actor_session_ciphertext, user_id, selected_company_id, scopes,
+  client_name, client_version, client_platform,
+  access_expires_at, refresh_expires_at
+) VALUES
+  (
+    '90000000-0000-4000-8000-000000000011',
+    repeat('e', 64), repeat('f', 64),
+    '90000000-0000-4000-8000-000000000001', repeat('a', 40),
+    '91000000-0000-4000-8000-000000000001',
+    NULL, ARRAY['workspace:control'],
+    'Mandala CLI', '0.0.0', 'darwin-arm64',
+    now() + INTERVAL '15 minutes', now() + INTERVAL '30 days'
+  ),
+  (
+    '90000000-0000-4000-8000-000000000012',
+    repeat('1', 64), repeat('2', 64),
+    '90000000-0000-4000-8000-000000000002', repeat('b', 40),
+    '91000000-0000-4000-8000-000000000001',
+    '92000000-0000-4000-8000-000000000001',
+    ARRAY['workspace:control'],
+    'Mandala CLI', '0.0.0', 'darwin-arm64',
+    now() + INTERVAL '15 minutes', now() + INTERVAL '30 days'
+  );
+WITH revoked_unbound AS (
+  UPDATE public.cli_sessions
+  SET
+    revoked_at = now(),
+    revocation_reason = 'authorization_consent_required'
+  WHERE selected_company_id IS NULL
+    AND revoked_at IS NULL
+  RETURNING actor_auth_session_id, user_id
+)
+DELETE FROM auth.sessions actor_session
+USING revoked_unbound
+WHERE actor_session.id = revoked_unbound.actor_auth_session_id
+  AND actor_session.user_id = revoked_unbound.user_id;
+ALTER TABLE public.cli_sessions
+  ADD CONSTRAINT cli_sessions_active_workspace_check
+  CHECK (
+    revoked_at IS NOT NULL
+    OR selected_company_id IS NOT NULL
+  );
+INSERT INTO auth.sessions (id, user_id, created_at, updated_at)
+VALUES (
+  '90000000-0000-4000-8000-000000000003',
+  '91000000-0000-4000-8000-000000000001',
+  now(),
+  now()
+);
+SELECT throws_ok(
+  $$INSERT INTO public.cli_sessions (
+      id, access_token_hash, refresh_token_hash, actor_auth_session_id,
+      actor_session_ciphertext, user_id, selected_company_id, scopes,
+      client_name, client_version, client_platform,
+      access_expires_at, refresh_expires_at
+    ) VALUES (
+      '90000000-0000-4000-8000-000000000013',
+      repeat('3', 64), repeat('4', 64),
+      '90000000-0000-4000-8000-000000000003', repeat('c', 40),
+      '91000000-0000-4000-8000-000000000001',
+      NULL, ARRAY['workspace:control'],
+      'Mandala CLI', '0.0.0', 'darwin-arm64',
+      now() + INTERVAL '15 minutes', now() + INTERVAL '30 days'
+    )$$,
+  '23514',
+  'new row for relation "cli_sessions" violates check constraint "cli_sessions_active_workspace_check"',
+  'the restored invariant blocks any future active session without explicit workspace consent'
+);
+
 SELECT is(
   has_function_privilege(
     'authenticated',
@@ -108,14 +197,181 @@ SELECT is(
 
 SELECT set_config('request.jwt.claims', '{"role":"service_role"}', true);
 SET LOCAL ROLE service_role;
+SELECT is(
+  public.validate_cli_session_v1(repeat('e', 64)) ->> 'allowed',
+  'false',
+  'the migration backfill rejects an access token issued without browser consent'
+);
+SELECT is(
+  public.inspect_cli_session_refresh_v1(repeat('f', 64)) ->> 'error',
+  'invalid_refresh_token',
+  'the migration backfill prevents an unbound refresh token from rotating'
+);
+RESET ROLE;
+SELECT is(
+  (
+    SELECT count(*)::INTEGER
+    FROM auth.sessions
+    WHERE id = '90000000-0000-4000-8000-000000000001'
+  ),
+  0,
+  'the migration backfill removes the unbound CLI actor session'
+);
+SELECT is(
+  (
+    SELECT count(*)::INTEGER
+    FROM auth.sessions
+    WHERE id = '90000000-0000-4000-8000-000000000002'
+  ),
+  1,
+  'the migration backfill leaves a browser-bound actor session intact'
+);
+SET LOCAL ROLE service_role;
+SELECT is(
+  public.validate_cli_session_v1(repeat('1', 64)) ->> 'allowed',
+  'true',
+  'the migration backfill leaves an explicitly bound CLI session usable'
+);
+RESET ROLE;
+DELETE FROM public.cli_sessions
+WHERE id = '90000000-0000-4000-8000-000000000012';
+DELETE FROM auth.sessions
+WHERE id IN (
+  '90000000-0000-4000-8000-000000000002',
+  '90000000-0000-4000-8000-000000000003'
+);
+SET LOCAL ROLE service_role;
 SELECT lives_ok(
   $$SELECT public.create_cli_device_authorization_v1(
       '93000000-0000-4000-8000-000000000001',
       repeat('1', 64), repeat('2', 64), repeat('3', 64),
       'Mandala CLI', '0.0.0', 'darwin-arm64',
       ARRAY['workspace:control'], now() + INTERVAL '10 minutes'
-    )$$,
+  )$$,
   'the service can create one short-lived device request'
+);
+SELECT lives_ok(
+  $$SELECT public.create_cli_device_authorization_v1(
+      '93000000-0000-4000-8000-000000000002',
+      repeat('a', 64), repeat('b', 64), repeat('c', 64),
+      'Mandala CLI', '0.0.0', 'darwin-arm64',
+      ARRAY['workspace:control'], now() + INTERVAL '10 minutes'
+    )$$,
+  'the service can create a request for an explicit denial'
+);
+SELECT lives_ok(
+  $$SELECT public.create_cli_device_authorization_v1(
+      '93000000-0000-4000-8000-000000000003',
+      repeat('d', 64), repeat('e', 64), repeat('f', 64),
+      'Mandala CLI', '0.0.0', 'darwin-arm64',
+      ARRAY['workspace:control'], now() + INTERVAL '10 minutes'
+    )$$,
+  'the service can create a request whose expiry is tested'
+);
+SELECT lives_ok(
+  $$SELECT public.create_cli_device_authorization_v1(
+      '93000000-0000-4000-8000-000000000004',
+      repeat('0', 64), repeat('7', 64), repeat('8', 64),
+      'Mandala CLI', '0.0.0', 'darwin-arm64',
+      ARRAY['workspace:control'], now() + INTERVAL '10 minutes'
+    )$$,
+  'the service can create a request whose inactive membership is tested'
+);
+SELECT lives_ok(
+  $$SELECT public.create_cli_device_authorization_v1(
+      '93000000-0000-4000-8000-000000000005',
+      repeat('9', 64), repeat('0', 64), repeat('4', 64),
+      'Mandala CLI', '0.0.0', 'darwin-arm64',
+      ARRAY['workspace:control'], now() + INTERVAL '10 minutes'
+    )$$,
+  'the service can create a request whose membership is removed during exchange'
+);
+
+SELECT is(
+  public.decide_cli_device_authorization_v1(
+    repeat('b', 64), repeat('d', 64), 'deny', NULL,
+    '91000000-0000-4000-8000-000000000001'
+  ) ->> 'status',
+  'denied',
+  'the signed-in user can explicitly deny a pending terminal request'
+);
+SELECT is(
+  public.claim_cli_device_authorization_v1(repeat('a', 64)) ->> 'status',
+  'denied',
+  'the terminal observes denial without receiving credentials'
+);
+
+UPDATE public.cli_device_authorizations
+SET created_at = now() - INTERVAL '20 minutes',
+    expires_at = now() - INTERVAL '1 minute'
+WHERE id = '93000000-0000-4000-8000-000000000003';
+SELECT is(
+  public.decide_cli_device_authorization_v1(
+    repeat('e', 64), repeat('6', 64), 'approve',
+    '92000000-0000-4000-8000-000000000001',
+    '91000000-0000-4000-8000-000000000001'
+  ) ->> 'error',
+  'expired',
+  'an expired request cannot be approved'
+);
+SELECT is(
+  (
+    SELECT status
+    FROM public.cli_device_authorizations
+    WHERE id = '93000000-0000-4000-8000-000000000003'
+  ),
+  'expired',
+  'an attempted decision durably marks an expired request'
+);
+
+SAVEPOINT inactive_approval;
+RESET ROLE;
+UPDATE public.company_memberships
+SET status = 'disabled'
+WHERE company_id = '92000000-0000-4000-8000-000000000001'
+  AND user_id = '91000000-0000-4000-8000-000000000001';
+SET LOCAL ROLE service_role;
+SELECT is(
+  public.decide_cli_device_authorization_v1(
+    repeat('7', 64), repeat('5', 64), 'approve',
+    '92000000-0000-4000-8000-000000000001',
+    '91000000-0000-4000-8000-000000000001'
+  ) ->> 'error',
+  'forbidden',
+  'approval rejects a workspace membership that became inactive'
+);
+RESET ROLE;
+ROLLBACK TO SAVEPOINT inactive_approval;
+SET LOCAL ROLE service_role;
+
+SELECT is(
+  (
+    WITH attempts AS MATERIALIZED (
+      SELECT
+        attempt_number,
+        public.decide_cli_device_authorization_v1(
+          repeat('6', 64), repeat('a', 64), 'deny', NULL,
+          '91000000-0000-4000-8000-000000000001'
+        ) AS result
+      FROM generate_series(1, 11) AS attempt_number
+    )
+    SELECT result ->> 'error'
+    FROM attempts
+    ORDER BY attempt_number DESC
+    LIMIT 1
+  ),
+  'rate_limited',
+  'decision attempts are rate limited before an unknown browser token can be abused'
+);
+SELECT is(
+  (
+    SELECT count(*)::INTEGER
+    FROM public.cli_authorization_attempts
+    WHERE attempt_kind = 'decision'
+      AND subject_hash = repeat('a', 64)
+  ),
+  10,
+  'the rate limiter stores only the configured decision-attempt window'
 );
 
 SELECT is(
@@ -143,6 +399,23 @@ SELECT is(
   'pending',
   'the signed-in owner can inspect the pending terminal request through the service'
 );
+SELECT is(
+  public.decide_cli_device_authorization_v1(
+    repeat('2', 64), repeat('4', 64), 'approve', NULL,
+    '91000000-0000-4000-8000-000000000001'
+  ) ->> 'error',
+  'company_required',
+  'approval fails closed without an explicit workspace'
+);
+SELECT is(
+  public.decide_cli_device_authorization_v1(
+    repeat('2', 64), repeat('4', 64), 'approve',
+    '92000000-0000-4000-8000-000000000002',
+    '91000000-0000-4000-8000-000000000001'
+  ) ->> 'error',
+  'forbidden',
+  'approval rejects a workspace without an active membership'
+);
 SELECT lives_ok(
   $$SELECT public.decide_cli_device_authorization_v1(
       repeat('2', 64), repeat('4', 64), 'approve',
@@ -151,6 +424,69 @@ SELECT lives_ok(
     )$$,
   'the service records an active member approving one workspace'
 );
+SELECT is(
+  public.decide_cli_device_authorization_v1(
+    repeat('2', 64), repeat('4', 64), 'approve',
+    '92000000-0000-4000-8000-000000000001',
+    '91000000-0000-4000-8000-000000000001'
+  ) ->> 'error',
+  'already_decided',
+  'a second or concurrent approval cannot change the selected workspace'
+);
+
+SELECT is(
+  public.decide_cli_device_authorization_v1(
+    repeat('0', 64), repeat('5', 64), 'approve',
+    '92000000-0000-4000-8000-000000000001',
+    '91000000-0000-4000-8000-000000000001'
+  ) -> 'company' ->> 'id',
+  '92000000-0000-4000-8000-000000000001',
+  'the membership-removal scenario begins with explicit workspace approval'
+);
+SELECT set_config(
+  'test.removed_membership_exchange_nonce',
+  public.claim_cli_device_authorization_v1(repeat('9', 64)) ->> 'exchangeNonce',
+  true
+);
+SAVEPOINT membership_removed_during_exchange;
+RESET ROLE;
+INSERT INTO auth.sessions (id, user_id, created_at, updated_at)
+VALUES (
+  '94000000-0000-4000-8000-000000000002',
+  '91000000-0000-4000-8000-000000000001',
+  now(),
+  now()
+);
+DELETE FROM public.company_memberships
+WHERE company_id = '92000000-0000-4000-8000-000000000001'
+  AND user_id = '91000000-0000-4000-8000-000000000001';
+SET LOCAL ROLE service_role;
+SELECT throws_ok(
+  format(
+    'SELECT public.complete_cli_device_authorization_v1(%L, %L, %L, %L, now() + interval ''15 minutes'', now() + interval ''30 days'', %L, %L)',
+    '93000000-0000-4000-8000-000000000005',
+    current_setting('test.removed_membership_exchange_nonce'),
+    repeat('b', 64),
+    repeat('c', 64),
+    '94000000-0000-4000-8000-000000000002',
+    repeat('d', 40)
+  ),
+  '42501',
+  'cli_authorization_membership_removed',
+  'membership removal between approval and exchange prevents credential issuance'
+);
+SELECT is(
+  (
+    SELECT count(*)::INTEGER
+    FROM public.cli_sessions
+    WHERE access_token_hash = repeat('b', 64)
+  ),
+  0,
+  'a failed exchange never creates a CLI session'
+);
+RESET ROLE;
+ROLLBACK TO SAVEPOINT membership_removed_during_exchange;
+SET LOCAL ROLE service_role;
 
 SELECT set_config(
   'test.cli_exchange_nonce',
@@ -199,11 +535,11 @@ SELECT is(
     FROM public.cli_sessions
     WHERE id = current_setting('test.cli_session_id')::UUID
   ),
-  NULL,
-  'browser authorization creates an unbound hosted CLI session'
+  '92000000-0000-4000-8000-000000000001',
+  'browser approval binds the selected workspace into the hosted CLI session'
 );
 
-SAVEPOINT unbound_membership_removed;
+SAVEPOINT approved_membership_removed;
 RESET ROLE;
 DELETE FROM public.company_memberships
 WHERE company_id = '92000000-0000-4000-8000-000000000001'
@@ -211,16 +547,16 @@ WHERE company_id = '92000000-0000-4000-8000-000000000001'
 SET LOCAL ROLE service_role;
 SELECT is(
   public.validate_cli_session_v1(repeat('5', 64)) ->> 'allowed',
-  'true',
-  'removing a membership does not revoke a still-unbound CLI session'
+  'false',
+  'removing the approved workspace membership revokes the CLI session'
 );
 RESET ROLE;
 SELECT is(
   (SELECT count(*)::INTEGER FROM auth.sessions WHERE id = '94000000-0000-4000-8000-000000000001'),
-  1,
-  'an unbound CLI session keeps its valid internal actor session'
+  0,
+  'approved workspace removal also revokes the internal actor session'
 );
-ROLLBACK TO SAVEPOINT unbound_membership_removed;
+ROLLBACK TO SAVEPOINT approved_membership_removed;
 SET LOCAL ROLE service_role;
 
 SELECT is(

@@ -58,7 +58,8 @@ export async function POST(request: Request) {
     p_browser_token_hash: hashAuthorizationSecret(browserToken),
     p_subject_hash: requestSubjectHash(request),
     p_decision: parsed.data.decision,
-    p_company_id: null,
+    p_company_id:
+      parsed.data.decision === "approve" ? parsed.data.companyId : null,
   })
   if (error) return rpcError()
 

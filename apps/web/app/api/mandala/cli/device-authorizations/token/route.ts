@@ -9,6 +9,7 @@ import {
   claimCliDeviceAuthorization,
   completeCliDeviceAuthorization,
   issueSupabaseCliActorSession,
+  loadCliCompany,
   releaseCliDeviceAuthorization,
   revokeIssuedCliActorSession,
 } from "@/actions/admin/cli-auth"
@@ -25,9 +26,10 @@ import {
 
 export const runtime = "nodejs"
 export const dynamic = "force-dynamic"
+const WORKSPACE_BINDING_CAPABILITY = "workspace-binding-v1"
 
 const completedExchangeSchema = z
-  .object({ sessionId: z.string().uuid(), companyId: z.null() })
+  .object({ sessionId: z.string().uuid(), companyId: z.string().uuid() })
   .strict()
 
 export async function POST(request: Request) {
@@ -57,13 +59,18 @@ export async function POST(request: Request) {
     const accessToken = createCliAccessToken()
     const refreshToken = createCliRefreshToken()
     const expiries = cliCredentialExpiries()
-    const actorSession = await issueSupabaseCliActorSession(claim.data.userId)
+    const [actorSession, companyResult] = await Promise.all([
+      issueSupabaseCliActorSession(claim.data.userId),
+      loadCliCompany(claim.data.companyId),
+    ])
     issuedActorAccessToken = actorSession.access_token
     const user = actorSession.user
     if (
-      user.id !== claim.data.userId
+      user.id !== claim.data.userId ||
+      companyResult.error ||
+      !companyResult.data
     ) {
-      throw new Error("cli_user_unavailable")
+      throw new Error("cli_company_unavailable")
     }
 
     const actorAuthSessionId = await getAuthSessionId(actorSession)
@@ -93,6 +100,10 @@ export async function POST(request: Request) {
           id: user.id,
           email: user.email ?? null,
         },
+        ...(request.headers.get("x-mandala-cli-capability") ===
+        WORKSPACE_BINDING_CAPABILITY
+          ? { company: companyResult.data }
+          : {}),
       })
     )
   } catch {
