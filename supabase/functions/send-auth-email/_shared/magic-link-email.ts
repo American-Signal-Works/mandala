@@ -1,7 +1,16 @@
+import {
+  classifyProviderFailure,
+  providerIdempotencyKey,
+  type DeliveryClaim,
+  type DeliveryResult,
+  // @ts-expect-error Deno requires the explicit extension; web tests typecheck this shared module.
+} from "../../email-delivery-worker/_shared/delivery.ts"
+
 export const MAGIC_LINK_EMAIL_SUBJECT = "Sign in to Mandala"
 export const RECOVERY_EMAIL_SUBJECT = "Reset your Mandala password"
 export const MAGIC_LINK_SENDER_NAME = "Mandala"
 export const MAGIC_LINK_EXPIRY_HOURS = 1
+export const MAX_INLINE_AUTH_EMAIL_ATTEMPTS = 3
 
 export const SUPPORTED_AUTH_EMAIL_ACTION_TYPES = [
   "email",
@@ -70,6 +79,7 @@ const REQUIRED_ENV_VARS = [
   "RESEND_API_KEY",
   "RESEND_AUTH_EMAIL_FROM_ADDRESS",
   "SEND_EMAIL_HOOK_SECRET",
+  "SUPABASE_SERVICE_ROLE_KEY",
   "SUPABASE_URL",
 ] as const
 
@@ -81,12 +91,14 @@ export type SendAuthEmailConfig = {
   fromAddress: string
   hookSecret: string
   resendApiKey: string
+  serviceRoleKey: string
   supabaseUrl: string
 }
 
 export type SupabaseAuthEmailHookPayload = {
   user?: {
     email?: string | null
+    id?: string | null
   } | null
   email_data?: {
     email_action_type?: string | null
@@ -117,12 +129,41 @@ type VerifyWebhook = (
 
 type SendEmail = (
   payload: ResendEmailPayload,
+  config: SendAuthEmailConfig,
+  idempotencyKey: string
+) => Promise<{ error?: unknown; id?: string } | void>
+
+export type AuthEmailDelivery = {
+  deliveryId: string
+  state: string
+}
+
+type EnqueueDelivery = (input: {
   config: SendAuthEmailConfig
-) => Promise<{ error?: unknown } | void>
+  recipientEmail: string
+  templateKey: "auth_magic_link" | "auth_recovery"
+  userId: string
+  webhookId: string
+}) => Promise<AuthEmailDelivery>
+
+type ClaimDelivery = (
+  deliveryId: string,
+  config: SendAuthEmailConfig
+) => Promise<DeliveryClaim | null>
+
+type RecordDeliveryResult = (
+  claim: DeliveryClaim,
+  result: DeliveryResult,
+  config: SendAuthEmailConfig
+) => Promise<void>
 
 export type SendAuthEmailDependencies = {
+  claimDelivery: ClaimDelivery
+  enqueueDelivery: EnqueueDelivery
   getEnv: EnvGetter
+  recordDeliveryResult: RecordDeliveryResult
   sendEmail: SendEmail
+  sleep?: (milliseconds: number) => Promise<void>
   verifyWebhook: VerifyWebhook
 }
 
@@ -154,6 +195,7 @@ export function getSendAuthEmailConfig(getEnv: EnvGetter): SendAuthEmailConfig {
     fromAddress: values.RESEND_AUTH_EMAIL_FROM_ADDRESS,
     hookSecret: values.SEND_EMAIL_HOOK_SECRET,
     resendApiKey: values.RESEND_API_KEY,
+    serviceRoleKey: values.SUPABASE_SERVICE_ROLE_KEY,
     supabaseUrl: values.SUPABASE_URL,
   }
 }
@@ -167,6 +209,7 @@ export function createResendEmailPayload(
   config: SendAuthEmailConfig
 ): ResendEmailPayload {
   const recipient = hookPayload.user?.email?.trim()
+  const userId = hookPayload.user?.id?.trim()
   const emailData = hookPayload.email_data
   const tokenHash = (
     emailData?.token_hash ||
@@ -178,7 +221,14 @@ export function createResendEmailPayload(
   )
   const redirectTo = emailData?.redirect_to?.trim()
 
-  if (!recipient || !tokenHash || !emailActionType || !redirectTo) {
+  if (
+    !recipient ||
+    !userId ||
+    !isUuid(userId) ||
+    !tokenHash ||
+    !emailActionType ||
+    !redirectTo
+  ) {
     throw new InvalidEmailHookPayloadError()
   }
 
@@ -285,16 +335,153 @@ export async function handleSendAuthEmailRequest(
     return jsonResponse({ error: "Invalid email hook payload." }, 400)
   }
 
-  try {
-    const result = await dependencies.sendEmail(emailPayload, config)
-    if (result && "error" in result && result.error) {
-      return jsonResponse({ error: "Email provider failed to send." }, 502)
-    }
-  } catch {
-    return jsonResponse({ error: "Email provider failed to send." }, 502)
+  const webhookId = request.headers.get("webhook-id")?.trim()
+  const userId = hookPayload.user?.id?.trim()
+  const recipientEmail = hookPayload.user?.email?.trim()
+  const emailActionType = parseSupportedAuthEmailActionType(
+    hookPayload.email_data?.email_action_type
+  )
+
+  if (!webhookId || !userId || !recipientEmail || !emailActionType) {
+    return jsonResponse({ error: "Invalid email hook payload." }, 400)
   }
 
-  return jsonResponse({}, 200)
+  let delivery: AuthEmailDelivery
+  try {
+    delivery = await dependencies.enqueueDelivery({
+      config,
+      recipientEmail,
+      templateKey:
+        emailActionType === "recovery" ? "auth_recovery" : "auth_magic_link",
+      userId,
+      webhookId,
+    })
+  } catch {
+    return jsonResponse({ error: "Email delivery ledger unavailable." }, 503)
+  }
+
+  if (isFinalDeliveryState(delivery.state)) {
+    return jsonResponse({}, 200)
+  }
+
+  const sleep = dependencies.sleep ?? defaultSleep
+
+  for (
+    let attemptIndex = 0;
+    attemptIndex < MAX_INLINE_AUTH_EMAIL_ATTEMPTS;
+    attemptIndex += 1
+  ) {
+    let claim: DeliveryClaim | null
+    try {
+      claim = await dependencies.claimDelivery(delivery.deliveryId, config)
+    } catch {
+      return jsonResponse({ error: "Email delivery ledger unavailable." }, 503)
+    }
+
+    // Another replay already owns the active claim, or the logical delivery
+    // reached a terminal/provider-accepted state before this invocation.
+    if (!claim) return jsonResponse({}, 200)
+
+    let result: DeliveryResult
+    try {
+      const providerResult = await dependencies.sendEmail(
+        emailPayload,
+        config,
+        providerIdempotencyKey(claim)
+      )
+      result =
+        providerResult && "error" in providerResult && providerResult.error
+          ? classifyProviderFailure(providerResult.error)
+          : providerResult && "id" in providerResult
+            ? {
+                outcome: "sent",
+                providerEmailId:
+                  typeof providerResult.id === "string"
+                    ? providerResult.id
+                    : undefined,
+              }
+            : { outcome: "sent" }
+    } catch (error) {
+      result = classifyProviderFailure(error)
+    }
+
+    if (result.outcome === "sent" && !result.providerEmailId) {
+      result = {
+        outcome: "transient_failure",
+        errorCategory: "transient_missing_provider_id",
+      }
+    }
+
+    const hasAnotherInlineAttempt =
+      result.outcome === "transient_failure" &&
+      attemptIndex + 1 < MAX_INLINE_AUTH_EMAIL_ATTEMPTS
+    const recordedResult = hasAnotherInlineAttempt
+      ? result
+      : exhaustTransientFailure(result)
+
+    try {
+      await dependencies.recordDeliveryResult(claim, recordedResult, config)
+    } catch {
+      return jsonResponse({ error: "Email delivery ledger unavailable." }, 503)
+    }
+
+    if (recordedResult.outcome === "sent") {
+      return jsonResponse({}, 200)
+    }
+
+    if (!hasAnotherInlineAttempt) {
+      return jsonResponse({ error: "Email provider failed to send." }, 502)
+    }
+
+    await sleep(inlineRetryDelay(attemptIndex))
+  }
+
+  return jsonResponse({ error: "Email provider failed to send." }, 502)
+}
+
+function exhaustTransientFailure(result: DeliveryResult): DeliveryResult {
+  if (result.outcome !== "transient_failure") return result
+  return {
+    outcome: "permanent_failure",
+    errorCategory: `transient_exhausted_${safeCategory(
+      result.errorCategory ?? "unknown"
+    )}`,
+  }
+}
+
+function inlineRetryDelay(attemptIndex: number) {
+  return attemptIndex === 0 ? 150 : 450
+}
+
+function defaultSleep(milliseconds: number) {
+  return new Promise<void>((resolve) => setTimeout(resolve, milliseconds))
+}
+
+function isFinalDeliveryState(state: string) {
+  return [
+    "sent",
+    "delivered",
+    "delayed",
+    "failed",
+    "bounced",
+    "suppressed",
+    "complained",
+  ].includes(state)
+}
+
+function safeCategory(value: string) {
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9_]+/g, "_")
+      .slice(0, 80) || "unknown"
+  )
+}
+
+function isUuid(value: string) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    value
+  )
 }
 
 export function renderMandalaMagicLinkHtml(magicLink: string) {

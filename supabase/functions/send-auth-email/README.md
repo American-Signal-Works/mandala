@@ -1,9 +1,23 @@
 # Mandala Auth Email Hook
 
-This Supabase Edge Function sends supported Supabase Auth emails through Resend.
+This Supabase Edge Function sends supported Supabase Auth emails through Resend
+and records them in Mandala's durable email-delivery ledger.
 It currently accepts magic-link (`magiclink`, new-user `signup`, and the legacy
 `email` alias) and password-recovery (`recovery`) hook actions. Other action
 types fail closed until their own copy and behavior are explicitly implemented.
+
+Authentication links are intentionally different from regeneratable workspace
+invitation payloads. The verified Auth hook renders and sends the link while it
+exists only in Edge Function memory. The database stores an opaque hook
+reference, recipient delivery metadata, attempts, provider ID, and webhook
+transitions; it never stores the one-time token, token hash, verification URL,
+rendered HTML/text, or raw signed hook body.
+
+The hook makes up to three bounded inline attempts within Supabase's HTTP hook
+time limit. Every attempt is recorded, all provider calls use the logical
+delivery's stable Resend idempotency key, and the final transient failure becomes
+a safe terminal ledger state. The scheduled invitation worker never claims
+`inline_auth` rows because their token-bearing payload cannot be regenerated.
 
 The shared renderer folder also contains transport-ready contracts for workspace
 invitations, member-removal notices, and invitation-accepted confirmations. Their
@@ -22,6 +36,10 @@ supabase secrets set \
 ```
 
 `SUPABASE_URL` is supplied by Supabase Edge Functions. The sender display name is hard-coded as `Mandala`, so Resend receives:
+
+`SUPABASE_SERVICE_ROLE_KEY` is also supplied by the hosted Edge Function
+environment. It is used only server-side for the service-role-only enqueue,
+claim, and result RPCs; never add it to browser configuration or logs.
 
 ```txt
 Mandala <auth@example.com>
