@@ -244,6 +244,7 @@ class TuiSession {
   private currentEnvironment?: string
   private currentSandboxEnabled?: boolean
   private currentUserEmail?: string
+  private currentAuthenticated = false
   private authAbort?: AbortController
   private operationAbort?: AbortController
   private agentApi?: ControlApi
@@ -309,11 +310,8 @@ class TuiSession {
   }
 
   async start(): Promise<void> {
-    const context = await this.runCommand(["context"])
-    if (!context.ok) {
-      this.writeSignedOutState(context.error)
-      return
-    }
+    const context = await this.loadVerifiedContext()
+    if (!context) return
 
     this.updateCompanyFromContext(context.data)
     const [inbox, settings] =
@@ -504,6 +502,7 @@ class TuiSession {
     this.currentCompanyName = undefined
     this.currentEnvironment = undefined
     this.currentUserEmail = undefined
+    this.currentAuthenticated = false
     this.notifySnapshot()
   }
 
@@ -524,10 +523,14 @@ class TuiSession {
       case "/login":
         await this.login(args)
         return
-      case "/auth-status":
+      case "/auth-status": {
         requireNoArguments(args, definition.usage)
+        const context = await this.loadVerifiedContext()
+        if (!context) return
+        this.updateCompanyFromContext(context.data)
         this.writeResult(await this.runCommand(["auth", "status"]))
         return
+      }
       case "/logout":
         requireNoArguments(args, definition.usage)
         await this.logout()
@@ -774,6 +777,12 @@ class TuiSession {
   }
 
   private async showSandbox(): Promise<void> {
+    if (!this.currentAuthenticated) {
+      this.writeError(
+        new CliError("unauthorized", "Sign in with /login first.")
+      )
+      return
+    }
     const result = await this.runCommand(["sandbox", "open"])
     if (!result.ok) {
       this.writeError(result.error)
@@ -1940,11 +1949,8 @@ class TuiSession {
   }
 
   private async showContext(): Promise<void> {
-    const result = await this.runCommand(["context"])
-    if (!result.ok) {
-      this.writeError(result.error)
-      return
-    }
+    const result = await this.loadVerifiedContext()
+    if (!result) return
     this.updateCompanyFromContext(result.data)
     this.write(renderHumanResult(result.data, this.renderOptions))
   }
@@ -2123,13 +2129,8 @@ class TuiSession {
   }
 
   private async showHeader(): Promise<void> {
-    const result = await this.runCommand(["context"])
-    if (!result.ok) {
-      if (isAuthenticationError(result.error))
-        this.writeSignedOutState(result.error)
-      else this.writeError(result.error)
-      return
-    }
+    const result = await this.loadVerifiedContext()
+    if (!result) return
     this.updateCompanyFromContext(result.data)
     const [inbox, settings] =
       isAuthenticatedContext(result.data) && this.currentCompanyId
@@ -2154,9 +2155,60 @@ class TuiSession {
     }
   }
 
+  private async loadVerifiedContext(): Promise<
+    Extract<CliCommandResult, { ok: true }> | undefined
+  > {
+    const context = await this.runCommand(["context"])
+    if (!context.ok) {
+      if (isAuthenticationError(context.error))
+        this.writeSignedOutState(context.error)
+      else this.writeUnverifiedState(context.error)
+      return undefined
+    }
+    if (!isAuthenticatedContext(context.data)) {
+      this.writeSignedOutState(
+        new CliError("unauthorized", "Sign in with /login first.")
+      )
+      return undefined
+    }
+
+    const sessionProbe = await this.runCommand(["company", "list"])
+    if (!sessionProbe.ok) {
+      if (isAuthenticationError(sessionProbe.error))
+        this.writeSignedOutState(sessionProbe.error)
+      else this.writeUnverifiedState(sessionProbe.error)
+      return undefined
+    }
+    return context
+  }
+
   private writeSignedOutState(error: CliError): void {
     this.clearState()
-    this.write(renderHeader({ mode: "sandbox" }, this.renderOptions))
+    this.write(
+      renderHeader(
+        {
+          contextStatus: "Sign in required",
+          mode: "sandbox",
+          sandboxStatus: "Sign in required",
+        },
+        this.renderOptions
+      )
+    )
+    this.writeError(error)
+  }
+
+  private writeUnverifiedState(error: CliError): void {
+    this.clearState()
+    this.write(
+      renderHeader(
+        {
+          contextStatus: "Unavailable",
+          mode: "sandbox",
+          sandboxStatus: "Unavailable",
+        },
+        this.renderOptions
+      )
+    )
     this.writeError(error)
   }
 
@@ -2166,8 +2218,8 @@ class TuiSession {
       if (
         !definition.paletteVisible ||
         !isSlashCommandAvailable(definition, this.selectedItem?.status) ||
-        (definition.command === "/login" && this.currentUserEmail) ||
-        (definition.command === "/logout" && !this.currentUserEmail)
+        (definition.command === "/login" && this.currentAuthenticated) ||
+        (definition.command === "/logout" && !this.currentAuthenticated)
       )
         continue
       const current = groups.get(definition.group) ?? []
@@ -2259,6 +2311,7 @@ class TuiSession {
     this.currentCompanyName = stringValue(company?.name)
     this.currentEnvironment = stringValue(source?.mode) ?? "sandbox"
     this.currentUserEmail = stringValue(asRecord(source?.user)?.email)
+    this.currentAuthenticated = isAuthenticatedContext(value)
     this.notifySnapshot()
   }
 
@@ -2293,7 +2346,9 @@ class TuiSession {
         ? this.selectedItem.nextAction
         : this.currentCompanyId
           ? "Open inbox"
-          : "Sign in",
+          : this.currentAuthenticated
+            ? "Select workspace"
+            : "Sign in",
       sandboxEnabled: this.currentSandboxEnabled,
       selectedItem: this.selectedItem,
       userEmail: this.currentUserEmail,
@@ -3621,7 +3676,7 @@ function actionableErrorMessage(error: CliError): string | undefined {
     return "The local Mandala API is not running. From the Backdesk repository, start it with pnpm dev, then retry /refresh."
   }
   if (error.code === "unauthorized") {
-    return "Sign in before opening the inbox. Use /login."
+    return "Sign in first. Use /login."
   }
   if (error.code === "test_agent_unavailable") {
     return "The Sandbox test agent could not complete its model run. Confirm the local API has MANDALA_TEST_AGENT_ENABLED=true plus AI Gateway and LangSmith settings, then run it again. No Inbox item was created."

@@ -793,6 +793,173 @@ describe("interactive TUI", () => {
     expect(stdout.value).not.toContain("Next action")
   })
 
+  it.each([
+    ["expired", "session_expired"],
+    ["revoked", "unauthorized"],
+  ])(
+    "does not render cached identity when the saved session is %s",
+    async (_label, code) => {
+      const execute = vi.fn(
+        async (args: string[]): Promise<CliCommandResult> => {
+          if (args[0] === "context") {
+            return {
+              ok: true,
+              data: {
+                authenticated: true,
+                company: { id: companyId, name: "Dirt King" },
+                mode: "mock",
+                user: { email: "tristan@dirtking.com" },
+              },
+            }
+          }
+          if (args[0] === "company" && args[1] === "list") {
+            return {
+              ok: false,
+              error: new CliError(code, "Saved session is no longer valid."),
+            }
+          }
+          if (args[0] === "auth" && args[1] === "status") {
+            return {
+              ok: true,
+              data: {
+                authenticated: true,
+                user: { email: "tristan@dirtking.com" },
+                expired: false,
+              },
+            }
+          }
+          return { ok: true, data: {} }
+        }
+      ) as NonNullable<TuiDependencies["execute"]> & ReturnType<typeof vi.fn>
+
+      const { stderr, stdout } = await session(
+        "/sandbox\n/context\n/auth-status\n/exit\n",
+        execute
+      )
+
+      expect(stdout.value).toContain("Context: Sign in required")
+      expect(stdout.value).toContain("Sandbox: Sign in required")
+      expect(stdout.value).not.toContain("Dirt King")
+      expect(stdout.value).not.toContain("tristan@dirtking.com")
+      expect(stderr.value).toContain("/login")
+      expect(commandCalls(execute)).not.toContainEqual(["work", "list"])
+      expect(commandCalls(execute)).not.toContainEqual(["context", "status"])
+      expect(commandCalls(execute)).not.toContainEqual(["sandbox", "open"])
+      expect(commandCalls(execute)).not.toContainEqual(["auth", "status"])
+    }
+  )
+
+  it("does not render a cached workspace when no local session exists", async () => {
+    const execute = vi.fn(async (args: string[]): Promise<CliCommandResult> => {
+      if (args[0] === "context") {
+        return {
+          ok: true,
+          data: {
+            authenticated: false,
+            company: { id: companyId, name: "Dirt King" },
+            mode: "mock",
+            user: null,
+          },
+        }
+      }
+      return { ok: true, data: {} }
+    }) as NonNullable<TuiDependencies["execute"]> & ReturnType<typeof vi.fn>
+
+    const { stderr, stdout } = await session(
+      "/sandbox\n/context\n/auth-status\n/exit\n",
+      execute
+    )
+
+    expect(stdout.value).toContain("Context: Sign in required")
+    expect(stdout.value).toContain("Sandbox: Sign in required")
+    expect(stdout.value).not.toContain("Dirt King")
+    expect(stderr.value).toContain("Sign in first")
+    expect(commandCalls(execute)).toEqual([
+      ["context"],
+      ["context"],
+      ["context"],
+    ])
+  })
+
+  it("does not expose cached identity when session verification is unavailable", async () => {
+    const execute = vi.fn(async (args: string[]): Promise<CliCommandResult> => {
+      if (args[0] === "context") {
+        return {
+          ok: true,
+          data: {
+            authenticated: true,
+            company: { id: companyId, name: "Dirt King" },
+            mode: "mock",
+            user: { email: "tristan@dirtking.com" },
+          },
+        }
+      }
+      if (args[0] === "company" && args[1] === "list") {
+        return {
+          ok: false,
+          error: new CliError(
+            "network_error",
+            "Session verification is unavailable."
+          ),
+        }
+      }
+      if (args[0] === "auth" && args[1] === "status") {
+        return {
+          ok: true,
+          data: {
+            authenticated: true,
+            user: { email: "tristan@dirtking.com" },
+            expired: false,
+          },
+        }
+      }
+      return { ok: true, data: {} }
+    }) as NonNullable<TuiDependencies["execute"]> & ReturnType<typeof vi.fn>
+
+    const { stderr, stdout } = await session(
+      "/context\n/auth-status\n/exit\n",
+      execute
+    )
+
+    expect(stdout.value).toContain("Context: Unavailable")
+    expect(stdout.value).toContain("Sandbox: Unavailable")
+    expect(stdout.value).not.toContain("Dirt King")
+    expect(stdout.value).not.toContain("tristan@dirtking.com")
+    expect(stderr.value).toContain("Mandala API is not running")
+    expect(commandCalls(execute)).not.toContainEqual(["auth", "status"])
+  })
+
+  it("restores authenticated identity after login from a stale signed-out state", async () => {
+    const base = fakeExecute({ authenticated: false })
+    const execute = vi.fn(async (args: string[]): Promise<CliCommandResult> => {
+      const result = await base(args)
+      if (
+        args[0] === "context" &&
+        result.ok &&
+        (result.data as { authenticated?: boolean }).authenticated === false
+      ) {
+        return {
+          ok: true,
+          data: {
+            authenticated: false,
+            company: { id: companyId, name: "Stale Company" },
+            mode: "mock",
+            user: null,
+          },
+        }
+      }
+      return result
+    }) as NonNullable<TuiDependencies["execute"]> & ReturnType<typeof vi.fn>
+
+    const { stdout } = await session("/login\n/exit\n", execute)
+
+    expect(stdout.value).toContain("Signed in as user@example.com")
+    expect(stdout.value).toContain("Example Company")
+    expect(stdout.value).not.toContain("Stale Company")
+    expect(commandCalls(execute)).toContainEqual(["auth", "login"])
+    expect(commandCalls(execute)).toContainEqual(["company", "list"])
+  })
+
   it("explains the seeded local account after an unknown-email login", async () => {
     const base = fakeExecute({ authenticated: false })
     const execute = vi.fn(async (args: string[]): Promise<CliCommandResult> => {
@@ -877,7 +1044,8 @@ describe("interactive TUI", () => {
 
     expect(execute).toHaveBeenCalledTimes(1)
     expect(execute).toHaveBeenCalledWith(["context"], expect.any(Object))
-    expect(stderr.value.trim()).toBe(
+    expect(stderr.value).toContain("Sign in first; Use /login.")
+    expect(stderr.value).toContain(
       "Unknown slash command; Type / to browse available commands."
     )
     expect(stderr.value).not.toContain("| Field")
@@ -902,8 +1070,9 @@ describe("interactive TUI", () => {
     expect(stdout.value).not.toContain("Next action")
     expect(stdout.value).toContain("Context: Off")
     expect(stdout.value).toContain("Sandbox: On")
-    expect(commandCalls(execute).slice(0, 2)).toEqual([
+    expect(commandCalls(execute).slice(0, 3)).toEqual([
       ["context"],
+      ["company", "list"],
       ["work", "list"],
     ])
     expect(commandCalls(execute)).toContainEqual(["context", "status"])
@@ -1188,7 +1357,8 @@ describe("interactive TUI", () => {
 
     expect(stdout.value).toContain("Other Company")
     expect(stdout.value).not.toContain("Other Company · Sandbox")
-    expect(stdout.value).toContain("(none) · Sandbox")
+    expect(stdout.value).toContain("Context: Sign in required")
+    expect(stdout.value).toContain("Sandbox: Sign in required")
     expect(commandCalls(execute)).toContainEqual(["auth", "logout"])
   })
 
