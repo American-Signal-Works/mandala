@@ -32,7 +32,9 @@ export function ExcalidrawElement(
         >
           {Excalidraw && (
             <Excalidraw
-              {...(excalidrawProps as any)}
+              {...(excalidrawProps as React.ComponentProps<
+                NonNullable<typeof Excalidraw>
+              >)}
               viewModeEnabled={readOnly}
             />
           )}

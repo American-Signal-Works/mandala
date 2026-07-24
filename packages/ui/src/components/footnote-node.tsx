@@ -3,7 +3,7 @@
 import * as React from "react"
 
 import type { TFootnoteElement } from "@platejs/footnote"
-import { PathApi, type Path } from "platejs"
+import { PathApi, type NodeEntry, type Path, type TElement } from "platejs"
 import { FootnoteReferencePlugin } from "@platejs/footnote/react"
 import type { PlateEditor, PlateElementProps } from "platejs/react"
 
@@ -240,7 +240,7 @@ export function FootnoteDefinitionElement(
       !isDuplicateDefinition && identifier
         ? footnoteApi
             .references({ identifier })
-            .map((entry: any, index: number) => ({
+            .map((entry: NodeEntry<TElement>, index: number) => ({
               index,
               label: getReferenceContextLabel(editor, entry[1], index),
             }))

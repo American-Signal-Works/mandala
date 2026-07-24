@@ -31,8 +31,10 @@ import { suggestionPlugin } from "@workspace/ui/components/editor/plugins/sugges
 import { BlockSuggestionCard, isResolvedSuggestion } from "./block-suggestion"
 import { Comment, CommentCreateForm } from "./comment"
 
-export const BlockDiscussion: RenderNodeWrapper<AnyPluginConfig> =
-  (_props) => (props) => <BlockCommentContent {...props} />
+export const BlockDiscussion: RenderNodeWrapper<AnyPluginConfig> = () =>
+  function BlockDiscussionWrapper(props) {
+    return <BlockCommentContent {...props} />
+  }
 
 const BlockCommentContent = ({ children, element }: PlateElementProps) => {
   const editor = useEditorRef()

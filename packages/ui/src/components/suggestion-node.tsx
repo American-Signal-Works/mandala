@@ -144,10 +144,14 @@ function SuggestionLineBreakElementAnchor({
   className,
 }: {
   badgeProps?: React.ComponentProps<"span">
-  children: React.ReactElement<any>
+  children: React.ReactElement<unknown>
   className?: string
 }) {
   if (!React.isValidElement(children)) return children
+  const childWithProps = children as React.ReactElement<{
+    children?: React.ReactNode
+    lineBreakBadge?: React.ReactNode
+  }>
   const badge = (
     <span
       {...badgeProps}
@@ -162,10 +166,8 @@ function SuggestionLineBreakElementAnchor({
     </span>
   )
 
-  if (children.type === "ol" || children.type === "ul") {
-    const childNodes = React.Children.toArray(
-      (children.props as { children?: React.ReactNode }).children
-    )
+  if (childWithProps.type === "ol" || childWithProps.type === "ul") {
+    const childNodes = React.Children.toArray(childWithProps.props.children)
     const lastIndex = childNodes.length - 1
     const lastChild = childNodes[lastIndex]
 
@@ -174,7 +176,7 @@ function SuggestionLineBreakElementAnchor({
     }
 
     const nextLastChild = React.cloneElement(
-      lastChild as React.ReactElement<any>,
+      lastChild as React.ReactElement<{ children?: React.ReactNode }>,
       {
         children: (
           <>
@@ -185,12 +187,12 @@ function SuggestionLineBreakElementAnchor({
       }
     )
 
-    return React.cloneElement(children as React.ReactElement<any>, {
+    return React.cloneElement(childWithProps, {
       children: [...childNodes.slice(0, lastIndex), nextLastChild],
     })
   }
 
-  if (typeof children.type === "string") {
+  if (typeof childWithProps.type === "string") {
     return (
       <>
         {children}
@@ -199,7 +201,7 @@ function SuggestionLineBreakElementAnchor({
     )
   }
 
-  return React.cloneElement(children as React.ReactElement<any>, {
+  return React.cloneElement(childWithProps, {
     lineBreakBadge: badge,
   })
 }

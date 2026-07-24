@@ -1,4 +1,5 @@
-// @ts-nocheck -- scaffolded by @plate registry; minor type narrowing issues from noUncheckedIndexedAccess
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment -- Plate registry scaffold requires follow-up type narrowing for noUncheckedIndexedAccess.
+// @ts-nocheck
 "use client"
 /* eslint-disable react-hooks/refs */
 
@@ -254,7 +255,7 @@ function EmojiPickerContent({
   const getRowWidth = settings.perLine.value * settings.buttonSize.value
 
   const isCategoryVisible = React.useCallback(
-    (categoryId: any) =>
+    (categoryId: EmojiCategoryList) =>
       visibleCategories.has(categoryId)
         ? visibleCategories.get(categoryId)
         : false,
