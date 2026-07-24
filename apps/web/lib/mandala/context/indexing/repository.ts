@@ -24,6 +24,28 @@ export type ContextIndexProcessingLease = ContextIndexLeaseReference & {
   readonly maximumPollAttempts: number
 }
 
+export type ContextIndexReconciliationClaim = {
+  readonly outboxId: string
+  readonly companyId: string
+  readonly provider: "supermemory"
+  readonly stableCustomId: string
+  readonly attempt: number
+  readonly nextAttemptAt: string
+}
+
+export type ContextIndexReconciliationDocument = {
+  readonly stableCustomId: string
+  readonly providerDocumentId: string
+  readonly status: "complete"
+}
+
+export type ContextIndexReconciliationConfirmation = {
+  readonly companyId: string
+  readonly suppliedCount: number
+  readonly settledCount: number
+  readonly unmatchedCount: number
+}
+
 export interface ContextIndexRepository {
   prepare(input: {
     now: string
@@ -59,6 +81,16 @@ export interface ContextIndexRepository {
     leaseSeconds: number
     now: string
   }): Promise<ContextIndexProcessingLease[]>
+  claimReconciliation(input: {
+    workerId: string
+    limit: number
+    now: string
+  }): Promise<ContextIndexReconciliationClaim[]>
+  confirmReconciliation(input: {
+    companyId: string
+    documents: readonly ContextIndexReconciliationDocument[]
+    now: string
+  }): Promise<ContextIndexReconciliationConfirmation>
   accept(input: {
     workerId: string
     lease: ContextIndexLeaseReference

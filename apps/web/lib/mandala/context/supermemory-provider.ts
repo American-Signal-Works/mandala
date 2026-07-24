@@ -172,6 +172,17 @@ const processingStatusBatchInputSchema = z
   )
   .min(1)
   .max(100)
+const reconciliationStatusBatchInputSchema = z
+  .object({
+    requestId: UUID,
+    scope: contextTenantScopeSchema,
+    stableCustomIds: z.array(STABLE_CUSTOM_ID).min(1).max(100),
+  })
+  .strict()
+
+export type SupermemoryIndexProvider = ContextIndexProvider & {
+  reconciliationStatusBatch: SupermemoryContextProvider["reconciliationStatusBatch"]
+}
 
 const scalarMetadataSchema = z.union([
   z.string().max(1_000),
@@ -641,6 +652,71 @@ export class SupermemoryContextProvider
     )
   }
 
+  async reconciliationStatusBatch(input: {
+    readonly requestId: string
+    readonly scope: ContextTenantScope
+    readonly stableCustomIds: readonly string[]
+  }) {
+    const parsed = reconciliationStatusBatchInputSchema.parse(input)
+    if (
+      new Set(parsed.stableCustomIds).size !== parsed.stableCustomIds.length
+    ) {
+      throw new SupermemoryProviderError(
+        "provider_request_identity_duplicate",
+        "failed"
+      )
+    }
+    const requestedIds = new Set(parsed.stableCustomIds)
+    const response = await this.request({
+      method: "POST",
+      path: "/v3/documents/list",
+      timeoutMs: 10_000,
+      body: {
+        containerTags: [containerTagFor(parsed.scope)],
+        includeContent: false,
+        limit: 100,
+        page: 1,
+        filters: {
+          OR: parsed.stableCustomIds.map((stableCustomId) => ({
+            key: "stable_custom_id",
+            value: stableCustomId,
+            negate: false,
+          })),
+        },
+      },
+    })
+    const result = documentBatchStatusListResponseSchema.safeParse(
+      response.data
+    )
+    const expectedContainer = containerTagFor(parsed.scope)
+    if (
+      !result.success ||
+      result.data.pagination.currentPage !== 1 ||
+      result.data.pagination.totalPages > 1 ||
+      result.data.memories.some(
+        (document) =>
+          document.containerTags.length !== 1 ||
+          document.containerTags[0] !== expectedContainer ||
+          !requestedIds.has(document.customId)
+      ) ||
+      new Set(result.data.memories.map((document) => document.customId))
+        .size !== result.data.memories.length
+    ) {
+      throw new SupermemoryProviderError(
+        "provider_response_malformed",
+        "failed"
+      )
+    }
+
+    return deepFreeze(
+      result.data.memories.map((document) => ({
+        stableCustomId: document.customId,
+        providerDocumentId: document.id,
+        status: mapProcessingStatus(document.status),
+      }))
+    )
+  }
+
   private async request(input: ProviderRequest): Promise<ProviderResponse> {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), input.timeoutMs)
@@ -736,7 +812,7 @@ export function createSupermemoryRetrievalProvider(
 
 export function createSupermemoryIndexProvider(
   options: SupermemoryContextProviderOptions
-): ContextIndexProvider {
+): SupermemoryIndexProvider {
   const provider = new SupermemoryContextProvider(options)
   return Object.freeze({
     provider: provider.provider,
@@ -747,6 +823,8 @@ export function createSupermemoryIndexProvider(
     list: provider.list.bind(provider),
     processingStatus: provider.processingStatus.bind(provider),
     processingStatusBatch: provider.processingStatusBatch.bind(provider),
+    reconciliationStatusBatch:
+      provider.reconciliationStatusBatch.bind(provider),
     health: provider.health.bind(provider),
   })
 }
@@ -765,7 +843,7 @@ export function createSupermemoryRetrievalProviderFromEnvironment(input?: {
 export function createSupermemoryIndexProviderFromEnvironment(input?: {
   readonly testTransport?: SupermemoryTransport
   readonly now?: () => Date
-}): ContextIndexProvider {
+}): SupermemoryIndexProvider {
   return createSupermemoryIndexProvider({
     apiKey: process.env.SUPERMEMORY_API_KEY ?? "",
     ...(input?.testTransport ? { testTransport: input.testTransport } : {}),

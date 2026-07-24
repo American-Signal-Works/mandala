@@ -703,6 +703,7 @@ describe("Supermemory provider composition", () => {
       "processingStatus",
       "processingStatusBatch",
       "provider",
+      "reconciliationStatusBatch",
       "replace",
     ])
   })
@@ -737,6 +738,150 @@ describe("Supermemory provider composition", () => {
       if (prior === undefined) delete process.env.SUPERMEMORY_API_KEY
       else process.env.SUPERMEMORY_API_KEY = prior
     }
+  })
+})
+
+describe("SupermemoryContextProvider reconciliation inventory", () => {
+  const firstStableId = `ctx_${"1".repeat(64)}`
+  const secondStableId = `ctx_${"2".repeat(64)}`
+
+  it("uses one bounded payload-free lookup and returns only requested identities", async () => {
+    const calls: RequestInit[] = []
+    const provider = providerWith(async (_url, init) => {
+      calls.push(init)
+      return jsonResponse({
+        memories: [
+          {
+            id: "provider-doc-1",
+            customId: firstStableId,
+            containerTags: [`company:${companyId}`],
+            status: "done",
+          },
+        ],
+        pagination: { currentPage: 1, totalPages: 1 },
+      })
+    })
+
+    await expect(
+      provider.reconciliationStatusBatch({
+        requestId,
+        scope: { companyId, workspaceScopeId: companyId },
+        stableCustomIds: [firstStableId, secondStableId],
+      })
+    ).resolves.toEqual([
+      {
+        stableCustomId: firstStableId,
+        providerDocumentId: "provider-doc-1",
+        status: "complete",
+      },
+    ])
+    const body = JSON.parse(String(calls[0]!.body))
+    expect(body).toEqual({
+      containerTags: [`company:${companyId}`],
+      includeContent: false,
+      limit: 100,
+      page: 1,
+      filters: {
+        OR: [
+          {
+            key: "stable_custom_id",
+            value: firstStableId,
+            negate: false,
+          },
+          {
+            key: "stable_custom_id",
+            value: secondStableId,
+            negate: false,
+          },
+        ],
+      },
+    })
+    expect(JSON.stringify(body)).not.toMatch(/payload|content":|externalId/)
+  })
+
+  it("rejects duplicate requested identities before a provider call", async () => {
+    const transport = vi.fn()
+    const provider = providerWith(transport)
+
+    await expect(
+      provider.reconciliationStatusBatch({
+        requestId,
+        scope: { companyId, workspaceScopeId: companyId },
+        stableCustomIds: [firstStableId, firstStableId],
+      })
+    ).rejects.toMatchObject({
+      code: "provider_request_identity_duplicate",
+    })
+    expect(transport).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    [
+      "extraneous",
+      [
+        {
+          id: "provider-doc-wrong",
+          customId: secondStableId,
+          containerTags: [`company:${companyId}`],
+          status: "complete",
+        },
+      ],
+      { currentPage: 1, totalPages: 1 },
+    ],
+    [
+      "duplicate",
+      [
+        {
+          id: "provider-doc-1",
+          customId: firstStableId,
+          containerTags: [`company:${companyId}`],
+          status: "complete",
+        },
+        {
+          id: "provider-doc-2",
+          customId: firstStableId,
+          containerTags: [`company:${companyId}`],
+          status: "complete",
+        },
+      ],
+      { currentPage: 1, totalPages: 1 },
+    ],
+    [
+      "paginated",
+      [
+        {
+          id: "provider-doc-1",
+          customId: firstStableId,
+          containerTags: [`company:${companyId}`],
+          status: "complete",
+        },
+      ],
+      { currentPage: 1, totalPages: 2 },
+    ],
+    [
+      "cross-tenant",
+      [
+        {
+          id: "provider-doc-1",
+          customId: firstStableId,
+          containerTags: ["company:10000000-0000-4000-8000-000000000099"],
+          status: "complete",
+        },
+      ],
+      { currentPage: 1, totalPages: 1 },
+    ],
+  ])("rejects %s inventory results", async (_label, memories, pagination) => {
+    const provider = providerWith(async () =>
+      jsonResponse({ memories, pagination })
+    )
+
+    await expect(
+      provider.reconciliationStatusBatch({
+        requestId,
+        scope: { companyId, workspaceScopeId: companyId },
+        stableCustomIds: [firstStableId],
+      })
+    ).rejects.toMatchObject({ code: "provider_response_malformed" })
   })
 })
 

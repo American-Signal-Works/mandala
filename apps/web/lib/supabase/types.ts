@@ -3087,6 +3087,8 @@ export type Database = {
           provider_processing_status: string | null
           provider_result_document_id: string | null
           record_type: string
+          reconciliation_claim_owner: string | null
+          reconciliation_claimed_at: string | null
           reserved_cost_microunits: number
           safe_error_code: string | null
           source_key: string
@@ -3121,6 +3123,8 @@ export type Database = {
           provider_processing_status?: string | null
           provider_result_document_id?: string | null
           record_type: string
+          reconciliation_claim_owner?: string | null
+          reconciliation_claimed_at?: string | null
           reserved_cost_microunits?: number
           safe_error_code?: string | null
           source_key: string
@@ -3155,6 +3159,8 @@ export type Database = {
           provider_processing_status?: string | null
           provider_result_document_id?: string | null
           record_type?: string
+          reconciliation_claim_owner?: string | null
+          reconciliation_claimed_at?: string | null
           reserved_cost_microunits?: number
           safe_error_code?: string | null
           source_key?: string
@@ -5995,6 +6001,14 @@ export type Database = {
         }
         Returns: Json
       }
+      claim_context_index_reconciliation_v1: {
+        Args: {
+          p_limit?: number
+          p_now?: string
+          p_worker_id: string
+        }
+        Returns: Json
+      }
       claim_context_index_replace_v1: {
         Args: {
           p_lease_seconds?: number
@@ -6042,6 +6056,14 @@ export type Database = {
         }[]
       }
       company_role_rank: { Args: { role: string }; Returns: number }
+      confirm_context_provider_batch_outcomes_v1: {
+        Args: {
+          p_company_id: string
+          p_documents: Json
+          p_now?: string
+        }
+        Returns: Json
+      }
       complete_cli_device_authorization_v1: {
         Args: {
           p_access_expires_at: string
