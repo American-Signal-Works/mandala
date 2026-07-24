@@ -11,6 +11,7 @@ import {
   revokeCliSession,
 } from "@/actions/admin/cli-auth"
 import { privateCliAuthHeaders } from "@/lib/mandala/cli-auth"
+import { listAccessibleCompanies } from "@/lib/mandala/control-plane/queries"
 import { authenticateRequest } from "@/lib/supabase/request"
 
 export const runtime = "nodejs"
@@ -23,15 +24,37 @@ export async function GET(request: Request) {
   const { data, error } = await loadCliSessions(auth.user.id)
   if (error) return privateError("session_list_failed", 500)
 
-  const visibleSessions =
-    auth.cliSession?.managed === true
-      ? data.filter((session) => session.id === auth.cliSession?.sessionId)
-      : data
+  const isManagedCli = auth.cliSession?.managed === true
+  const visibleSessions = isManagedCli
+    ? data.filter((session) => session.id === auth.cliSession?.sessionId)
+    : data
+
+  const companyNameById = new Map<string, string>()
+  if (!isManagedCli) {
+    try {
+      const companies = await listAccessibleCompanies({
+        supabase: auth.supabase,
+        userId: auth.user.id,
+      })
+      for (const company of companies) {
+        companyNameById.set(company.id, company.name)
+      }
+    } catch {
+      return privateError("session_list_failed", 500)
+    }
+  }
 
   const response = cliSessionListResponseSchema.safeParse({
     sessions: visibleSessions.map((session) => ({
       id: session.id,
       selectedCompanyId: session.selected_company_id,
+      ...(isManagedCli
+        ? {}
+        : {
+            selectedCompanyName: session.selected_company_id
+              ? (companyNameById.get(session.selected_company_id) ?? null)
+              : null,
+          }),
       scopes: session.scopes,
       clientName: session.client_name,
       clientVersion: session.client_version,

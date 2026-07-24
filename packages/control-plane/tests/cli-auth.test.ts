@@ -127,6 +127,25 @@ describe("hosted CLI authorization contracts", () => {
           {
             id: "30000000-0000-4000-8000-000000000001",
             selectedCompanyId: companyId,
+            selectedCompanyName: "Example Company",
+            scopes: ["workspace:control"],
+            clientName: "Mandala CLI",
+            clientVersion: "0.0.0",
+            clientPlatform: "darwin-arm64",
+            createdAt: "2026-07-16T00:00:00.000Z",
+            lastUsedAt: "2026-07-16T00:01:00.000Z",
+            revokedAt: null,
+          },
+        ],
+      }).success
+    ).toBe(true)
+    expect(
+      cliSessionListResponseSchema.safeParse({
+        sessions: [
+          {
+            id: "30000000-0000-4000-8000-000000000001",
+            selectedCompanyId: companyId,
+            selectedCompanyName: "Example Company",
             scopes: ["workspace:control"],
             clientName: "Mandala CLI",
             clientVersion: "0.0.0",
