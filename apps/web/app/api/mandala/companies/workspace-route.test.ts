@@ -90,19 +90,21 @@ describe("workspace identity routes", () => {
     })
   })
 
-  it("keeps workspace creation successful when an initial invitation fails", async () => {
+  it("reports a committed invitation as issued while an existing Owner fails safely", async () => {
     vi.mocked(issueCompanyInvitation)
       .mockResolvedValueOnce({
         invitationId: "30000000-0000-4000-8000-000000000001",
         companyId,
-        recipientEmail: "first@example.test",
+        recipientEmail: "new-owner@example.test",
         state: "pending",
         version: 1,
-        issuedAt: "2026-07-15T12:00:00.000Z",
-        expiresAt: "2026-07-18T12:00:00.000Z",
-        deliveryId: null,
+        issuedAt: "2026-07-24T18:15:48.42729+00:00",
+        expiresAt: "2026-07-27T18:15:48.372+00:00",
+        deliveryId: "40000000-0000-4000-8000-000000000001",
       })
-      .mockRejectedValueOnce(new CompanyInvitationError("invitation_failed"))
+      .mockRejectedValueOnce(
+        new CompanyInvitationError("already_active_member", "23505")
+      )
 
     const response = await createWorkspace(
       new Request("http://localhost/api/mandala/companies", {
@@ -110,7 +112,10 @@ describe("workspace identity routes", () => {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({
           name: "Alumicraft",
-          initialInvitations: ["First@example.test", "failed@example.test"],
+          initialInvitations: [
+            "New-Owner@example.test",
+            "owner@example.test",
+          ],
         }),
       })
     )
@@ -120,11 +125,18 @@ describe("workspace identity routes", () => {
     await expect(response.json()).resolves.toMatchObject({
       workspace,
       invitations: [
-        { recipientEmail: "first@example.test", status: "issued" },
         {
-          recipientEmail: "failed@example.test",
+          recipientEmail: "new-owner@example.test",
+          status: "issued",
+          invitation: {
+            state: "pending",
+            deliveryId: "40000000-0000-4000-8000-000000000001",
+          },
+        },
+        {
+          recipientEmail: "owner@example.test",
           status: "failed",
-          error: "invitation_failed",
+          error: "already_active_member",
         },
       ],
     })

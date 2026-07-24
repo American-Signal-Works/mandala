@@ -1,5 +1,5 @@
 BEGIN;
-SELECT plan(42);
+SELECT plan(44);
 
 INSERT INTO auth.users (
   id, aud, role, email, encrypted_password, email_confirmed_at,
@@ -58,9 +58,29 @@ SELECT throws_ok($$SELECT public.issue_company_invitation(
   'b3000000-0000-4000-8000-000000000099',
   'b2000000-0000-4000-8000-000000000001',
   'invitee@example.test', repeat('9',64), now()+interval '72 hours'
-)$$,'23505',NULL,'an active duplicate invitation is rejected');
-
+)$$,'23505','active_invitation_exists','an active duplicate invitation is rejected');
 RESET ROLE;
+SELECT is(
+  (
+    SELECT count(*)::int
+    FROM public.company_invitations
+    WHERE company_id='b2000000-0000-4000-8000-000000000001'
+      AND recipient_email='invitee@example.test'
+      AND state='pending'
+  ),
+  1,
+  'retry leaves exactly one pending invitation for the recipient'
+);
+SELECT is(
+  (
+    SELECT count(*)::int
+    FROM public.email_deliveries
+    WHERE payload_reference='company_invitation:b3000000-0000-4000-8000-000000000001:1'
+  ),
+  1,
+  'retry leaves exactly one logical invitation email delivery'
+);
+
 SET LOCAL ROLE anon;
 SELECT is((public.inspect_company_invitation(repeat('a',64))->>'state'),'valid','a valid token has a safe public classification');
 

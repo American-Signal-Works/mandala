@@ -1,4 +1,5 @@
 import { z } from "zod"
+import { isoTimestampSchema } from "./schemas.js"
 
 export const companyInvitationStateSchema = z.enum([
   "pending",
@@ -14,8 +15,8 @@ export const companyInvitationSchema = z
     recipientEmail: z.string().email(),
     state: companyInvitationStateSchema,
     version: z.number().int().positive(),
-    issuedAt: z.string().datetime(),
-    expiresAt: z.string().datetime(),
+    issuedAt: isoTimestampSchema,
+    expiresAt: isoTimestampSchema,
     deliveryId: z.string().uuid().nullable(),
   })
   .strict()
@@ -47,7 +48,7 @@ export const invitationInspectionSchema = z
       "accepted",
     ]),
     workspaceName: z.string().min(1).max(200).optional(),
-    expiresAt: z.string().datetime().optional(),
+    expiresAt: isoTimestampSchema.optional(),
   })
   .strict()
 
@@ -69,8 +70,8 @@ export const companyDirectoryMemberSchema = z
     displayName: z.string().nullable(),
     role: z.string().min(1),
     status: z.enum(["active", "inactive"]),
-    joinedAt: z.string().datetime(),
-    updatedAt: z.string().datetime(),
+    joinedAt: isoTimestampSchema,
+    updatedAt: isoTimestampSchema,
   })
   .strict()
 
@@ -79,8 +80,8 @@ export const pendingCompanyInvitationSchema = z
     invitationId: z.string().uuid(),
     recipientEmail: z.string().email(),
     state: z.literal("pending"),
-    issuedAt: z.string().datetime(),
-    expiresAt: z.string().datetime(),
+    issuedAt: isoTimestampSchema,
+    expiresAt: isoTimestampSchema,
     deliveryId: z.string().uuid().nullable(),
   })
   .strict()
