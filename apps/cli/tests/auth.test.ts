@@ -251,6 +251,97 @@ describe("hosted device authorization", () => {
     vi.useRealTimers()
   })
 
+  it("recovers the browser-approved workspace from the managed session", async () => {
+    vi.useFakeTimers()
+    const sessionId = "30000000-0000-4000-8000-000000000001"
+    const companyId = "20000000-0000-4000-8000-000000000001"
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            deviceCode: "d".repeat(43),
+            verificationUri:
+              "https://mandala.md/cli/authorize#request=" + "b".repeat(43),
+            expiresAt: "2030-01-01T00:10:00.000Z",
+            intervalSeconds: 5,
+          },
+          201
+        )
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "authorized",
+          sessionId,
+          accessToken: "hosted-access",
+          refreshToken: "hosted-refresh",
+          expiresAt: 2_000_000_000,
+          user: { id: userId, email: "user@example.com" },
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          sessions: [
+            {
+              id: sessionId,
+              selectedCompanyId: companyId,
+              scopes: ["workspace:control"],
+              clientName: "Mandala CLI",
+              clientVersion: "0.0.0",
+              clientPlatform: "darwin",
+              createdAt: "2026-07-24T17:50:12.000Z",
+              lastUsedAt: "2026-07-24T17:50:12.000Z",
+              revokedAt: null,
+            },
+          ],
+        })
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          company: {
+            id: companyId,
+            name: "Dirt King",
+            role: "owner",
+          },
+        })
+      )
+    const fetchImplementation = fetchMock as unknown as typeof fetch
+
+    const login = loginWithDeviceAuthorization({
+      environment: { MANDALA_API_URL: "https://mandala.md" },
+      fetchImplementation,
+      openBrowser: vi.fn().mockResolvedValue(true),
+      store,
+    })
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    await expect(login).resolves.toMatchObject({
+      company: { id: companyId, name: "Dirt King" },
+    })
+    expect(fetchMock.mock.calls[2]).toMatchObject([
+      "https://mandala.md/api/mandala/cli/sessions",
+      {
+        headers: expect.objectContaining({
+          authorization: "Bearer hosted-access",
+        }),
+      },
+    ])
+    expect(fetchMock.mock.calls[3]).toMatchObject([
+      "https://mandala.md/api/mandala/cli/sessions/company",
+      {
+        method: "PUT",
+        headers: expect.objectContaining({
+          authorization: "Bearer hosted-access",
+        }),
+        body: JSON.stringify({ companyId }),
+      },
+    ])
+    await expect(store.readConfig()).resolves.toMatchObject({
+      selectedCompany: { id: companyId, name: "Dirt King" },
+    })
+    vi.useRealTimers()
+  })
+
   it("keeps a mixed deployment compatible when the server omits workspace binding", async () => {
     vi.useFakeTimers()
     await store.writeConfig({

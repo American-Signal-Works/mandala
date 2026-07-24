@@ -9,6 +9,8 @@ import {
 import {
   cliDeviceAuthorizationCreateResponseSchema,
   cliDeviceAuthorizationTokenResponseSchema,
+  cliSessionCompanySelectionResponseSchema,
+  cliSessionListResponseSchema,
   cliSessionRevocationResponseSchema,
   cliSessionRefreshResponseSchema,
 } from "@workspace/control-plane"
@@ -210,12 +212,22 @@ export async function loginWithDeviceAuthorization(
       user: token.data.user,
     }
     await options.store.writeSession(session)
+    let selectedCompany = token.data.company
     try {
-      if (token.data.company) {
+      selectedCompany =
+        selectedCompany ??
+        (await recoverApprovedCompany({
+          accessToken: token.data.accessToken,
+          baseUrl,
+          fetchImplementation,
+          sessionId: token.data.sessionId,
+          signal: options.signal,
+        }))
+      if (selectedCompany) {
         const config = await options.store.readConfig()
         await options.store.writeConfig({
           ...config,
-          selectedCompany: token.data.company,
+          selectedCompany,
         })
       } else {
         await options.store.clearSelectedCompany()
@@ -229,13 +241,67 @@ export async function loginWithDeviceAuthorization(
       refreshMode: session.refreshMode,
       expiresAt: session.expiresAt,
       user: session.user,
-      ...(token.data.company ? { company: token.data.company } : {}),
+      ...(selectedCompany ? { company: selectedCompany } : {}),
     }
   }
   throw new CliError(
     "auth_request_expired",
     "The browser sign-in request expired. Run 'mandala auth login' again."
   )
+}
+
+async function recoverApprovedCompany(input: {
+  accessToken: string
+  baseUrl: string
+  fetchImplementation: typeof fetch
+  sessionId: string
+  signal?: AbortSignal
+}) {
+  try {
+    const sessionsResponse = await input.fetchImplementation(
+      `${input.baseUrl}/api/mandala/cli/sessions`,
+      {
+        headers: {
+          accept: "application/json",
+          authorization: `Bearer ${input.accessToken}`,
+        },
+        signal: input.signal,
+      }
+    )
+    const sessions = cliSessionListResponseSchema.safeParse(
+      await sessionsResponse.json().catch(() => null)
+    )
+    if (!sessionsResponse.ok || !sessions.success) return undefined
+
+    const selectedCompanyId = sessions.data.sessions.find(
+      (session) => session.id === input.sessionId
+    )?.selectedCompanyId
+    if (!selectedCompanyId) return undefined
+
+    const companyResponse = await input.fetchImplementation(
+      `${input.baseUrl}/api/mandala/cli/sessions/company`,
+      {
+        method: "PUT",
+        headers: {
+          accept: "application/json",
+          authorization: `Bearer ${input.accessToken}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify({ companyId: selectedCompanyId }),
+        signal: input.signal,
+      }
+    )
+    const company = cliSessionCompanySelectionResponseSchema.safeParse(
+      await companyResponse.json().catch(() => null)
+    )
+    if (!companyResponse.ok || !company.success) return undefined
+    return {
+      id: company.data.company.id,
+      name: company.data.company.name,
+    }
+  } catch {
+    return undefined
+  }
 }
 
 export class SessionManager implements SessionAccess {
