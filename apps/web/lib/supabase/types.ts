@@ -3391,8 +3391,9 @@ export type Database = {
           attempt_count: number
           claim_expires_at: string | null
           claim_token: string | null
-          company_id: string
+          company_id: string | null
           created_at: string
+          delivery_mode: string
           id: string
           idempotency_key: string
           last_error_category: string | null
@@ -3412,8 +3413,9 @@ export type Database = {
           attempt_count?: number
           claim_expires_at?: string | null
           claim_token?: string | null
-          company_id: string
+          company_id?: string | null
           created_at?: string
+          delivery_mode?: string
           id?: string
           idempotency_key: string
           last_error_category?: string | null
@@ -3433,8 +3435,9 @@ export type Database = {
           attempt_count?: number
           claim_expires_at?: string | null
           claim_token?: string | null
-          company_id?: string
+          company_id?: string | null
           created_at?: string
+          delivery_mode?: string
           id?: string
           idempotency_key?: string
           last_error_category?: string | null
@@ -3464,7 +3467,7 @@ export type Database = {
         Row: {
           attempt_number: number
           claim_token: string
-          company_id: string
+          company_id: string | null
           delivery_id: string
           error_category: string | null
           finished_at: string | null
@@ -3476,7 +3479,7 @@ export type Database = {
         Insert: {
           attempt_number: number
           claim_token: string
-          company_id: string
+          company_id?: string | null
           delivery_id: string
           error_category?: string | null
           finished_at?: string | null
@@ -3488,7 +3491,7 @@ export type Database = {
         Update: {
           attempt_number?: number
           claim_token?: string
-          company_id?: string
+          company_id?: string | null
           delivery_id?: string
           error_category?: string | null
           finished_at?: string | null
@@ -3499,25 +3502,25 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "email_delivery_attempts_delivery_id_company_id_fkey"
-            columns: ["delivery_id", "company_id"]
+            foreignKeyName: "email_delivery_attempts_delivery_id_fkey"
+            columns: ["delivery_id"]
             isOneToOne: false
             referencedRelation: "email_deliveries"
-            referencedColumns: ["id", "company_id"]
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "email_delivery_attempts_delivery_id_company_id_fkey"
-            columns: ["delivery_id", "company_id"]
+            foreignKeyName: "email_delivery_attempts_delivery_id_fkey"
+            columns: ["delivery_id"]
             isOneToOne: false
             referencedRelation: "email_delivery_owner_status"
-            referencedColumns: ["id", "company_id"]
+            referencedColumns: ["id"]
           },
         ]
       }
       email_delivery_events: {
         Row: {
           applied: boolean
-          company_id: string
+          company_id: string | null
           delivery_id: string
           event_type: string
           id: string
@@ -3529,7 +3532,7 @@ export type Database = {
         }
         Insert: {
           applied?: boolean
-          company_id: string
+          company_id?: string | null
           delivery_id: string
           event_type: string
           id?: string
@@ -3541,7 +3544,7 @@ export type Database = {
         }
         Update: {
           applied?: boolean
-          company_id?: string
+          company_id?: string | null
           delivery_id?: string
           event_type?: string
           id?: string
@@ -3553,25 +3556,25 @@ export type Database = {
         }
         Relationships: [
           {
-            foreignKeyName: "email_delivery_events_delivery_id_company_id_fkey"
-            columns: ["delivery_id", "company_id"]
+            foreignKeyName: "email_delivery_events_delivery_id_fkey"
+            columns: ["delivery_id"]
             isOneToOne: false
             referencedRelation: "email_deliveries"
-            referencedColumns: ["id", "company_id"]
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "email_delivery_events_delivery_id_company_id_fkey"
-            columns: ["delivery_id", "company_id"]
+            foreignKeyName: "email_delivery_events_delivery_id_fkey"
+            columns: ["delivery_id"]
             isOneToOne: false
             referencedRelation: "email_delivery_owner_status"
-            referencedColumns: ["id", "company_id"]
+            referencedColumns: ["id"]
           },
         ]
       }
       email_suppressions: {
         Row: {
           active: boolean
-          company_id: string
+          company_id: string | null
           created_at: string
           id: string
           reason: string
@@ -3581,7 +3584,7 @@ export type Database = {
         }
         Insert: {
           active?: boolean
-          company_id: string
+          company_id?: string | null
           created_at?: string
           id?: string
           reason: string
@@ -3591,7 +3594,7 @@ export type Database = {
         }
         Update: {
           active?: boolean
-          company_id?: string
+          company_id?: string | null
           created_at?: string
           id?: string
           reason?: string
@@ -3608,18 +3611,18 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "email_suppressions_source_delivery_id_company_id_fkey"
-            columns: ["source_delivery_id", "company_id"]
+            foreignKeyName: "email_suppressions_source_delivery_id_fkey"
+            columns: ["source_delivery_id"]
             isOneToOne: false
             referencedRelation: "email_deliveries"
-            referencedColumns: ["id", "company_id"]
+            referencedColumns: ["id"]
           },
           {
-            foreignKeyName: "email_suppressions_source_delivery_id_company_id_fkey"
-            columns: ["source_delivery_id", "company_id"]
+            foreignKeyName: "email_suppressions_source_delivery_id_fkey"
+            columns: ["source_delivery_id"]
             isOneToOne: false
             referencedRelation: "email_delivery_owner_status"
-            referencedColumns: ["id", "company_id"]
+            referencedColumns: ["id"]
           },
         ]
       }
@@ -6015,7 +6018,21 @@ export type Database = {
         Returns: {
           attempt_number: number
           claim_token: string
-          company_id: string
+          company_id: string | null
+          delivery_id: string
+          idempotency_key: string
+          payload_reference: string
+          recipient_email: string
+          template_key: string
+          template_version: string
+        }[]
+      }
+      claim_inline_auth_email_delivery: {
+        Args: { p_delivery_id: string }
+        Returns: {
+          attempt_number: number
+          claim_token: string
+          company_id: string | null
           delivery_id: string
           idempotency_key: string
           payload_reference: string
@@ -6137,6 +6154,42 @@ export type Database = {
         Args: { p_company_id: string }
         Returns: boolean
       }
+      enqueue_auth_email_delivery: {
+        Args: {
+          p_recipient_email: string
+          p_template_key: string
+          p_user_id: string
+          p_webhook_id: string
+        }
+        Returns: {
+          attempt_count: number
+          claim_expires_at: string | null
+          claim_token: string | null
+          company_id: string | null
+          created_at: string
+          delivery_mode: string
+          id: string
+          idempotency_key: string
+          last_error_category: string | null
+          next_attempt_at: string
+          payload_reference: string
+          provider_email_id: string | null
+          provider_event_at: string | null
+          recipient_email: string
+          recipient_hash: string
+          state: string
+          template_key: string
+          template_version: string
+          terminal_at: string | null
+          updated_at: string
+        }
+        SetofOptions: {
+          from: "*"
+          to: "email_deliveries"
+          isOneToOne: true
+          isSetofReturn: false
+        }
+      }
       enqueue_email_delivery: {
         Args: {
           p_company_id: string
@@ -6151,8 +6204,9 @@ export type Database = {
           attempt_count: number
           claim_expires_at: string | null
           claim_token: string | null
-          company_id: string
+          company_id: string | null
           created_at: string
+          delivery_mode: string
           id: string
           idempotency_key: string
           last_error_category: string | null
@@ -6529,8 +6583,9 @@ export type Database = {
           attempt_count: number
           claim_expires_at: string | null
           claim_token: string | null
-          company_id: string
+          company_id: string | null
           created_at: string
+          delivery_mode: string
           id: string
           idempotency_key: string
           last_error_category: string | null
