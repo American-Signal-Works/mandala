@@ -3,7 +3,7 @@ import { resolve } from "node:path"
 import type { AgentSummary } from "@workspace/control-plane"
 import { describe, expect, it, vi } from "vitest"
 import type { ControlApi } from "../src/api-client.js"
-import type { CliCommandResult } from "../src/cli.js"
+import type { CliCommandResult, CliDependencies } from "../src/cli.js"
 import { CliError } from "../src/errors.js"
 import {
   completeSlashCommand,
@@ -171,7 +171,12 @@ describe("interactive TUI", () => {
       "Confirm temporary Sandbox action",
       "Choose from Sandbox Inbox",
     ])
-    expect(commandCalls(execute)).toContainEqual(["sandbox", "open"])
+    expect(commandCalls(execute)).toContainEqual([
+      "sandbox",
+      "open",
+      "--limit",
+      "5",
+    ])
     expect(commandCalls(execute)).not.toContainEqual([
       "work",
       "approve",
@@ -179,6 +184,69 @@ describe("interactive TUI", () => {
     ])
     expect(stdout.value).toContain("Temporary approved")
     expect(stdout.value).toContain("Nothing was written or sent")
+  })
+
+  it("bounds a slow Sandbox snapshot and keeps the prompt usable", async () => {
+    vi.useFakeTimers()
+    try {
+      const base = fakeExecute()
+      const execute = vi.fn(
+        async (
+          args: string[],
+          dependencies?: CliDependencies
+        ): Promise<CliCommandResult> => {
+          if (args[0] !== "sandbox" || args[1] !== "open") return base(args)
+          return new Promise((resolve) => {
+            dependencies?.signal?.addEventListener(
+              "abort",
+              () =>
+                resolve({
+                  ok: false,
+                  error: new CliError(
+                    "command_cancelled",
+                    "Sandbox loading stopped."
+                  ),
+                }),
+              { once: true }
+            )
+          })
+        }
+      ) as NonNullable<TuiDependencies["execute"]> & ReturnType<typeof vi.fn>
+      const transcript: string[] = []
+      const controller = createTuiSessionFactory(
+        { execute },
+        new CaptureStream(),
+        new CaptureStream()
+      )({
+        append: (value) => transcript.push(value),
+        ask: async () => null,
+        clearScreen: () => undefined,
+        onSnapshot: () => undefined,
+        renderOptions: { color: false, width: 100 },
+      })
+
+      await controller.start()
+      const pending = controller.handleLine("/sandbox")
+      await vi.advanceTimersByTimeAsync(30_000)
+      await pending
+      await controller.handleLine("/inbox")
+
+      expect(commandCalls(execute)).toContainEqual([
+        "sandbox",
+        "open",
+        "--limit",
+        "5",
+      ])
+      expect(transcript.join("\n")).toContain(
+        "The Sandbox snapshot took too long"
+      )
+      expect(transcript.join("\n")).toContain(
+        "The prompt is ready; try /sandbox again."
+      )
+      expect(commandCalls(execute)).toContainEqual(["work", "list"])
+    } finally {
+      vi.useRealTimers()
+    }
   })
 
   it("answers exact read-only questions about the selected Sandbox candidate locally", async () => {

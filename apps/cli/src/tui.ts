@@ -120,6 +120,7 @@ type ContextualConversationResult = {
 }
 
 const contextualAnswerTimeoutMs = 30_000
+const sandboxSnapshotTimeoutMs = 30_000
 
 type WorkspaceHeaderSettings = {
   contextStatus: string
@@ -813,8 +814,33 @@ class TuiSession {
       )
       return
     }
-    const result = await this.runCommand(["sandbox", "open"])
+    const controller = new AbortController()
+    let timedOut = false
+    const timeout = setTimeout(() => {
+      timedOut = true
+      controller.abort()
+    }, sandboxSnapshotTimeoutMs)
+    timeout.unref()
+    this.operationAbort = controller
+    const result = await this.runCommand(
+      ["sandbox", "open", "--limit", "5"],
+      controller.signal
+    ).finally(() => {
+      clearTimeout(timeout)
+      if (this.operationAbort === controller) this.operationAbort = undefined
+    })
     if (!result.ok) {
+      if (result.error.code === "command_cancelled") {
+        this.write(
+          renderAssistantMessage(
+            timedOut
+              ? "The Sandbox snapshot took too long, so I stopped it. The prompt is ready; try /sandbox again."
+              : "Sandbox loading stopped. The prompt is ready.",
+            this.renderOptions
+          )
+        )
+        return
+      }
       this.writeError(result.error)
       return
     }
@@ -2499,11 +2525,15 @@ class TuiSession {
     }
   }
 
-  private async runCommand(args: string[]): Promise<CliCommandResult> {
+  private async runCommand(
+    args: string[],
+    signal?: AbortSignal
+  ): Promise<CliCommandResult> {
     try {
       return await this.execute(args, {
         ...this.cliDependencies,
         confirm: this.confirm,
+        signal,
         stderr: this.commandStderr,
         stdout: this.commandStdout,
       })
