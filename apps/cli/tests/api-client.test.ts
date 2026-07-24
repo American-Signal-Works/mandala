@@ -2,6 +2,45 @@ import { describe, expect, it, vi } from "vitest"
 import { ApiClient } from "../src/api-client.js"
 
 describe("API client", () => {
+  it("forwards cancellation to a bounded Sandbox snapshot request", async () => {
+    const companyId = "20000000-0000-4000-8000-000000000001"
+    const request = vi.fn<typeof fetch>().mockResolvedValue(
+      Response.json({
+        schemaVersion: 1,
+        mode: "sandbox",
+        ephemeral: true,
+        companyId,
+        sessionId: "30000000-0000-4000-8000-000000000001",
+        createdAt: "2026-07-24T16:45:00.000Z",
+        dataAnchorAt: "2026-07-24",
+        recordCount: 92_941,
+        candidateCount: 13_329,
+        sources: [],
+        candidates: [],
+      })
+    )
+    const client = new ApiClient(
+      "http://127.0.0.1:3000",
+      { getAccessToken: vi.fn().mockResolvedValue("access") },
+      request
+    )
+    const controller = new AbortController()
+
+    await client.createSandboxSession(
+      { companyId, candidateLimit: 5 },
+      controller.signal
+    )
+
+    expect(request.mock.calls[0]?.[0]).toBe(
+      "http://127.0.0.1:3000/api/mandala/sandbox/sessions"
+    )
+    expect(request.mock.calls[0]?.[1]?.signal).toBe(controller.signal)
+    expect(JSON.parse(String(request.mock.calls[0]?.[1]?.body))).toEqual({
+      companyId,
+      candidateLimit: 5,
+    })
+  })
+
   it("reads and updates bounded workspace Context settings", async () => {
     const status = {
       schemaVersion: 1,

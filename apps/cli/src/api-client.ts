@@ -94,7 +94,8 @@ export interface ControlApi {
     request: WorkspaceSandboxRunRequest
   ): Promise<WorkspaceSandboxRunResponse>
   createSandboxSession(
-    request: SandboxSessionRequest
+    request: SandboxSessionRequest,
+    signal?: AbortSignal
   ): Promise<SandboxSessionResponse>
   listAgents(companyId: string): Promise<{ agents: AgentSummary[] }>
   installAgent(request: AgentInstallRequest): Promise<AgentInstallData>
@@ -216,7 +217,8 @@ export class ApiClient implements ControlApi {
   }
 
   createSandboxSession(
-    request: SandboxSessionRequest
+    request: SandboxSessionRequest,
+    signal?: AbortSignal
   ): Promise<SandboxSessionResponse> {
     return this.request(
       "/api/mandala/sandbox/sessions",
@@ -224,6 +226,7 @@ export class ApiClient implements ControlApi {
       {
         method: "POST",
         body: sandboxSessionRequestSchema.parse(request),
+        signal,
       }
     )
   }

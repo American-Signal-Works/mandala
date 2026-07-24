@@ -63,6 +63,7 @@ export type CliDependencies = {
   confirm?: ConfirmMutation
   login?: LoginFunction
   localLogin?: LocalLoginFunction
+  signal?: AbortSignal
 }
 
 export type CliCommandResult =
@@ -195,6 +196,7 @@ export async function executeCliCommand(
       login,
       localLogin,
       audit,
+      signal: dependencies.signal,
       stdin,
       stderr,
     })
@@ -230,6 +232,7 @@ async function executeCommand(input: {
   login: LoginFunction
   localLogin: LocalLoginFunction
   audit: AuditState
+  signal?: AbortSignal
   stdin: Readable
   stderr: Writable
 }): Promise<unknown> {
@@ -638,10 +641,13 @@ async function handleSandbox(
       "Sandbox limit must be a whole number from 1 to 100."
     )
   const config = await requireCompany(input.store, input.audit)
-  return input.getApi().createSandboxSession({
+  const request = {
     companyId: config.selectedCompany.id,
     candidateLimit,
-  })
+  }
+  return input.signal
+    ? input.getApi().createSandboxSession(request, input.signal)
+    : input.getApi().createSandboxSession(request)
 }
 
 function parseSettingsMutation(
