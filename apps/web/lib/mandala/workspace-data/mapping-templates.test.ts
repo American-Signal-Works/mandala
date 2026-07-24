@@ -42,14 +42,23 @@ describe("workspace mapping templates", () => {
         collection: "events",
         entityKey: "sku",
         fields: [
-          { name: "id", expression: { path: "/$externalId" } },
-          { name: "sku", expression: { path: "/sku" } },
+          {
+            name: "id",
+            format: "non-empty-string",
+            expression: { path: "/$externalId" },
+          },
+          {
+            name: "sku",
+            format: "non-empty-string",
+            expression: { path: "/sku" },
+          },
           {
             name: "type",
             expression: { value: "sales_order", confirmed: true },
           },
           {
             name: "occurredAt",
+            format: "date-time",
             expression: { path: "/$parent/order_date" },
           },
           {
@@ -62,5 +71,14 @@ describe("workspace mapping templates", () => {
         ],
       },
     })
+  })
+
+  it("fails closed when no exact capability version is supported", () => {
+    expect(
+      getWorkspaceMappingTemplate({
+        capabilityKey: "commerce.events.read",
+        capabilityVersion: "2.0.0",
+      })
+    ).toBeNull()
   })
 })
