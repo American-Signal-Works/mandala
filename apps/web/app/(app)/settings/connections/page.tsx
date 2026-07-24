@@ -21,7 +21,9 @@ export default async function ConnectionsPage() {
       {connections.map((c) => (
         <ConnectionCard
           key={c.id}
-          connection={c}
+          connectionId={c.id}
+          displayName={c.displayName}
+          description={c.description}
           history={byConn(c.id) as Array<{ filename: string | null; imported_at: string; rows_added: number; status: string; error_message: string | null }>}
           isConnected={byConn(c.id).some((h) => h.status === "parsed")}
         />

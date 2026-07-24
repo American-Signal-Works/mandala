@@ -5,7 +5,6 @@ import { Table, TableHeader, TableHead, TableRow, TableBody, TableCell } from "@
 import { format } from "date-fns";
 import { ImportSheet } from "./ImportSheet";
 import { Button } from "@workspace/ui/components/button";
-import type { Connection } from "@/lib/connections/types";
 
 type ImportHistoryRow = {
   filename: string | null;
@@ -16,11 +15,15 @@ type ImportHistoryRow = {
 };
 
 export function ConnectionCard({
-  connection,
+  connectionId,
+  displayName,
+  description,
   history,
   isConnected,
 }: {
-  connection: Connection<unknown>;
+  connectionId: string;
+  displayName: string;
+  description: string;
   history: ImportHistoryRow[];
   isConnected: boolean;
 }) {
@@ -29,8 +32,8 @@ export function ConnectionCard({
       <CardHeader>
         <div className="flex items-center justify-between gap-2">
           <div>
-            <CardTitle>{connection.displayName}</CardTitle>
-            <CardDescription>{connection.description}</CardDescription>
+            <CardTitle>{displayName}</CardTitle>
+            <CardDescription>{description}</CardDescription>
           </div>
           <Badge variant={isConnected ? "default" : "secondary"}>
             {isConnected ? "Connected" : "Not yet imported"}
@@ -39,7 +42,7 @@ export function ConnectionCard({
       </CardHeader>
       <CardContent>
         <div className="flex gap-2 mb-4">
-          <ImportSheet defaultConnectionId={connection.id}>
+          <ImportSheet defaultConnectionId={connectionId}>
             <Button size="sm">Import now</Button>
           </ImportSheet>
         </div>
