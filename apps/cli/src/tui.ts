@@ -119,6 +119,8 @@ type ContextualConversationResult = {
   result?: ContextualChatResponse
 }
 
+const contextualAnswerTimeoutMs = 30_000
+
 type WorkspaceHeaderSettings = {
   contextStatus: string
   sandboxEnabled?: boolean
@@ -249,6 +251,7 @@ class TuiSession {
   private agentApi?: ControlApi
   private currentReview?: WorkItemReviewData
   private selectedItem?: TuiSelectedItem
+  private selectedSandboxCandidate?: Record<string, unknown>
   private readonly cliDependencies: CliDependencies
   private readonly commandStderr: Writable
   private readonly commandStdout: Writable
@@ -395,6 +398,20 @@ class TuiSession {
       return
     }
 
+    if (
+      this.selectedSandboxCandidate &&
+      isReadOnlyQuestion(input) &&
+      !isMutationIntent(input)
+    ) {
+      this.write(
+        renderAssistantMessage(
+          sandboxCandidateAnswer(this.selectedSandboxCandidate),
+          this.renderOptions
+        )
+      )
+      return
+    }
+
     const contextual = await this.contextualConversation(input)
     if (contextual.handled) {
       if (!contextual.result) return
@@ -444,6 +461,12 @@ class TuiSession {
     }
     if (api.contextualChatStream && this.io.setLiveMessage) {
       const controller = new AbortController()
+      let timedOut = false
+      const timeout = setTimeout(() => {
+        timedOut = true
+        controller.abort()
+      }, contextualAnswerTimeoutMs)
+      timeout.unref()
       this.operationAbort = controller
       let streamed = false
       try {
@@ -469,13 +492,19 @@ class TuiSession {
         const parsed = asCliError(error)
         if (parsed.code === "command_cancelled") {
           this.write(
-            renderAssistantMessage("Answer stopped.", this.renderOptions)
+            renderAssistantMessage(
+              timedOut
+                ? "That answer took too long, so I stopped it. Try a shorter question."
+                : "Answer stopped.",
+              this.renderOptions
+            )
           )
         } else {
           this.writeError(parsed)
         }
         return { handled: true }
       } finally {
+        clearTimeout(timeout)
         if (this.operationAbort === controller) this.operationAbort = undefined
       }
     }
@@ -635,6 +664,7 @@ class TuiSession {
       case "/unselect":
         requireNoArguments(args, definition.usage)
         this.selectedItem = undefined
+        this.selectedSandboxCandidate = undefined
         this.currentReview = undefined
         this.io.setItemWorkspace?.(null)
         this.notifySnapshot()
@@ -834,6 +864,11 @@ class TuiSession {
         (entry) => stringValue(entry.sku) === selected
       )
       if (!candidate) continue
+      this.selectedItem = undefined
+      this.currentReview = undefined
+      this.selectedSandboxCandidate = candidate
+      this.io.setItemWorkspace?.(null)
+      this.notifySnapshot()
       const previous = decisions.get(selected)
       const availableActions = sandboxAvailableActions(candidate, previous)
       this.write(
@@ -1864,6 +1899,7 @@ class TuiSession {
       review = undefined
     }
     this.currentReview = review
+    this.selectedSandboxCandidate = undefined
     this.selectedItem = {
       companyId: this.currentCompanyId,
       id,
@@ -2276,6 +2312,7 @@ class TuiSession {
 
   private clearCompanyBoundState(): void {
     this.selectedItem = undefined
+    this.selectedSandboxCandidate = undefined
     this.currentReview = undefined
     this.io.setItemWorkspace?.(null)
     this.agentRows.clear()
@@ -3157,6 +3194,74 @@ function sandboxReviewProjection(
   }
 }
 
+function sandboxCandidateAnswer(candidate: Record<string, unknown>): string {
+  const inventory = asRecord(candidate.inventory) ?? {}
+  const recommendation = asRecord(candidate.recommendation) ?? {}
+  const openPurchaseOrders = asRecord(candidate.openPurchaseOrders) ?? {}
+  const sku = stringValue(candidate.sku) ?? "the selected SKU"
+  const productName = stringValue(candidate.productName)
+  const quantity = numericValue(recommendation.quantity)
+  const status = stringValue(recommendation.status)?.replaceAll("_", " ")
+  const reasons = stringArray(recommendation.reasons)
+  const warnings = stringArray(recommendation.warnings)
+  const facts = [
+    candidateFact("available", numericValue(inventory.available)),
+    candidateFact("on hand", numericValue(inventory.onHand)),
+    candidateFact("allocated", numericValue(inventory.allocated)),
+    candidateFact("backordered", numericValue(inventory.backorder)),
+    candidateFact("reorder point", numericValue(inventory.reorderLevel)),
+    candidateFact(
+      "recent sales units",
+      numericValue(candidate.recentSalesUnits)
+    ),
+  ].filter((value): value is string => Boolean(value))
+  const openOrderCount = numericValue(openPurchaseOrders.count)
+  const openOrderUnits = numericValue(openPurchaseOrders.units)
+  if (openOrderCount !== undefined && openOrderUnits !== undefined) {
+    facts.push(
+      `${formatCandidateNumber(openOrderUnits)} units across ${formatCandidateNumber(openOrderCount)} open purchase order${openOrderCount === 1 ? "" : "s"}`
+    )
+  }
+
+  const subject = productName ? `${productName} (${sku})` : sku
+  const recommendationSummary =
+    quantity === undefined
+      ? `The selected Sandbox candidate for ${subject} does not have a numeric reorder recommendation.`
+      : `The current Sandbox recommendation for ${subject} is ${formatCandidateNumber(quantity)} units${status ? ` and is ${status}` : ""}.`
+  const basis =
+    facts.length > 0
+      ? `The snapshot shows ${facts.join(", ")}.`
+      : "The snapshot does not include enough inventory facts to validate the quantity."
+  const rationale =
+    reasons.length > 0
+      ? `Rationale: ${reasons.join(" ")}`
+      : "No additional rationale was supplied."
+  const warningSummary =
+    warnings.length > 0
+      ? `Warnings: ${warnings.join(" ")}`
+      : "No recommendation warnings were supplied."
+
+  return [
+    recommendationSummary,
+    basis,
+    rationale,
+    warningSummary,
+    "This is a read-only explanation of the temporary snapshot; nothing was approved, changed, or sent.",
+  ].join(" ")
+}
+
+function candidateFact(label: string, value: number | undefined) {
+  return value === undefined
+    ? undefined
+    : `${formatCandidateNumber(value)} ${label}`
+}
+
+function formatCandidateNumber(value: number): string {
+  return new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: 2,
+  }).format(value)
+}
+
 function filterWorkItems(value: unknown, view: SlashViewDefinition): unknown[] {
   const statuses = new Set(view.includedStatuses)
   const itemTypes = view.includedItemTypes
@@ -3426,6 +3531,12 @@ function isReadOnlyQuestion(input: string): boolean {
     /^(?:tell me|explain|describe|assess|evaluate|walk me through)\b/i.test(
       normalized
     )
+  )
+}
+
+function isMutationIntent(input: string): boolean {
+  return /\b(?:approve|approved|reject|rejected|deny|denied|resolve|resolved|rework|revise|edit|change|update|execute|perform|run|delete|archive|remove|cancel|send|submit|create|place|order)\b/i.test(
+    input
   )
 }
 
