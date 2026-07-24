@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest"
 import {
   cliDeviceAuthorizationCreateResponseSchema,
   cliDeviceAuthorizationDecisionRequestSchema,
+  cliDeviceAuthorizationDecisionResponseSchema,
   cliDeviceAuthorizationInspectionSchema,
   cliDeviceAuthorizationTokenResponseSchema,
   cliSessionListResponseSchema,
@@ -27,21 +28,46 @@ describe("hosted CLI authorization contracts", () => {
     ).toBe(true)
   })
 
-  it("keeps browser approval user-scoped and rejects workspace input", () => {
+  it("requires an explicit workspace for approval but not denial", () => {
     expect(
       cliDeviceAuthorizationDecisionRequestSchema.safeParse({
         decision: "approve",
       }).success
-    ).toBe(true)
+    ).toBe(false)
     expect(
       cliDeviceAuthorizationDecisionRequestSchema.safeParse({
         decision: "approve",
         companyId,
       }).success
-    ).toBe(false)
+    ).toBe(true)
     expect(
       cliDeviceAuthorizationDecisionRequestSchema.safeParse({
         decision: "deny",
+      }).success
+    ).toBe(true)
+    expect(
+      cliDeviceAuthorizationDecisionRequestSchema.safeParse({
+        decision: "deny",
+        companyId,
+      }).success
+    ).toBe(false)
+  })
+
+  it("requires the approved workspace in a successful decision response", () => {
+    expect(
+      cliDeviceAuthorizationDecisionResponseSchema.safeParse({
+        status: "approved",
+      }).success
+    ).toBe(false)
+    expect(
+      cliDeviceAuthorizationDecisionResponseSchema.safeParse({
+        status: "approved",
+        company: { id: companyId, name: "Example Company" },
+      }).success
+    ).toBe(true)
+    expect(
+      cliDeviceAuthorizationDecisionResponseSchema.safeParse({
+        status: "denied",
       }).success
     ).toBe(true)
   })
@@ -75,6 +101,20 @@ describe("hosted CLI authorization contracts", () => {
           id: "10000000-0000-4000-8000-000000000001",
           email: "user@example.com",
         },
+      }).success
+    ).toBe(true)
+    expect(
+      cliDeviceAuthorizationTokenResponseSchema.safeParse({
+        status: "authorized",
+        sessionId: "30000000-0000-4000-8000-000000000001",
+        accessToken: "access",
+        refreshToken: "refresh",
+        expiresAt: 2_000_000_000,
+        user: {
+          id: "10000000-0000-4000-8000-000000000001",
+          email: "user@example.com",
+        },
+        company: { id: companyId, name: "Example Company" },
         rawDeviceCode: "must-not-pass",
       }).success
     ).toBe(false)

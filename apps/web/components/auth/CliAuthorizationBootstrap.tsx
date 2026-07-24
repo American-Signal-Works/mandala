@@ -4,13 +4,15 @@ import { useEffect, useRef, useState, type ReactNode } from "react"
 
 import { LoginAuthFlow } from "@/components/auth/LoginAuthFlow"
 
-type BootstrapState = "preparing" | "ready"
+type BootstrapState = "preparing" | "ready" | "failed"
 
 export function CliAuthorizationBootstrap({
   children,
+  failureFallback,
   hasBoundRequest = false,
 }: {
   children?: ReactNode
+  failureFallback?: ReactNode
   hasBoundRequest?: boolean
 }) {
   const started = useRef(false)
@@ -30,7 +32,7 @@ export function CliAuthorizationBootstrap({
     const prepare = async () => {
       if (!browserToken && !rawFragment) {
         await Promise.resolve()
-        if (hasBoundRequest) setState("ready")
+        setState("ready")
         return
       }
       if (!/^[A-Za-z0-9_-]{43}$/.test(browserToken)) {
@@ -47,9 +49,10 @@ export function CliAuthorizationBootstrap({
       if (!response.ok) throw new Error("bootstrap_failed")
       window.location.replace("/cli/authorize")
     }
-    void prepare().catch(() => setState("preparing"))
+    void prepare().catch(() => setState("failed"))
   }, [hasBoundRequest])
 
   if (state === "ready") return children
+  if (state === "failed") return failureFallback ?? children
   return <LoginAuthFlow mode="sign-in" postAuthPath="/cli/authorize" />
 }

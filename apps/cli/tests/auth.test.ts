@@ -182,10 +182,85 @@ describe.sequential("PKCE magic-link authentication", () => {
 })
 
 describe("hosted device authorization", () => {
-  it("opens the browser, polls once, and saves an unbound user session", async () => {
+  it("opens the browser, polls once, and saves the approved workspace", async () => {
     vi.useFakeTimers()
     const onAuthorizationRequested = vi.fn()
     const openBrowser = vi.fn().mockResolvedValue(true)
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        jsonResponse(
+          {
+            deviceCode: "d".repeat(43),
+            verificationUri:
+              "https://mandala.md/cli/authorize#request=" + "b".repeat(43),
+            expiresAt: "2030-01-01T00:10:00.000Z",
+            intervalSeconds: 5,
+          },
+          201
+        )
+      )
+      .mockResolvedValueOnce(
+        jsonResponse({
+          status: "authorized",
+          sessionId: "30000000-0000-4000-8000-000000000001",
+          accessToken: "hosted-access",
+          refreshToken: "hosted-refresh",
+          expiresAt: 2_000_000_000,
+          user: { id: userId, email: "user@example.com" },
+          company: {
+            id: "20000000-0000-4000-8000-000000000001",
+            name: "Example Company",
+          },
+        })
+      )
+    const fetchImplementation = fetchMock as unknown as typeof fetch
+
+    const login = loginWithDeviceAuthorization({
+      environment: { MANDALA_API_URL: "https://mandala.md" },
+      fetchImplementation,
+      onAuthorizationRequested,
+      openBrowser,
+      store,
+    })
+    await vi.advanceTimersByTimeAsync(5_000)
+
+    await expect(login).resolves.toMatchObject({
+      refreshMode: "hosted",
+      company: { name: "Example Company" },
+    })
+    expect(openBrowser).toHaveBeenCalledWith(
+      "https://mandala.md/cli/authorize#request=" + "b".repeat(43)
+    )
+    expect(onAuthorizationRequested).toHaveBeenCalledWith({
+      browserOpened: true,
+    })
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({
+      headers: expect.objectContaining({
+        "x-mandala-cli-capability": "workspace-binding-v1",
+      }),
+    })
+    await expect(store.readSession()).resolves.toMatchObject({
+      refreshMode: "hosted",
+      cliSessionId: "30000000-0000-4000-8000-000000000001",
+      accessToken: "hosted-access",
+    })
+    await expect(store.readConfig()).resolves.toMatchObject({
+      selectedCompany: { name: "Example Company" },
+    })
+    vi.useRealTimers()
+  })
+
+  it("keeps a mixed deployment compatible when the server omits workspace binding", async () => {
+    vi.useFakeTimers()
+    await store.writeConfig({
+      schemaVersion: 1,
+      mode: "mock",
+      selectedCompany: {
+        id: "20000000-0000-4000-8000-000000000099",
+        name: "Previous workspace",
+      },
+    })
     const fetchImplementation = vi
       .fn()
       .mockResolvedValueOnce(
@@ -212,26 +287,15 @@ describe("hosted device authorization", () => {
       ) as unknown as typeof fetch
 
     const login = loginWithDeviceAuthorization({
-      environment: { MANDALA_API_URL: "https://mandala.md" },
+      environment: {},
       fetchImplementation,
-      onAuthorizationRequested,
-      openBrowser,
+      openBrowser: vi.fn().mockResolvedValue(true),
       store,
     })
     await vi.advanceTimersByTimeAsync(5_000)
 
-    await expect(login).resolves.toMatchObject({
-      refreshMode: "hosted",
-    })
-    expect(openBrowser).toHaveBeenCalledWith(
-      "https://mandala.md/cli/authorize#request=" + "b".repeat(43)
-    )
-    expect(onAuthorizationRequested).toHaveBeenCalledWith({
-      browserOpened: true,
-    })
+    await expect(login).resolves.not.toHaveProperty("company")
     await expect(store.readSession()).resolves.toMatchObject({
-      refreshMode: "hosted",
-      cliSessionId: "30000000-0000-4000-8000-000000000001",
       accessToken: "hosted-access",
     })
     await expect(store.readConfig()).resolves.toMatchObject({

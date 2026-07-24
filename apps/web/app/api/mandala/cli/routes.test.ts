@@ -8,6 +8,7 @@ import {
   inspectCliDeviceAuthorization,
   inspectCliSessionRefresh,
   issueSupabaseCliActorSession,
+  loadCliCompany,
   loadCliSessions,
   releaseCliDeviceAuthorization,
   revokeIssuedCliActorSession,
@@ -38,6 +39,7 @@ vi.mock("@/actions/admin/cli-auth", () => ({
   inspectCliDeviceAuthorization: vi.fn(),
   inspectCliSessionRefresh: vi.fn(),
   issueSupabaseCliActorSession: vi.fn(),
+  loadCliCompany: vi.fn(),
   loadCliSessions: vi.fn(),
   releaseCliDeviceAuthorization: vi.fn(),
   revokeAllCliSessions: vi.fn(),
@@ -69,6 +71,10 @@ beforeEach(() => {
   vi.stubEnv("NEXT_PUBLIC_SITE_URL", "https://mandala.md")
   vi.stubEnv("SUPABASE_SERVICE_ROLE_KEY", "test-service-role-key")
   vi.mocked(revokeIssuedCliActorSession).mockResolvedValue(undefined)
+  vi.mocked(loadCliCompany).mockResolvedValue({
+    data: { id: companyId, name: "Example Company" },
+    error: null,
+  } as never)
 })
 
 describe("hosted CLI HTTP boundaries", () => {
@@ -172,7 +178,7 @@ describe("hosted CLI HTTP boundaries", () => {
     const response = await decideDeviceAuthorization(
       request(
         "/api/mandala/cli/device-authorizations/decision",
-        { decision: "approve" },
+        { decision: "approve", companyId },
         "POST",
         { cookie: `mandala-cli-authorization=${"b".repeat(43)}` }
       )
@@ -204,13 +210,7 @@ describe("hosted CLI HTTP boundaries", () => {
     expect(response.status).toBe(400)
   })
 
-  it("binds approval to the HttpOnly browser cookie and clears it", async () => {
-    vi.mocked(decideCliDeviceAuthorization).mockResolvedValue({
-      data: {
-        status: "approved",
-      },
-      error: null,
-    } as never)
+  it("rejects approval without an explicit workspace", async () => {
     vi.mocked(authenticateRequest).mockResolvedValue({
       authMode: "cookie",
       supabase: {},
@@ -226,6 +226,33 @@ describe("hosted CLI HTTP boundaries", () => {
       )
     )
 
+    expect(response.status).toBe(400)
+    expect(decideCliDeviceAuthorization).not.toHaveBeenCalled()
+  })
+
+  it("binds approval to the HttpOnly browser cookie and clears it", async () => {
+    vi.mocked(decideCliDeviceAuthorization).mockResolvedValue({
+      data: {
+        status: "approved",
+        company: { id: companyId, name: "Example Company" },
+      },
+      error: null,
+    } as never)
+    vi.mocked(authenticateRequest).mockResolvedValue({
+      authMode: "cookie",
+      supabase: {},
+      user: { id: userId },
+    } as never)
+
+    const response = await decideDeviceAuthorization(
+      request(
+        "/api/mandala/cli/device-authorizations/decision",
+        { decision: "approve", companyId },
+        "POST",
+        { cookie: `mandala-cli-authorization=${"b".repeat(43)}` }
+      )
+    )
+
     expect(response.status).toBe(200)
     expect(decideCliDeviceAuthorization).toHaveBeenCalledWith(
       expect.objectContaining({
@@ -233,7 +260,7 @@ describe("hosted CLI HTTP boundaries", () => {
         p_browser_token_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
         p_subject_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
         p_decision: "approve",
-        p_company_id: null,
+        p_company_id: companyId,
       })
     )
     expect(response.headers.get("set-cookie")).toContain(
@@ -312,7 +339,54 @@ describe("hosted CLI HTTP boundaries", () => {
       error: null,
     } as never)
     vi.mocked(completeCliDeviceAuthorization).mockResolvedValue({
-      data: { sessionId: cliSessionId, companyId: null },
+      data: { sessionId: cliSessionId, companyId },
+      error: null,
+    } as never)
+    vi.mocked(issueSupabaseCliActorSession).mockResolvedValue(
+      actorSession() as never
+    )
+    vi.mocked(getAuthSessionId).mockResolvedValue(actorAuthSessionId)
+
+    const response = await exchangeDeviceAuthorization(
+      request(
+        "/api/mandala/cli/device-authorizations/token",
+        { deviceCode: "d".repeat(43) },
+        "POST",
+        { "x-mandala-cli-capability": "workspace-binding-v1" }
+      )
+    )
+
+    expect(response.status).toBe(200)
+    const body = await response.json()
+    expect(body).toMatchObject({
+      status: "authorized",
+      sessionId: cliSessionId,
+      company: { id: companyId, name: "Example Company" },
+    })
+    expect(body.accessToken).toMatch(/^mdl_cli_at_[A-Za-z0-9_-]{43}$/)
+    expect(body.refreshToken).toMatch(/^mdl_cli_rt_[A-Za-z0-9_-]{43}$/)
+    expect(completeCliDeviceAuthorization).toHaveBeenCalledWith(
+      expect.objectContaining({
+        p_authorization_id: authorizationId,
+        p_exchange_nonce: exchangeNonce,
+        p_access_token_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        p_refresh_token_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
+        p_access_expires_at: expect.any(String),
+        p_refresh_expires_at: expect.any(String),
+        p_actor_auth_session_id: actorAuthSessionId,
+        p_actor_session_ciphertext: expect.stringMatching(/^v1\./),
+      })
+    )
+    expect(JSON.stringify(body)).not.toContain("internal-actor-access-token")
+  })
+
+  it("keeps the authorized response compatible with installed legacy CLIs", async () => {
+    vi.mocked(claimCliDeviceAuthorization).mockResolvedValue({
+      data: exchangeReady(),
+      error: null,
+    } as never)
+    vi.mocked(completeCliDeviceAuthorization).mockResolvedValue({
+      data: { sessionId: cliSessionId, companyId },
       error: null,
     } as never)
     vi.mocked(issueSupabaseCliActorSession).mockResolvedValue(
@@ -333,21 +407,6 @@ describe("hosted CLI HTTP boundaries", () => {
       sessionId: cliSessionId,
     })
     expect(body).not.toHaveProperty("company")
-    expect(body.accessToken).toMatch(/^mdl_cli_at_[A-Za-z0-9_-]{43}$/)
-    expect(body.refreshToken).toMatch(/^mdl_cli_rt_[A-Za-z0-9_-]{43}$/)
-    expect(completeCliDeviceAuthorization).toHaveBeenCalledWith(
-      expect.objectContaining({
-        p_authorization_id: authorizationId,
-        p_exchange_nonce: exchangeNonce,
-        p_access_token_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
-        p_refresh_token_hash: expect.stringMatching(/^[a-f0-9]{64}$/),
-        p_access_expires_at: expect.any(String),
-        p_refresh_expires_at: expect.any(String),
-        p_actor_auth_session_id: actorAuthSessionId,
-        p_actor_session_ciphertext: expect.stringMatching(/^v1\./),
-      })
-    )
-    expect(JSON.stringify(body)).not.toContain("internal-actor-access-token")
   })
 
   it("revokes partial credentials and releases the claim when completion fails", async () => {
@@ -666,7 +725,7 @@ function exchangeReady() {
     authorizationId,
     exchangeNonce,
     userId,
-    companyId: null,
+    companyId,
     requestedScopes: ["workspace:control"],
     clientName: "Mandala CLI",
     clientVersion: "0.0.0",

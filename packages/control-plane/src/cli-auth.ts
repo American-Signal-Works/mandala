@@ -54,17 +54,34 @@ export const cliDeviceAuthorizationInspectionSchema = z
   })
   .strict()
 
-export const cliDeviceAuthorizationDecisionRequestSchema = z
-  .object({
-    decision: z.enum(["approve", "deny"]),
-  })
-  .strict()
+export const cliDeviceAuthorizationDecisionRequestSchema = z.discriminatedUnion(
+  "decision",
+  [
+    z
+      .object({
+        decision: z.literal("approve"),
+        companyId: z.string().uuid(),
+      })
+      .strict(),
+    z.object({ decision: z.literal("deny") }).strict(),
+  ]
+)
 
-export const cliDeviceAuthorizationDecisionResponseSchema = z
-  .object({
-    status: z.enum(["approved", "denied"]),
-  })
-  .strict()
+export const cliDeviceAuthorizationDecisionResponseSchema =
+  z.discriminatedUnion("status", [
+    z
+      .object({
+        status: z.literal("approved"),
+        company: z
+          .object({
+            id: z.string().uuid(),
+            name: z.string().min(1).max(200),
+          })
+          .strict(),
+      })
+      .strict(),
+    z.object({ status: z.literal("denied") }).strict(),
+  ])
 
 export const cliDeviceAuthorizationTokenRequestSchema = z
   .object({ deviceCode: z.string().min(32).max(256) })
@@ -96,6 +113,13 @@ const cliDeviceAuthorizationAuthorizedResponseSchema = z
         email: z.string().email().nullable(),
       })
       .strict(),
+    company: z
+      .object({
+        id: z.string().uuid(),
+        name: z.string().min(1).max(200),
+      })
+      .strict()
+      .optional(),
   })
   .strict()
 

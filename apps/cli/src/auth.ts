@@ -177,7 +177,8 @@ export async function loginWithDeviceAuthorization(
       fetchImplementation,
       `${baseUrl}/api/mandala/cli/device-authorizations/token`,
       { deviceCode: device.data.deviceCode },
-      options.signal
+      options.signal,
+      { "x-mandala-cli-capability": "workspace-binding-v1" }
     )
     const token = cliDeviceAuthorizationTokenResponseSchema.safeParse(
       tokenResponse.body
@@ -210,7 +211,15 @@ export async function loginWithDeviceAuthorization(
     }
     await options.store.writeSession(session)
     try {
-      await options.store.clearSelectedCompany()
+      if (token.data.company) {
+        const config = await options.store.readConfig()
+        await options.store.writeConfig({
+          ...config,
+          selectedCompany: token.data.company,
+        })
+      } else {
+        await options.store.clearSelectedCompany()
+      }
     } catch (error) {
       await options.store.deleteSession().catch(() => undefined)
       throw error
@@ -220,6 +229,7 @@ export async function loginWithDeviceAuthorization(
       refreshMode: session.refreshMode,
       expiresAt: session.expiresAt,
       user: session.user,
+      ...(token.data.company ? { company: token.data.company } : {}),
     }
   }
   throw new CliError(
@@ -416,7 +426,8 @@ async function postJson(
   fetchImplementation: typeof fetch,
   url: string,
   body: unknown,
-  signal?: AbortSignal
+  signal?: AbortSignal,
+  additionalHeaders: Record<string, string> = {}
 ) {
   let response: Response
   try {
@@ -425,6 +436,7 @@ async function postJson(
       headers: {
         accept: "application/json",
         "content-type": "application/json",
+        ...additionalHeaders,
       },
       body: JSON.stringify(body),
       signal,

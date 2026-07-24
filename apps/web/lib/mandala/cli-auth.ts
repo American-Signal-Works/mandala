@@ -33,7 +33,7 @@ export const claimedAuthorizationSchema = z
     authorizationId: z.string().uuid(),
     exchangeNonce: z.string().uuid(),
     userId: z.string().uuid(),
-    companyId: z.string().uuid().nullable(),
+    companyId: z.string().uuid(),
     requestedScopes: z.array(z.literal("workspace:control")).min(1).max(10),
     clientName: z.string().min(1).max(120),
     clientVersion: z.string().min(1).max(40),
