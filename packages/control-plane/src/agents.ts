@@ -102,7 +102,13 @@ export const agentValidateResponseSchema = z
         sourceDigest: z.string().regex(/^[0-9a-f]{64}$/),
         manifestDigest: z.string().regex(/^[0-9a-f]{64}$/),
         graph: z.array(
-          z.object({ id: z.string(), handler: z.string(), allowedTools: z.array(z.string()) }).passthrough()
+          z
+            .object({
+              id: z.string(),
+              handler: z.string(),
+              allowedTools: z.array(z.string()),
+            })
+            .passthrough()
         ),
         capabilities: z.array(agentCapabilitySummarySchema),
       })
@@ -139,7 +145,12 @@ export const agentTestRunResponseSchema = z
   .object({
     agentId: z.string().uuid(),
     workflowRunId: z.string().uuid(),
-    status: z.enum(["blocked", "suppressed", "waiting_for_approval", "completed"]),
+    status: z.enum([
+      "blocked",
+      "suppressed",
+      "waiting_for_approval",
+      "completed",
+    ]),
     itemId: z.string().uuid().nullable(),
     dataset: jsonObjectSchema.optional(),
     result: jsonValueSchema.optional(),
@@ -157,9 +168,16 @@ export const agentManualRunResponseSchema = z
   .object({
     agentId: z.string().uuid(),
     workflowRunId: z.string().uuid(),
-    status: z.enum(["blocked", "suppressed", "waiting_for_approval", "completed"]),
+    status: z.enum([
+      "blocked",
+      "suppressed",
+      "waiting_for_approval",
+      "completed",
+    ]),
     itemId: z.string().uuid().nullable(),
-    entity: z.object({ key: z.string().min(1), value: z.string().min(1) }).strict(),
+    entity: z
+      .object({ key: z.string().min(1), value: z.string().min(1) })
+      .strict(),
     result: jsonValueSchema.optional(),
   })
   .strict()
@@ -194,4 +212,6 @@ export type AgentValidateResponse = z.infer<typeof agentValidateResponseSchema>
 export type AgentActionRequest = z.infer<typeof agentActionRequestSchema>
 export type AgentTestRunRequest = z.infer<typeof agentTestRunRequestSchema>
 export type AgentManualRunRequest = z.infer<typeof agentManualRunRequestSchema>
-export type AgentManualRunResponse = z.infer<typeof agentManualRunResponseSchema>
+export type AgentManualRunResponse = z.infer<
+  typeof agentManualRunResponseSchema
+>

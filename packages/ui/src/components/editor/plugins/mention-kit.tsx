@@ -1,11 +1,11 @@
-'use client';
+"use client"
 
-import { MentionInputPlugin, MentionPlugin } from '@platejs/mention/react';
+import { MentionInputPlugin, MentionPlugin } from "@platejs/mention/react"
 
 import {
   MentionElement,
   MentionInputElement,
-} from '@workspace/ui/components/mention-node';
+} from "@workspace/ui/components/mention-node"
 
 export const MentionKit = [
   MentionPlugin.configure({
@@ -14,4 +14,4 @@ export const MentionKit = [
     },
   }).withComponent(MentionElement),
   MentionInputPlugin.withComponent(MentionInputElement),
-];
+]

@@ -11,8 +11,11 @@ const companyIdSchema = z.string().uuid()
 export async function GET(request: Request) {
   const auth = await authenticateRequest(request)
   if (!auth) return privateInvitationJson({ error: "unauthorized" }, 401)
-  const companyId = companyIdSchema.safeParse(new URL(request.url).searchParams.get("companyId"))
-  if (!companyId.success) return privateInvitationJson({ error: "invalid_request" }, 400)
+  const companyId = companyIdSchema.safeParse(
+    new URL(request.url).searchParams.get("companyId")
+  )
+  if (!companyId.success)
+    return privateInvitationJson({ error: "invalid_request" }, 400)
   try {
     const directory = await listCompanyDirectory({
       supabase: auth.supabase,

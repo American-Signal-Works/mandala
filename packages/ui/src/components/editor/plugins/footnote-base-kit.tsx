@@ -1,14 +1,14 @@
 import {
   BaseFootnoteDefinitionPlugin,
   BaseFootnoteReferencePlugin,
-} from '@platejs/footnote';
+} from "@platejs/footnote"
 
 import {
   FootnoteDefinitionElementStatic,
   FootnoteReferenceElementStatic,
-} from '@workspace/ui/components/footnote-node-static';
+} from "@workspace/ui/components/footnote-node-static"
 
 export const BaseFootnoteKit = [
   BaseFootnoteReferencePlugin.withComponent(FootnoteReferenceElementStatic),
   BaseFootnoteDefinitionPlugin.withComponent(FootnoteDefinitionElementStatic),
-];
+]

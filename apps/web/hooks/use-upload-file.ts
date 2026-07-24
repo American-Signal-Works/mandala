@@ -1,25 +1,24 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import * as React from 'react';
+import * as React from "react"
 
-import type { OurFileRouter } from '@/components/uploadthing';
+import type { OurFileRouter } from "@/components/uploadthing"
 import type {
   ClientUploadedFileData,
   UploadFilesOptions,
-} from 'uploadthing/types';
+} from "uploadthing/types"
 
-import { generateReactHelpers } from '@uploadthing/react';
-import { toast } from 'sonner';
-import { z } from 'zod';
+import { generateReactHelpers } from "@uploadthing/react"
+import { toast } from "sonner"
+import { z } from "zod"
 
-export type UploadedFile<T = unknown> = ClientUploadedFileData<T>;
+export type UploadedFile<T = unknown> = ClientUploadedFileData<T>
 
-interface UseUploadFileProps
-  extends Pick<
-    UploadFilesOptions<OurFileRouter['editorUploader']>,
-    'headers' | 'onUploadBegin' | 'onUploadProgress' | 'skipPolling'
-  > {
-  onUploadComplete?: (file: UploadedFile) => void;
-  onUploadError?: (error: unknown) => void;
+interface UseUploadFileProps extends Pick<
+  UploadFilesOptions<OurFileRouter["editorUploader"]>,
+  "headers" | "onUploadBegin" | "onUploadProgress" | "skipPolling"
+> {
+  onUploadComplete?: (file: UploadedFile) => void
+  onUploadError?: (error: unknown) => void
 }
 
 export function useUploadFile({
@@ -27,72 +26,72 @@ export function useUploadFile({
   onUploadError,
   ...props
 }: UseUploadFileProps = {}) {
-  const [uploadedFile, setUploadedFile] = React.useState<UploadedFile>();
-  const [uploadingFile, setUploadingFile] = React.useState<File>();
-  const [progress, setProgress] = React.useState<number>(0);
-  const [isUploading, setIsUploading] = React.useState(false);
+  const [uploadedFile, setUploadedFile] = React.useState<UploadedFile>()
+  const [uploadingFile, setUploadingFile] = React.useState<File>()
+  const [progress, setProgress] = React.useState<number>(0)
+  const [isUploading, setIsUploading] = React.useState(false)
 
   async function uploadThing(file: File) {
-    setIsUploading(true);
-    setUploadingFile(file);
+    setIsUploading(true)
+    setUploadingFile(file)
 
     try {
-      const res = await uploadFiles('editorUploader', {
+      const res = await uploadFiles("editorUploader", {
         ...props,
         files: [file],
         onUploadProgress: ({ progress }: { progress: number }) => {
-          setProgress(Math.min(progress, 100));
+          setProgress(Math.min(progress, 100))
         },
-      });
+      })
 
-      setUploadedFile(res[0]);
+      setUploadedFile(res[0])
 
-      if (res[0]) onUploadComplete?.(res[0]);
+      if (res[0]) onUploadComplete?.(res[0])
 
-      return uploadedFile;
+      return uploadedFile
     } catch (error) {
-      const errorMessage = getErrorMessage(error);
+      const errorMessage = getErrorMessage(error)
 
       const message =
         errorMessage.length > 0
           ? errorMessage
-          : 'Something went wrong, please try again later.';
+          : "Something went wrong, please try again later."
 
-      toast.error(message);
+      toast.error(message)
 
-      onUploadError?.(error);
+      onUploadError?.(error)
 
       // Mock upload for unauthenticated users
       // toast.info('User not logged in. Mocking upload process.');
       const mockUploadedFile = {
-        key: 'mock-key-0',
+        key: "mock-key-0",
         appUrl: `https://mock-app-url.com/${file.name}`,
         name: file.name,
         size: file.size,
         type: file.type,
         url: URL.createObjectURL(file),
-      } as UploadedFile;
+      } as UploadedFile
 
       // Simulate upload progress
-      let progress = 0;
+      let progress = 0
 
       const simulateProgress = async () => {
         while (progress < 100) {
-          await new Promise((resolve) => setTimeout(resolve, 50));
-          progress += 2;
-          setProgress(Math.min(progress, 100));
+          await new Promise((resolve) => setTimeout(resolve, 50))
+          progress += 2
+          setProgress(Math.min(progress, 100))
         }
-      };
+      }
 
-      await simulateProgress();
+      await simulateProgress()
 
-      setUploadedFile(mockUploadedFile);
+      setUploadedFile(mockUploadedFile)
 
-      return mockUploadedFile;
+      return mockUploadedFile
     } finally {
-      setProgress(0);
-      setIsUploading(false);
-      setUploadingFile(undefined);
+      setProgress(0)
+      setIsUploading(false)
+      setUploadingFile(undefined)
     }
   }
 
@@ -102,30 +101,31 @@ export function useUploadFile({
     uploadedFile,
     uploadFile: uploadThing,
     uploadingFile,
-  };
+  }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-const _uploadHelpers: any = generateReactHelpers<OurFileRouter>();
-export const uploadFiles = _uploadHelpers.uploadFiles as typeof _uploadHelpers.uploadFiles;
-export const useUploadThing = _uploadHelpers.useUploadThing as typeof _uploadHelpers.useUploadThing;
+const _uploadHelpers: any = generateReactHelpers<OurFileRouter>()
+export const uploadFiles =
+  _uploadHelpers.uploadFiles as typeof _uploadHelpers.uploadFiles
+export const useUploadThing =
+  _uploadHelpers.useUploadThing as typeof _uploadHelpers.useUploadThing
 
 export function getErrorMessage(err: unknown) {
-  const unknownError = 'Something went wrong, please try again later.';
+  const unknownError = "Something went wrong, please try again later."
 
   if (err instanceof z.ZodError) {
-    const errors = err.issues.map((issue) => issue.message);
+    const errors = err.issues.map((issue) => issue.message)
 
-    return errors.join('\n');
+    return errors.join("\n")
   }
   if (err instanceof Error) {
-    return err.message;
+    return err.message
   }
-  return unknownError;
+  return unknownError
 }
 
 export function showErrorToast(err: unknown) {
-  const errorMessage = getErrorMessage(err);
+  const errorMessage = getErrorMessage(err)
 
-  return toast.error(errorMessage);
+  return toast.error(errorMessage)
 }

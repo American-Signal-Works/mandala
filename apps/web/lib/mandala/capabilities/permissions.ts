@@ -1,7 +1,4 @@
-import type {
-  CapabilityActorRole,
-  CapabilityOperation,
-} from "./schema"
+import type { CapabilityActorRole, CapabilityOperation } from "./schema"
 
 const allOperations: CapabilityOperation[] = ["read", "propose", "execute"]
 

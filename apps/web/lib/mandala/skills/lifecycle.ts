@@ -148,10 +148,14 @@ export async function getAgentRuntimeState(input: {
   companyId: string
   agentId: string
 }): Promise<AgentRuntimeState> {
-  const { data, error } = await invokeRpc(input.supabase, "get_agent_runtime_state_v1", {
-    p_company_id: input.companyId,
-    p_workflow_id: input.agentId,
-  })
+  const { data, error } = await invokeRpc(
+    input.supabase,
+    "get_agent_runtime_state_v1",
+    {
+      p_company_id: input.companyId,
+      p_workflow_id: input.agentId,
+    }
+  )
   if (error) throw new Error(error.message)
   return runtimeStateSchema.parse(data)
 }
@@ -164,13 +168,17 @@ export async function transitionAgentWorkflowLifecycle(input: {
   expectedVersion: number
   reason: string
 }): Promise<AgentSummary> {
-  const { error } = await invokeRpc(input.supabase, "transition_agent_lifecycle_v1", {
-    p_company_id: input.companyId,
-    p_workflow_id: input.agentId,
-    p_transition: input.transition,
-    p_expected_version: input.expectedVersion,
-    p_reason: input.reason,
-  })
+  const { error } = await invokeRpc(
+    input.supabase,
+    "transition_agent_lifecycle_v1",
+    {
+      p_company_id: input.companyId,
+      p_workflow_id: input.agentId,
+      p_transition: input.transition,
+      p_expected_version: input.expectedVersion,
+      p_reason: input.reason,
+    }
+  )
   if (error) throw new Error(error.message)
   return getAgentSummary(input)
 }

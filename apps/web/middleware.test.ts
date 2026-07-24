@@ -36,9 +36,7 @@ describe("middleware auth redirects", () => {
 
     const response = await middleware(request("/settings"))
 
-    expect(response.headers.get("location")).toBe(
-      "https://mandala.md/login"
-    )
+    expect(response.headers.get("location")).toBe("https://mandala.md/login")
   })
 
   it("drops query params when redirecting unauthenticated app routes", async () => {
@@ -46,9 +44,7 @@ describe("middleware auth redirects", () => {
 
     const response = await middleware(request("/settings?token=secret"))
 
-    expect(response.headers.get("location")).toBe(
-      "https://mandala.md/login"
-    )
+    expect(response.headers.get("location")).toBe("https://mandala.md/login")
   })
 
   it("allows the callback success screen to render before the user cookie is observed", async () => {

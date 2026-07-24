@@ -1,23 +1,23 @@
-'use client';
+"use client"
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { AIChatPlugin } from '@platejs/ai/react';
-import { BlockSelectionPlugin } from '@platejs/selection/react';
-import { getPluginTypes, isHotkey, KEYS } from 'platejs';
+import { AIChatPlugin } from "@platejs/ai/react"
+import { BlockSelectionPlugin } from "@platejs/selection/react"
+import { getPluginTypes, isHotkey, KEYS } from "platejs"
 
-import { BlockSelection } from '@workspace/ui/components/block-selection';
+import { BlockSelection } from "@workspace/ui/components/block-selection"
 
 export const hasSelectableClass = ({
   attributes,
   className,
 }: {
-  attributes: { className?: string };
-  className?: string;
+  attributes: { className?: string }
+  className?: string
 }) =>
   [className, attributes.className]
     .filter(Boolean)
-    .join(' ')
-    .includes('slate-selectable');
+    .join(" ")
+    .includes("slate-selectable")
 
 export const BlockSelectionKit = [
   BlockSelectionPlugin.configure(({ editor }) => ({
@@ -28,17 +28,17 @@ export const BlockSelectionKit = [
           element.type
         ),
       onKeyDownSelecting: (editor, e) => {
-        if (isHotkey('mod+j')(e)) {
-          editor.getApi(AIChatPlugin).aiChat.show();
+        if (isHotkey("mod+j")(e)) {
+          editor.getApi(AIChatPlugin).aiChat.show()
         }
       },
     },
     render: {
       belowRootNodes: (props) => {
-        if (!hasSelectableClass(props)) return null;
+        if (!hasSelectableClass(props)) return null
 
-        return <BlockSelection {...(props as any)} />;
+        return <BlockSelection {...(props as any)} />
       },
     },
   })),
-];
+]

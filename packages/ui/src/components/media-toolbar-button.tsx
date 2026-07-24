@@ -1,22 +1,22 @@
 // @ts-nocheck -- scaffolded by @plate registry; minor type narrowing issues from noUncheckedIndexedAccess
-'use client';
+"use client"
 
-import * as React from 'react';
+import * as React from "react"
 
-import type { DropdownMenuProps } from '@radix-ui/react-dropdown-menu';
+import type { DropdownMenuProps } from "@radix-ui/react-dropdown-menu"
 
-import { PlaceholderPlugin } from '@platejs/media/react';
+import { PlaceholderPlugin } from "@platejs/media/react"
 import {
   AudioLinesIcon,
   FileUpIcon,
   FilmIcon,
   ImageIcon,
   LinkIcon,
-} from 'lucide-react';
-import { isUrl, KEYS } from 'platejs';
-import { useEditorRef } from 'platejs/react';
-import { toast } from 'sonner';
-import { useFilePicker } from 'use-file-picker';
+} from "lucide-react"
+import { isUrl, KEYS } from "platejs"
+import { useEditorRef } from "platejs/react"
+import { toast } from "sonner"
+import { useFilePicker } from "use-file-picker"
 
 import {
   AlertDialog,
@@ -27,85 +27,85 @@ import {
   AlertDialogFooter,
   AlertDialogHeader,
   AlertDialogTitle,
-} from '@workspace/ui/components/alert-dialog';
+} from "@workspace/ui/components/alert-dialog"
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuGroup,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from '@workspace/ui/components/dropdown-menu';
-import { Input } from '@workspace/ui/components/input';
+} from "@workspace/ui/components/dropdown-menu"
+import { Input } from "@workspace/ui/components/input"
 
 import {
   ToolbarSplitButton,
   ToolbarSplitButtonPrimary,
   ToolbarSplitButtonSecondary,
-} from './toolbar';
+} from "./toolbar"
 
 const MEDIA_CONFIG: Record<
   string,
   {
-    accept: string[];
-    icon: React.ReactNode;
-    title: string;
-    tooltip: string;
+    accept: string[]
+    icon: React.ReactNode
+    title: string
+    tooltip: string
   }
 > = {
   [KEYS.audio]: {
-    accept: ['audio/*'],
+    accept: ["audio/*"],
     icon: <AudioLinesIcon className="size-4" />,
-    title: 'Insert Audio',
-    tooltip: 'Audio',
+    title: "Insert Audio",
+    tooltip: "Audio",
   },
   [KEYS.file]: {
-    accept: ['*'],
+    accept: ["*"],
     icon: <FileUpIcon className="size-4" />,
-    title: 'Insert File',
-    tooltip: 'File',
+    title: "Insert File",
+    tooltip: "File",
   },
   [KEYS.img]: {
-    accept: ['image/*'],
+    accept: ["image/*"],
     icon: <ImageIcon className="size-4" />,
-    title: 'Insert Image',
-    tooltip: 'Image',
+    title: "Insert Image",
+    tooltip: "Image",
   },
   [KEYS.video]: {
-    accept: ['video/*'],
+    accept: ["video/*"],
     icon: <FilmIcon className="size-4" />,
-    title: 'Insert Video',
-    tooltip: 'Video',
+    title: "Insert Video",
+    tooltip: "Video",
   },
-};
+}
 
 export function MediaToolbarButton({
   nodeType,
   ...props
 }: DropdownMenuProps & { nodeType: string }) {
-  const currentConfig = MEDIA_CONFIG[nodeType];
+  const currentConfig = MEDIA_CONFIG[nodeType]
 
-  const editor = useEditorRef();
-  const [open, setOpen] = React.useState(false);
-  const [dialogOpen, setDialogOpen] = React.useState(false);
+  const editor = useEditorRef()
+  const [open, setOpen] = React.useState(false)
+  const [dialogOpen, setDialogOpen] = React.useState(false)
 
   const { openFilePicker } = useFilePicker({
     accept: currentConfig.accept,
     multiple: true,
     onFilesSelected: ({ plainFiles: updatedFiles }) => {
-      editor.getTransforms(PlaceholderPlugin).insert.media(updatedFiles);
+      editor.getTransforms(PlaceholderPlugin).insert.media(updatedFiles)
     },
-  });
+  })
 
   return (
     <>
       <ToolbarSplitButton
         onClick={() => {
-          openFilePicker();
+          openFilePicker()
         }}
         onKeyDown={(e) => {
-          if (e.key === 'ArrowDown') {
-            e.preventDefault();
-            setOpen(true);
+          if (e.key === "ArrowDown") {
+            e.preventDefault()
+            setOpen(true)
           }
         }}
         pressed={open}
@@ -146,7 +146,7 @@ export function MediaToolbarButton({
       <AlertDialog
         open={dialogOpen}
         onOpenChange={(value) => {
-          setDialogOpen(value);
+          setDialogOpen(value)
         }}
       >
         <AlertDialogContent className="gap-6">
@@ -158,7 +158,7 @@ export function MediaToolbarButton({
         </AlertDialogContent>
       </AlertDialog>
     </>
-  );
+  )
 }
 
 function MediaUrlDialogContent({
@@ -166,24 +166,24 @@ function MediaUrlDialogContent({
   nodeType,
   setOpen,
 }: {
-  currentConfig: (typeof MEDIA_CONFIG)[string];
-  nodeType: string;
-  setOpen: (value: boolean) => void;
+  currentConfig: (typeof MEDIA_CONFIG)[string]
+  nodeType: string
+  setOpen: (value: boolean) => void
 }) {
-  const editor = useEditorRef();
-  const [url, setUrl] = React.useState('');
+  const editor = useEditorRef()
+  const [url, setUrl] = React.useState("")
 
   const embedMedia = React.useCallback(() => {
-    if (!isUrl(url)) return toast.error('Invalid URL');
+    if (!isUrl(url)) return toast.error("Invalid URL")
 
-    setOpen(false);
+    setOpen(false)
     editor.tf.insertNodes({
-      children: [{ text: '' }],
-      name: nodeType === KEYS.file ? url.split('/').pop() : undefined,
+      children: [{ text: "" }],
+      name: nodeType === KEYS.file ? url.split("/").pop() : undefined,
       type: nodeType,
       url,
-    });
-  }, [url, editor, nodeType, setOpen]);
+    })
+  }, [url, editor, nodeType, setOpen])
 
   return (
     <>
@@ -193,7 +193,7 @@ function MediaUrlDialogContent({
 
       <AlertDialogDescription className="group relative w-full">
         <label
-          className="-translate-y-1/2 absolute top-1/2 block cursor-text px-1 text-muted-foreground/70 text-sm transition-all group-focus-within:pointer-events-none group-focus-within:top-0 group-focus-within:cursor-default group-focus-within:font-medium group-focus-within:text-foreground group-focus-within:text-xs has-[+input:not(:placeholder-shown)]:pointer-events-none has-[+input:not(:placeholder-shown)]:top-0 has-[+input:not(:placeholder-shown)]:cursor-default has-[+input:not(:placeholder-shown)]:font-medium has-[+input:not(:placeholder-shown)]:text-foreground has-[+input:not(:placeholder-shown)]:text-xs"
+          className="absolute top-1/2 block -translate-y-1/2 cursor-text px-1 text-sm text-muted-foreground/70 transition-all group-focus-within:pointer-events-none group-focus-within:top-0 group-focus-within:cursor-default group-focus-within:text-xs group-focus-within:font-medium group-focus-within:text-foreground has-[+input:not(:placeholder-shown)]:pointer-events-none has-[+input:not(:placeholder-shown)]:top-0 has-[+input:not(:placeholder-shown)]:cursor-default has-[+input:not(:placeholder-shown)]:text-xs has-[+input:not(:placeholder-shown)]:font-medium has-[+input:not(:placeholder-shown)]:text-foreground"
           htmlFor="url"
         >
           <span className="inline-flex bg-background px-2">URL</span>
@@ -204,7 +204,7 @@ function MediaUrlDialogContent({
           value={url}
           onChange={(e) => setUrl(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === 'Enter') embedMedia();
+            if (e.key === "Enter") embedMedia()
           }}
           placeholder=""
           type="url"
@@ -216,13 +216,13 @@ function MediaUrlDialogContent({
         <AlertDialogCancel>Cancel</AlertDialogCancel>
         <AlertDialogAction
           onClick={(e) => {
-            e.preventDefault();
-            embedMedia();
+            e.preventDefault()
+            embedMedia()
           }}
         >
           Accept
         </AlertDialogAction>
       </AlertDialogFooter>
     </>
-  );
+  )
 }

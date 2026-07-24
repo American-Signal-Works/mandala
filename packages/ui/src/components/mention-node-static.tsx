@@ -1,42 +1,42 @@
 // @ts-nocheck -- scaffolded by @plate registry; minor type narrowing issues from noUncheckedIndexedAccess
-import * as React from 'react';
+import * as React from "react"
 
-import type { TMentionElement } from 'platejs';
-import type { SlateElementProps } from 'platejs/static';
+import type { TMentionElement } from "platejs"
+import type { SlateElementProps } from "platejs/static"
 
-import { KEYS } from 'platejs';
-import { SlateElement } from 'platejs/static';
+import { KEYS } from "platejs"
+import { SlateElement } from "platejs/static"
 
-import { cn } from '@workspace/ui/lib/utils';
-import { inlineSuggestionVariants } from '@workspace/ui/components/suggestion';
+import { cn } from "@workspace/ui/lib/utils"
+import { inlineSuggestionVariants } from "@workspace/ui/components/suggestion"
 
 export function MentionElementStatic(
   props: SlateElementProps<TMentionElement> & {
-    prefix?: string;
+    prefix?: string
   }
 ) {
-  const { prefix } = props;
-  const element = props.element;
+  const { prefix } = props
+  const element = props.element
 
   return (
     <SlateElement
       {...props}
       as="span"
       className={cn(
-        'inline-block rounded-md bg-muted px-1.5 py-0.5 align-baseline font-medium text-sm',
+        "inline-block rounded-md bg-muted px-1.5 py-0.5 align-baseline text-sm font-medium",
         inlineSuggestionVariants(),
-        element.children[0][KEYS.bold] === true && 'font-bold',
-        element.children[0][KEYS.italic] === true && 'italic',
-        element.children[0][KEYS.underline] === true && 'underline'
+        element.children[0][KEYS.bold] === true && "font-bold",
+        element.children[0][KEYS.italic] === true && "italic",
+        element.children[0][KEYS.underline] === true && "underline"
       )}
       attributes={{
         ...props.attributes,
-        'data-slate-value': element.value,
+        "data-slate-value": element.value,
       }}
     >
       {props.children}
       {prefix}
       {element.value}
     </SlateElement>
-  );
+  )
 }

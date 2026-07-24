@@ -178,10 +178,7 @@ function createExactMatchEvaluator(
     string,
     ReturnType<typeof projectControlOutcomeForEvaluation>
   >,
-  evaluationCaseById: Map<
-    string,
-    (typeof controlParserEvaluationCases)[number]
-  >
+  evaluationCaseById: Map<string, (typeof controlParserEvaluationCases)[number]>
 ): EvaluatorT {
   return ({ example }: EvaluatorInput) => ({
     key: "exact_match",
@@ -194,10 +191,7 @@ function createSafeHandlingEvaluator(
     string,
     ReturnType<typeof projectControlOutcomeForEvaluation>
   >,
-  evaluationCaseById: Map<
-    string,
-    (typeof controlParserEvaluationCases)[number]
-  >
+  evaluationCaseById: Map<string, (typeof controlParserEvaluationCases)[number]>
 ): EvaluatorT {
   return ({ example }: EvaluatorInput) => {
     const testCase = getEvaluationCase(example, evaluationCaseById)
@@ -216,10 +210,7 @@ function matchesExpected(
     string,
     ReturnType<typeof projectControlOutcomeForEvaluation>
   >,
-  evaluationCaseById: Map<
-    string,
-    (typeof controlParserEvaluationCases)[number]
-  >
+  evaluationCaseById: Map<string, (typeof controlParserEvaluationCases)[number]>
 ): boolean {
   const testCase = getEvaluationCase(example, evaluationCaseById)
   if (!testCase) return false
@@ -233,10 +224,7 @@ function matchesExpected(
 
 function getEvaluationCase(
   example: Example,
-  evaluationCaseById: Map<
-    string,
-    (typeof controlParserEvaluationCases)[number]
-  >
+  evaluationCaseById: Map<string, (typeof controlParserEvaluationCases)[number]>
 ) {
   const caseId = example.metadata?.caseId
   return typeof caseId === "string" ? evaluationCaseById.get(caseId) : undefined

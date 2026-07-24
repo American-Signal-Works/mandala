@@ -268,7 +268,9 @@ export function LoginAuthFlow({
         status?: string
       }
       if (!response.ok) {
-        setFormMessage("We couldn't switch accounts. Request a new sign-in link.")
+        setFormMessage(
+          "We couldn't switch accounts. Request a new sign-in link."
+        )
         return
       }
       if (confirm && result.status === "session_replaced") {
@@ -311,25 +313,29 @@ export function LoginAuthFlow({
                 onCancel={() => handleSessionReplacement(false)}
                 onConfirm={() => handleSessionReplacement(true)}
               />
-            ) : (step === "email" || step === "link") && (
-              <EmailStep
-                email={
-                  step === "link" && resendCooldown > 0 ? submittedEmail : email
-                }
-                emailError={emailError}
-                formMessage={formMessage}
-                isMagicLinkSent={step === "link" && resendCooldown > 0}
-                isSending={isSending}
-                onEmailChange={(value) => {
-                  setEmail(value)
-                  setEmailError(null)
-                  setFormMessage(null)
-                }}
-                onProviderSignIn={handleProviderSignIn}
-                onSubmit={handleEmailSubmit}
-                pendingAction={pendingAction}
-                inputRef={emailInputRef}
-              />
+            ) : (
+              (step === "email" || step === "link") && (
+                <EmailStep
+                  email={
+                    step === "link" && resendCooldown > 0
+                      ? submittedEmail
+                      : email
+                  }
+                  emailError={emailError}
+                  formMessage={formMessage}
+                  isMagicLinkSent={step === "link" && resendCooldown > 0}
+                  isSending={isSending}
+                  onEmailChange={(value) => {
+                    setEmail(value)
+                    setEmailError(null)
+                    setFormMessage(null)
+                  }}
+                  onProviderSignIn={handleProviderSignIn}
+                  onSubmit={handleEmailSubmit}
+                  pendingAction={pendingAction}
+                  inputRef={emailInputRef}
+                />
+              )
             )}
             {step === "verifying" && <VerifyingStep />}
             {step === "success" && (
@@ -371,7 +377,11 @@ function SessionReplacementStep({
       )}
       <div className="flex w-full flex-col gap-2 sm:flex-row">
         <Button
-          className={cn("flex-1", authPrimaryClass, authPrimaryButtonDepthClass)}
+          className={cn(
+            "flex-1",
+            authPrimaryClass,
+            authPrimaryButtonDepthClass
+          )}
           disabled={isPending}
           onClick={onConfirm}
           type="button"
@@ -379,7 +389,11 @@ function SessionReplacementStep({
           {isPending ? "Switching accounts" : "Switch accounts"}
         </Button>
         <Button
-          className={cn("flex-1", authSurfaceClass, authSecondaryButtonDepthClass)}
+          className={cn(
+            "flex-1",
+            authSurfaceClass,
+            authSecondaryButtonDepthClass
+          )}
           disabled={isPending}
           onClick={onCancel}
           type="button"

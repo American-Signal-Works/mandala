@@ -289,10 +289,7 @@ export function createMacOsCredentialStore(
     },
     async delete() {
       try {
-        await runCommand("security", [
-          "delete-generic-password",
-          ...attributes,
-        ])
+        await runCommand("security", ["delete-generic-password", ...attributes])
       } catch (error) {
         if (commandExitCode(error) !== 44) throw error
       }

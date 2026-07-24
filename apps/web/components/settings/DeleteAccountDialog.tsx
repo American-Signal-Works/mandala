@@ -1,5 +1,5 @@
-"use client";
-import { useState, useTransition } from "react";
+"use client"
+import { useState, useTransition } from "react"
 import {
   AlertDialog,
   AlertDialogAction,
@@ -10,15 +10,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
   AlertDialogTrigger,
-} from "@workspace/ui/components/alert-dialog";
-import { Button } from "@workspace/ui/components/button";
-import { Input } from "@workspace/ui/components/input";
-import { toast } from "sonner";
-import { deleteAccount } from "@/actions/admin/delete-account";
+} from "@workspace/ui/components/alert-dialog"
+import { Button } from "@workspace/ui/components/button"
+import { Input } from "@workspace/ui/components/input"
+import { toast } from "sonner"
+import { deleteAccount } from "@/actions/admin/delete-account"
 
 export function DeleteAccountDialog() {
-  const [confirm, setConfirm] = useState("");
-  const [, startTransition] = useTransition();
+  const [confirm, setConfirm] = useState("")
+  const [, startTransition] = useTransition()
 
   return (
     <AlertDialog>
@@ -29,8 +29,9 @@ export function DeleteAccountDialog() {
         <AlertDialogHeader>
           <AlertDialogTitle>Delete your account?</AlertDialogTitle>
           <AlertDialogDescription>
-            This permanently deletes your workspace, pages, collections, fills, trades, and uploaded files.
-            This cannot be undone. Type <strong>delete</strong> to confirm.
+            This permanently deletes your workspace, pages, collections, fills,
+            trades, and uploaded files. This cannot be undone. Type{" "}
+            <strong>delete</strong> to confirm.
           </AlertDialogDescription>
         </AlertDialogHeader>
         <Input
@@ -42,16 +43,18 @@ export function DeleteAccountDialog() {
           <AlertDialogCancel>Cancel</AlertDialogCancel>
           <AlertDialogAction
             disabled={confirm !== "delete"}
-            onClick={() => startTransition(async () => {
-              const result = await deleteAccount();
-              if (!result.ok) toast.error(result.error.message);
-              else window.location.href = "/login";
-            })}
+            onClick={() =>
+              startTransition(async () => {
+                const result = await deleteAccount()
+                if (!result.ok) toast.error(result.error.message)
+                else window.location.href = "/login"
+              })
+            }
           >
             Delete forever
           </AlertDialogAction>
         </AlertDialogFooter>
       </AlertDialogContent>
     </AlertDialog>
-  );
+  )
 }

@@ -1,24 +1,24 @@
-'use client';
+"use client"
 
 import {
   BulletedListRules,
   OrderedListRules,
   TaskListRules,
-} from '@platejs/list';
-import { ListPlugin } from '@platejs/list/react';
-import { KEYS } from 'platejs';
+} from "@platejs/list"
+import { ListPlugin } from "@platejs/list/react"
+import { KEYS } from "platejs"
 
-import { IndentKit } from '@workspace/ui/components/editor/plugins/indent-kit';
-import { BlockList } from '@workspace/ui/components/block-list';
+import { IndentKit } from "@workspace/ui/components/editor/plugins/indent-kit"
+import { BlockList } from "@workspace/ui/components/block-list"
 
 export const ListKit = [
   ...IndentKit,
   ListPlugin.configure({
     inputRules: [
-      BulletedListRules.markdown({ variant: '-' }),
-      BulletedListRules.markdown({ variant: '*' }),
-      OrderedListRules.markdown({ variant: '.' }),
-      OrderedListRules.markdown({ variant: ')' }),
+      BulletedListRules.markdown({ variant: "-" }),
+      BulletedListRules.markdown({ variant: "*" }),
+      OrderedListRules.markdown({ variant: "." }),
+      OrderedListRules.markdown({ variant: ")" }),
       TaskListRules.markdown({ checked: false }),
       TaskListRules.markdown({ checked: true }),
     ],
@@ -36,4 +36,4 @@ export const ListKit = [
       belowNodes: BlockList,
     },
   }),
-];
+]

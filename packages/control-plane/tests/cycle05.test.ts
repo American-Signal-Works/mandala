@@ -9,8 +9,7 @@ import {
 } from "../src/index.js"
 
 const companyId = "20000000-0000-4000-8000-000000000001"
-const uuid = (prefix: number) =>
-  `${prefix}0000000-0000-4000-8000-000000000001`
+const uuid = (prefix: number) => `${prefix}0000000-0000-4000-8000-000000000001`
 const timestamp = "2026-07-14T20:00:00.000Z"
 
 describe("cycle 0.0.5 contracts", () => {

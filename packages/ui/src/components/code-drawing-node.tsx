@@ -1,12 +1,12 @@
-'use client';
+"use client"
 
-import * as React from 'react';
+import * as React from "react"
 
 import type {
   CodeDrawingType,
   TCodeDrawingElement,
   ViewMode,
-} from '@platejs/code-drawing';
+} from "@platejs/code-drawing"
 import {
   VIEW_MODE,
   DEFAULT_MIN_HEIGHT,
@@ -16,8 +16,8 @@ import {
   RENDER_DEBOUNCE_DELAY,
   downloadImage,
   DOWNLOAD_FILENAME,
-} from '@platejs/code-drawing';
-import type { PlateElementProps } from 'platejs/react';
+} from "@platejs/code-drawing"
+import type { PlateElementProps } from "platejs/react"
 import {
   PlateElement,
   useEditorRef,
@@ -26,129 +26,129 @@ import {
   useFocusedLast,
   useReadOnly,
   useSelected,
-} from 'platejs/react';
-import debounce from 'lodash/debounce.js';
-import { Trash2, DownloadIcon } from 'lucide-react';
+} from "platejs/react"
+import debounce from "lodash/debounce.js"
+import { Trash2, DownloadIcon } from "lucide-react"
 
-import { Button } from '@workspace/ui/components/button';
-import { useIsMobile } from '@workspace/ui/hooks/use-mobile';
+import { Button } from "@workspace/ui/components/button"
+import { useIsMobile } from "@workspace/ui/hooks/use-mobile"
 import {
   Popover,
   PopoverAnchor,
   PopoverContent,
-} from '@workspace/ui/components/popover';
+} from "@workspace/ui/components/popover"
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from '@workspace/ui/components/select';
+} from "@workspace/ui/components/select"
 
 function createDebouncedCodeDrawingRenderer(
   setImage: React.Dispatch<React.SetStateAction<string>>,
   setLoading: React.Dispatch<React.SetStateAction<boolean>>,
   setError: React.Dispatch<React.SetStateAction<string | null>>
 ) {
-  let lastRequestId = 0;
+  let lastRequestId = 0
 
   return debounce(
     async (code: string | undefined, drawingType: string | undefined) => {
-      lastRequestId += 1;
-      const requestId = lastRequestId;
+      lastRequestId += 1
+      const requestId = lastRequestId
 
       if (!code?.trim() || !drawingType) {
-        setImage('');
-        setLoading(false);
-        setError(null);
-        return;
+        setImage("")
+        setLoading(false)
+        setError(null)
+        return
       }
 
-      setLoading(true);
-      setError(null);
+      setLoading(true)
+      setError(null)
 
       try {
         const imageData = await renderCodeDrawing(
           drawingType as CodeDrawingType,
           code
-        );
+        )
 
         if (lastRequestId === requestId) {
-          setImage(imageData);
-          setError(null);
+          setImage(imageData)
+          setError(null)
         }
       } catch (err) {
         if (lastRequestId === requestId) {
-          setError(err instanceof Error ? err.message : 'Rendering failed');
-          setImage('');
+          setError(err instanceof Error ? err.message : "Rendering failed")
+          setImage("")
         }
       } finally {
         if (lastRequestId === requestId) {
-          setLoading(false);
+          setLoading(false)
         }
       }
     },
     RENDER_DEBOUNCE_DELAY
-  );
+  )
 }
 
 function useCodeDrawingElement({ element }: { element: TCodeDrawingElement }) {
-  const editor = useEditorRef();
-  const readOnly = useReadOnly();
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState<string | null>(null);
-  const [image, setImage] = React.useState<string>('');
+  const editor = useEditorRef()
+  const readOnly = useReadOnly()
+  const [loading, setLoading] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+  const [image, setImage] = React.useState<string>("")
 
   const debouncedRender = React.useMemo(
     () => createDebouncedCodeDrawingRenderer(setImage, setLoading, setError),
     []
-  );
+  )
 
   React.useEffect(() => {
-    debouncedRender(element.data?.code, element.data?.drawingType);
+    debouncedRender(element.data?.code, element.data?.drawingType)
 
     return () => {
-      debouncedRender.cancel();
-    };
-  }, [element.data?.code, element.data?.drawingType, debouncedRender]);
+      debouncedRender.cancel()
+    }
+  }, [element.data?.code, element.data?.drawingType, debouncedRender])
 
   const removeNode = () => {
-    if (readOnly) return;
+    if (readOnly) return
 
-    const path = editor.api.findPath(element);
+    const path = editor.api.findPath(element)
     if (path) {
-      editor.tf.removeNodes({ at: path });
+      editor.tf.removeNodes({ at: path })
     }
-  };
+  }
 
   return {
     loading,
     error,
     image,
     removeNode,
-  };
+  }
 }
 
 export function CodeDrawingElement(
   props: PlateElementProps<TCodeDrawingElement>
 ) {
-  const { children } = props;
-  const isMobile = useIsMobile();
-  const editor = useEditorRef();
-  const readOnly = useReadOnly();
-  const selected = useSelected();
-  const isFocusedLast = useFocusedLast();
-  const element = useElement<TCodeDrawingElement>();
-  const { removeNode, image, loading } = useCodeDrawingElement({ element });
+  const { children } = props
+  const isMobile = useIsMobile()
+  const editor = useEditorRef()
+  const readOnly = useReadOnly()
+  const selected = useSelected()
+  const isFocusedLast = useFocusedLast()
+  const element = useElement<TCodeDrawingElement>()
+  const { removeNode, image, loading } = useCodeDrawingElement({ element })
 
   const handleDownload = React.useCallback(() => {
-    if (!image) return;
-    downloadImage(image, DOWNLOAD_FILENAME);
-  }, [image]);
+    if (!image) return
+    downloadImage(image, DOWNLOAD_FILENAME)
+  }, [image])
 
   const handleCodeChange = React.useCallback(
     (code: string) => {
-      const path = editor.api.findPath(element);
+      const path = editor.api.findPath(element)
       if (path) {
         editor.tf.setNodes(
           {
@@ -158,15 +158,15 @@ export function CodeDrawingElement(
             },
           },
           { at: path }
-        );
+        )
       }
     },
     [editor, element]
-  );
+  )
 
   const handleDrawingTypeChange = React.useCallback(
     (drawingType: CodeDrawingType) => {
-      const path = editor.api.findPath(element);
+      const path = editor.api.findPath(element)
       if (path) {
         editor.tf.setNodes(
           {
@@ -176,15 +176,15 @@ export function CodeDrawingElement(
             },
           },
           { at: path }
-        );
+        )
       }
     },
     [editor, element]
-  );
+  )
 
   const handleDrawingModeChange = React.useCallback(
     (drawingMode: ViewMode) => {
-      const path = editor.api.findPath(element);
+      const path = editor.api.findPath(element)
       if (path) {
         editor.tf.setNodes(
           {
@@ -194,22 +194,22 @@ export function CodeDrawingElement(
             },
           },
           { at: path }
-        );
+        )
       }
     },
     [editor, element]
-  );
+  )
 
-  const code = element.data?.code ?? '';
-  const drawingType = element.data?.drawingType ?? 'Mermaid';
-  const drawingMode = element.data?.drawingMode ?? 'Both';
+  const code = element.data?.code ?? ""
+  const drawingType = element.data?.drawingType ?? "Mermaid"
+  const drawingMode = element.data?.drawingMode ?? "Both"
 
   const selectionCollapsed = useEditorSelector(
     (editor) => !editor.api.isExpanded(),
     []
-  );
+  )
 
-  const open = isFocusedLast && !readOnly && selected && selectionCollapsed;
+  const open = isFocusedLast && !readOnly && selected && selectionCollapsed
 
   const content = (
     <PlateElement {...props}>
@@ -231,10 +231,10 @@ export function CodeDrawingElement(
       </div>
       {children}
     </PlateElement>
-  );
+  )
 
   if (readOnly) {
-    return content;
+    return content
   }
 
   return (
@@ -269,7 +269,7 @@ export function CodeDrawingElement(
         </div>
       </PopoverContent>
     </Popover>
-  );
+  )
 }
 
 function CodeDrawingPreview({
@@ -284,27 +284,27 @@ function CodeDrawingPreview({
   readOnly = false,
   isMobile = false,
 }: {
-  code: string;
-  drawingType: CodeDrawingType;
-  drawingMode: ViewMode;
-  image: string;
-  loading: boolean;
-  onCodeChange: (code: string) => void;
-  onDrawingTypeChange: (type: CodeDrawingType) => void;
-  onDrawingModeChange: (mode: ViewMode) => void;
-  readOnly?: boolean;
-  isMobile?: boolean;
+  code: string
+  drawingType: CodeDrawingType
+  drawingMode: ViewMode
+  image: string
+  loading: boolean
+  onCodeChange: (code: string) => void
+  onDrawingTypeChange: (type: CodeDrawingType) => void
+  onDrawingModeChange: (mode: ViewMode) => void
+  readOnly?: boolean
+  isMobile?: boolean
 }) {
-  const viewMode = drawingMode;
-  const showCode = viewMode === VIEW_MODE.Both || viewMode === VIEW_MODE.Code;
-  const showBorder = viewMode === VIEW_MODE.Both;
+  const viewMode = drawingMode
+  const showCode = viewMode === VIEW_MODE.Both || viewMode === VIEW_MODE.Code
+  const showBorder = viewMode === VIEW_MODE.Both
 
   const handleCodeChange = React.useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      onCodeChange(e.target.value);
+      onCodeChange(e.target.value)
     },
     [onCodeChange]
-  );
+  )
 
   const toolbar = readOnly ? null : (
     <CodeDrawingToolbar
@@ -315,11 +315,11 @@ function CodeDrawingPreview({
       onDrawingTypeChange={onDrawingTypeChange}
       onDrawingModeChange={onDrawingModeChange}
     />
-  );
+  )
 
   return (
     <div
-      className={`flex ${isMobile ? 'flex-col-reverse' : 'flex-col'} group my-4 w-full items-stretch border bg-muted/50 md:flex-row`}
+      className={`flex ${isMobile ? "flex-col-reverse" : "flex-col"} group my-4 w-full items-stretch border bg-muted/50 md:flex-row`}
       style={{
         minHeight: `${DEFAULT_MIN_HEIGHT}px`,
       }}
@@ -349,7 +349,7 @@ function CodeDrawingPreview({
         />
       )}
     </div>
-  );
+  )
 }
 
 function CodeDrawingToolbar({
@@ -360,25 +360,25 @@ function CodeDrawingToolbar({
   onDrawingTypeChange,
   onDrawingModeChange,
 }: {
-  drawingType: CodeDrawingType;
-  viewMode: ViewMode;
-  readOnly?: boolean;
-  isMobile?: boolean;
-  onDrawingTypeChange: (type: CodeDrawingType) => void;
-  onDrawingModeChange: (mode: ViewMode) => void;
+  drawingType: CodeDrawingType
+  viewMode: ViewMode
+  readOnly?: boolean
+  isMobile?: boolean
+  onDrawingTypeChange: (type: CodeDrawingType) => void
+  onDrawingModeChange: (mode: ViewMode) => void
 }) {
-  const [toolbarVisible, setToolbarVisible] = React.useState(false);
-  const [languageSelectOpen, setLanguageSelectOpen] = React.useState(false);
-  const [viewModeSelectOpen, setViewModeSelectOpen] = React.useState(false);
+  const [toolbarVisible, setToolbarVisible] = React.useState(false)
+  const [languageSelectOpen, setLanguageSelectOpen] = React.useState(false)
+  const [viewModeSelectOpen, setViewModeSelectOpen] = React.useState(false)
 
   const opacityClass =
     isMobile || toolbarVisible || languageSelectOpen || viewModeSelectOpen
-      ? 'opacity-100'
-      : 'opacity-0 group-hover:opacity-100';
+      ? "opacity-100"
+      : "opacity-0 group-hover:opacity-100"
 
   const positionClass = isMobile
-    ? 'flex items-center gap-2'
-    : 'absolute right-2 z-10 flex items-center gap-2';
+    ? "flex items-center gap-2"
+    : "absolute right-2 z-10 flex items-center gap-2"
 
   return (
     <div
@@ -387,7 +387,7 @@ function CodeDrawingToolbar({
       onMouseEnter={() => setToolbarVisible(true)}
       onMouseLeave={() => {
         if (!languageSelectOpen && !viewModeSelectOpen) {
-          setToolbarVisible(false);
+          setToolbarVisible(false)
         }
       }}
     >
@@ -400,7 +400,7 @@ function CodeDrawingToolbar({
         >
           <SelectTrigger
             className={`h-8 w-[120px] border-0 bg-muted/50 text-xs shadow-none ${
-              isMobile ? '' : 'transition-colors hover:bg-zinc-200'
+              isMobile ? "" : "transition-colors hover:bg-zinc-200"
             }`}
           >
             <SelectValue />
@@ -424,7 +424,7 @@ function CodeDrawingToolbar({
         >
           <SelectTrigger
             className={`h-8 w-[80px] border-0 bg-muted/50 text-xs shadow-none ${
-              isMobile ? '' : 'transition-colors hover:bg-zinc-200'
+              isMobile ? "" : "transition-colors hover:bg-zinc-200"
             }`}
           >
             <SelectValue />
@@ -439,7 +439,7 @@ function CodeDrawingToolbar({
         </Select>
       )}
     </div>
-  );
+  )
 }
 
 function CodeDrawingTextarea({
@@ -451,50 +451,50 @@ function CodeDrawingTextarea({
   onCodeChange,
   toolbar,
 }: {
-  code: string;
-  viewMode: ViewMode;
-  readOnly?: boolean;
-  isMobile?: boolean;
-  showBorder?: boolean;
-  onCodeChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void;
-  toolbar?: React.ReactNode;
+  code: string
+  viewMode: ViewMode
+  readOnly?: boolean
+  isMobile?: boolean
+  showBorder?: boolean
+  onCodeChange: (e: React.ChangeEvent<HTMLTextAreaElement>) => void
+  toolbar?: React.ReactNode
 }) {
-  const textareaRef = React.useRef<HTMLTextAreaElement>(null);
-  const isCodeOnlyMode = viewMode === VIEW_MODE.Code;
+  const textareaRef = React.useRef<HTMLTextAreaElement>(null)
+  const isCodeOnlyMode = viewMode === VIEW_MODE.Code
 
-  const [internalCode, setInternalCode] = React.useState(code);
-  const lastExternalCodeRef = React.useRef(code);
+  const [internalCode, setInternalCode] = React.useState(code)
+  const lastExternalCodeRef = React.useRef(code)
 
   React.useEffect(() => {
     if (code !== lastExternalCodeRef.current) {
-      lastExternalCodeRef.current = code;
-      setInternalCode(code);
+      lastExternalCodeRef.current = code
+      setInternalCode(code)
     }
-  }, [code]);
+  }, [code])
 
   const handleChange = React.useCallback(
     (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-      const newValue = e.target.value;
-      setInternalCode(newValue);
-      onCodeChange(e);
+      const newValue = e.target.value
+      setInternalCode(newValue)
+      onCodeChange(e)
     },
     [onCodeChange]
-  );
+  )
 
   return (
     <div
       className={`${
-        isCodeOnlyMode ? 'w-full' : 'min-w-0 flex-1'
-      } flex flex-col ${isCodeOnlyMode && !isMobile ? 'relative' : ''} ${
-        showBorder && !isMobile ? 'border-r' : ''
+        isCodeOnlyMode ? "w-full" : "min-w-0 flex-1"
+      } flex flex-col ${isCodeOnlyMode && !isMobile ? "relative" : ""} ${
+        showBorder && !isMobile ? "border-r" : ""
       }`}
     >
       {toolbar && isCodeOnlyMode && (
         <div
           className={
             isMobile
-              ? 'mt-2 mb-2 flex justify-end px-2'
-              : 'absolute right-2 z-10 mt-2'
+              ? "mt-2 mb-2 flex justify-end px-2"
+              : "absolute right-2 z-10 mt-2"
           }
         >
           {toolbar}
@@ -504,9 +504,9 @@ function CodeDrawingTextarea({
       <div className="relative flex-1 rounded-md">
         <pre
           className={
-            'm-0 overflow-x-auto p-8 pr-4 font-mono text-sm leading-[normal] [tab-size:2] print:break-inside-avoid'
+            "m-0 overflow-x-auto p-8 pr-4 font-mono text-sm leading-[normal] [tab-size:2] print:break-inside-avoid"
           }
-          style={{ minHeight: `${DEFAULT_MIN_HEIGHT}px`, height: '100%' }}
+          style={{ minHeight: `${DEFAULT_MIN_HEIGHT}px`, height: "100%" }}
         >
           <code className="block h-full w-full">
             <textarea
@@ -523,7 +523,7 @@ function CodeDrawingTextarea({
         </pre>
       </div>
     </div>
-  );
+  )
 }
 
 function CodeDrawingPreviewArea({
@@ -536,29 +536,29 @@ function CodeDrawingPreviewArea({
   showBorder = false,
   toolbar,
 }: {
-  image: string;
-  loading: boolean;
-  code: string;
-  viewMode: ViewMode;
-  readOnly?: boolean;
-  isMobile?: boolean;
-  showBorder?: boolean;
-  toolbar?: React.ReactNode;
+  image: string
+  loading: boolean
+  code: string
+  viewMode: ViewMode
+  readOnly?: boolean
+  isMobile?: boolean
+  showBorder?: boolean
+  toolbar?: React.ReactNode
 }) {
-  const showImage = viewMode === VIEW_MODE.Both || viewMode === VIEW_MODE.Image;
+  const showImage = viewMode === VIEW_MODE.Both || viewMode === VIEW_MODE.Image
 
   return (
     <div
-      className={`flex min-w-0 flex-1 flex-col ${isMobile ? '' : 'relative'} ${
-        showBorder && isMobile ? 'border-b' : ''
+      className={`flex min-w-0 flex-1 flex-col ${isMobile ? "" : "relative"} ${
+        showBorder && isMobile ? "border-b" : ""
       }`}
     >
       {toolbar && (
         <div
           className={
             isMobile
-              ? 'mt-2 mb-2 flex justify-end px-2'
-              : 'absolute right-2 z-10 mt-2'
+              ? "mt-2 mb-2 flex justify-end px-2"
+              : "absolute right-2 z-10 mt-2"
           }
         >
           {toolbar}
@@ -568,7 +568,7 @@ function CodeDrawingPreviewArea({
       {showImage ? (
         <div
           className={
-            'flex flex-1 items-center justify-center rounded-md bg-muted/30 p-4'
+            "flex flex-1 items-center justify-center rounded-md bg-muted/30 p-4"
           }
         >
           {loading && <div className="text-muted-foreground">Loading...</div>}
@@ -581,7 +581,7 @@ function CodeDrawingPreviewArea({
           )}
           {!loading && !image && (
             <div className="text-muted-foreground">
-              {code.trim() ? 'Rendering...' : 'Preview will appear here'}
+              {code.trim() ? "Rendering..." : "Preview will appear here"}
             </div>
           )}
         </div>
@@ -591,5 +591,5 @@ function CodeDrawingPreviewArea({
         </div>
       )}
     </div>
-  );
+  )
 }

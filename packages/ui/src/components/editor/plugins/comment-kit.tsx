@@ -1,25 +1,25 @@
-'use client';
+"use client"
 
-import type { ExtendConfig, Path } from 'platejs';
+import type { ExtendConfig, Path } from "platejs"
 
 import {
   type BaseCommentConfig,
   BaseCommentPlugin,
   getDraftCommentKey,
-} from '@platejs/comment';
-import { toTPlatePlugin } from 'platejs/react';
+} from "@platejs/comment"
+import { toTPlatePlugin } from "platejs/react"
 
-import { CommentLeaf } from '@workspace/ui/components/comment-node';
-import { getDiscussionClickTarget } from './discussion-kit';
+import { CommentLeaf } from "@workspace/ui/components/comment-node"
+import { getDiscussionClickTarget } from "./discussion-kit"
 
 type CommentConfig = ExtendConfig<
   BaseCommentConfig,
   {
-    activeId: string | null;
-    commentingBlock: Path | null;
-    hoverId: string | null;
+    activeId: string | null
+    commentingBlock: Path | null
+    hoverId: string | null
   }
->;
+>
 
 export const commentPlugin = toTPlatePlugin<CommentConfig>(BaseCommentPlugin, {
   handlers: {
@@ -27,19 +27,19 @@ export const commentPlugin = toTPlatePlugin<CommentConfig>(BaseCommentPlugin, {
       const activeTarget = getDiscussionClickTarget({
         selector: `.slate-${type}`,
         target: event.target,
-      });
+      })
 
       if (!activeTarget) {
-        setOption('activeId', null);
-        return;
+        setOption("activeId", null)
+        return
       }
 
-      const commentEntry = api.comment?.node();
+      const commentEntry = api.comment?.node()
 
       setOption(
-        'activeId',
+        "activeId",
         commentEntry ? (api.comment?.nodeId(commentEntry[0]) ?? null) : null
-      );
+      )
     },
   },
   options: {
@@ -58,22 +58,22 @@ export const commentPlugin = toTPlatePlugin<CommentConfig>(BaseCommentPlugin, {
     }) => ({
       setDraft: () => {
         if (editor.api.isCollapsed()) {
-          editor.tf.select(editor.api.block()![1]);
+          editor.tf.select(editor.api.block()![1])
         }
 
-        setDraft();
+        setDraft()
 
-        editor.tf.collapse();
-        setOption('activeId', getDraftCommentKey());
-        setOption('commentingBlock', editor.selection!.focus.path.slice(0, 1));
+        editor.tf.collapse()
+        setOption("activeId", getDraftCommentKey())
+        setOption("commentingBlock", editor.selection!.focus.path.slice(0, 1))
       },
     })
   )
   .configure({
     node: { component: CommentLeaf },
     shortcuts: {
-      setDraft: { keys: 'mod+shift+m' },
+      setDraft: { keys: "mod+shift+m" },
     },
-  });
+  })
 
-export const CommentKit = [commentPlugin];
+export const CommentKit = [commentPlugin]

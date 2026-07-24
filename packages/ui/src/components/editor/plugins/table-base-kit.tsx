@@ -3,18 +3,18 @@ import {
   BaseTableCellPlugin,
   BaseTablePlugin,
   BaseTableRowPlugin,
-} from '@platejs/table';
+} from "@platejs/table"
 
 import {
   TableCellElementStatic,
   TableCellHeaderElementStatic,
   TableElementStatic,
   TableRowElementStatic,
-} from '@workspace/ui/components/table-node-static';
+} from "@workspace/ui/components/table-node-static"
 
 export const BaseTableKit = [
   BaseTablePlugin.withComponent(TableElementStatic),
   BaseTableRowPlugin.withComponent(TableRowElementStatic),
   BaseTableCellPlugin.withComponent(TableCellElementStatic),
   BaseTableCellHeaderPlugin.withComponent(TableCellHeaderElementStatic),
-];
+]

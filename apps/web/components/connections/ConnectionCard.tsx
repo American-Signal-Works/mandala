@@ -1,18 +1,31 @@
-"use client";
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@workspace/ui/components/card";
-import { Badge } from "@workspace/ui/components/badge";
-import { Table, TableHeader, TableHead, TableRow, TableBody, TableCell } from "@workspace/ui/components/table";
-import { format } from "date-fns";
-import { ImportSheet } from "./ImportSheet";
-import { Button } from "@workspace/ui/components/button";
+"use client"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@workspace/ui/components/card"
+import { Badge } from "@workspace/ui/components/badge"
+import {
+  Table,
+  TableHeader,
+  TableHead,
+  TableRow,
+  TableBody,
+  TableCell,
+} from "@workspace/ui/components/table"
+import { format } from "date-fns"
+import { ImportSheet } from "./ImportSheet"
+import { Button } from "@workspace/ui/components/button"
 
 type ImportHistoryRow = {
-  filename: string | null;
-  imported_at: string;
-  rows_added: number;
-  status: string;
-  error_message: string | null;
-};
+  filename: string | null
+  imported_at: string
+  rows_added: number
+  status: string
+  error_message: string | null
+}
 
 export function ConnectionCard({
   connectionId,
@@ -21,11 +34,11 @@ export function ConnectionCard({
   history,
   isConnected,
 }: {
-  connectionId: string;
-  displayName: string;
-  description: string;
-  history: ImportHistoryRow[];
-  isConnected: boolean;
+  connectionId: string
+  displayName: string
+  description: string
+  history: ImportHistoryRow[]
+  isConnected: boolean
 }) {
   return (
     <Card>
@@ -41,7 +54,7 @@ export function ConnectionCard({
         </div>
       </CardHeader>
       <CardContent>
-        <div className="flex gap-2 mb-4">
+        <div className="mb-4 flex gap-2">
           <ImportSheet defaultConnectionId={connectionId}>
             <Button size="sm">Import now</Button>
           </ImportSheet>
@@ -60,13 +73,29 @@ export function ConnectionCard({
               {history.map((h, i) => (
                 <TableRow key={i}>
                   <TableCell className="text-sm">{h.filename ?? "—"}</TableCell>
-                  <TableCell className="text-sm">{format(new Date(h.imported_at), "PPp")}</TableCell>
-                  <TableCell className="text-sm tabular-nums">{h.rows_added}</TableCell>
+                  <TableCell className="text-sm">
+                    {format(new Date(h.imported_at), "PPp")}
+                  </TableCell>
+                  <TableCell className="text-sm tabular-nums">
+                    {h.rows_added}
+                  </TableCell>
                   <TableCell>
-                    <Badge variant={h.status === "parsed" ? "default" : h.status === "partial" ? "secondary" : "destructive"}>
+                    <Badge
+                      variant={
+                        h.status === "parsed"
+                          ? "default"
+                          : h.status === "partial"
+                            ? "secondary"
+                            : "destructive"
+                      }
+                    >
                       {h.status}
                     </Badge>
-                    {h.error_message && <span className="text-xs text-muted-foreground ml-2">{h.error_message}</span>}
+                    {h.error_message && (
+                      <span className="ml-2 text-xs text-muted-foreground">
+                        {h.error_message}
+                      </span>
+                    )}
                   </TableCell>
                 </TableRow>
               ))}
@@ -75,5 +104,5 @@ export function ConnectionCard({
         )}
       </CardContent>
     </Card>
-  );
+  )
 }

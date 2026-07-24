@@ -347,9 +347,7 @@ describe("createShipheroGraphqlExecutor", () => {
 
       const execute = createShipheroGraphqlExecutor("access-token")
       const pending = execute("query { ok }", {})
-      const assertion = expect(pending).rejects.toThrow(
-        "shiphero_rate_limited"
-      )
+      const assertion = expect(pending).rejects.toThrow("shiphero_rate_limited")
       await vi.runAllTimersAsync()
       await assertion
       // 30s suggested wait fits the 35s budget once; the second throttle

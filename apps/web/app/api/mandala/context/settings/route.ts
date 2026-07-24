@@ -9,10 +9,7 @@ import {
   setContextWorkspaceConfiguration,
 } from "@/lib/mandala/context"
 import { getCompanyMembership } from "@/lib/mandala/workflows"
-import {
-  allowsCliWorkspace,
-  authenticateRequest,
-} from "@/lib/supabase/request"
+import { allowsCliWorkspace, authenticateRequest } from "@/lib/supabase/request"
 
 export const runtime = "nodejs"
 
@@ -81,10 +78,7 @@ export async function PATCH(request: Request) {
     })
     return contextJson(status)
   } catch (error) {
-    return handleContextError(
-      error,
-      "context_workspace_configuration_failed"
-    )
+    return handleContextError(error, "context_workspace_configuration_failed")
   }
 }
 

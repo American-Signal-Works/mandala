@@ -24,11 +24,17 @@ export function createBoundedJsonSchemaValidator(schema: JsonSchema) {
 }
 
 function validate(schema: JsonSchema, value: unknown, depth: number): boolean {
-  if (depth > 12 || Object.keys(schema).some((key) => !supportedKeywords.has(key)))
+  if (
+    depth > 12 ||
+    Object.keys(schema).some((key) => !supportedKeywords.has(key))
+  )
     return false
   if (Object.hasOwn(schema, "const") && !Object.is(schema.const, value))
     return false
-  if (Array.isArray(schema.enum) && !schema.enum.some((item) => Object.is(item, value)))
+  if (
+    Array.isArray(schema.enum) &&
+    !schema.enum.some((item) => Object.is(item, value))
+  )
     return false
   if (!matchesType(schema.type, value)) return false
 
@@ -39,8 +45,10 @@ function validate(schema: JsonSchema, value: unknown, depth: number): boolean {
       return false
   }
   if (typeof value === "number") {
-    if (typeof schema.minimum === "number" && value < schema.minimum) return false
-    if (typeof schema.maximum === "number" && value > schema.maximum) return false
+    if (typeof schema.minimum === "number" && value < schema.minimum)
+      return false
+    if (typeof schema.maximum === "number" && value > schema.maximum)
+      return false
   }
   if (Array.isArray(value)) {
     if (typeof schema.minItems === "number" && value.length < schema.minItems)
@@ -63,7 +71,10 @@ function validate(schema: JsonSchema, value: unknown, depth: number): boolean {
         if (schema.additionalProperties === false) return false
         continue
       }
-      if (!isRecord(propertySchema) || !validate(propertySchema, entry, depth + 1))
+      if (
+        !isRecord(propertySchema) ||
+        !validate(propertySchema, entry, depth + 1)
+      )
         return false
     }
   }
@@ -72,7 +83,8 @@ function validate(schema: JsonSchema, value: unknown, depth: number): boolean {
 
 function matchesType(type: unknown, value: unknown): boolean {
   if (type === undefined) return true
-  if (Array.isArray(type)) return type.some((entry) => matchesType(entry, value))
+  if (Array.isArray(type))
+    return type.some((entry) => matchesType(entry, value))
   if (type === "null") return value === null
   if (type === "array") return Array.isArray(value)
   if (type === "object") return isRecord(value)

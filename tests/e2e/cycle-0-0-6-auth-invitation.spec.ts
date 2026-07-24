@@ -57,7 +57,10 @@ test("passwordless entry and invitation lifecycle stay server-confirmed", async 
   })
 
   await page.goto(
-    new URL(`/invitation?token=${encodeURIComponent(validToken)}`, appUrl).toString()
+    new URL(
+      `/invitation?token=${encodeURIComponent(validToken)}`,
+      appUrl
+    ).toString()
   )
   await expect(page).toHaveURL(/\/sign-up\?invitation=pending$/)
   expect(page.url()).not.toContain(validToken)
@@ -132,10 +135,7 @@ test("passwordless entry and invitation lifecycle stay server-confirmed", async 
   expect(await expired.json()).toEqual({ error: "invitation_expired" })
 })
 
-async function clickMagicLinkFromExternalOrigin(
-  page: Page,
-  magicLink: string
-) {
+async function clickMagicLinkFromExternalOrigin(page: Page, magicLink: string) {
   // Mail clients and hosted inboxes are different sites from the application.
   // Starting the click at Mailpit verifies the callback cookie survives the
   // same cross-site top-level navigation a real email link creates.
@@ -220,7 +220,8 @@ async function waitForMagicLink(email: string) {
       }
       const message = index.messages?.find((candidate) =>
         candidate.To?.some(
-          (recipient) => recipient.Address?.toLowerCase() === email.toLowerCase()
+          (recipient) =>
+            recipient.Address?.toLowerCase() === email.toLowerCase()
         )
       )
       if (message?.ID) {
@@ -249,7 +250,9 @@ function extractVerificationLink(content: string) {
     .replaceAll("&amp;", "&")
     .replaceAll("\\u0026", "&")
     .replaceAll("\\/", "/")
-  return decoded.match(/https?:\/\/[^"'\\s<>]+\/auth\/v1\/verify[^"'\\s<>]*/)?.[0]
+  return decoded.match(
+    /https?:\/\/[^"'\\s<>]+\/auth\/v1\/verify[^"'\\s<>]*/
+  )?.[0]
 }
 
 function sha256(value: string) {

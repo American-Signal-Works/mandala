@@ -1,5 +1,5 @@
-import Link from "next/link";
-import { LogOut, Settings } from "lucide-react";
+import Link from "next/link"
+import { LogOut, Settings } from "lucide-react"
 import {
   Sidebar,
   SidebarContent,
@@ -10,27 +10,38 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
-} from "@workspace/ui/components/sidebar";
-import { Button } from "@workspace/ui/components/button";
-import { signOut } from "@/actions/auth";
-import { listPages } from "@/actions/pages";
-import { PagesList } from "./PagesList";
-import { NewPageMenu } from "./NewPageMenu";
+} from "@workspace/ui/components/sidebar"
+import { Button } from "@workspace/ui/components/button"
+import { signOut } from "@/actions/auth"
+import { listPages } from "@/actions/pages"
+import { PagesList } from "./PagesList"
+import { NewPageMenu } from "./NewPageMenu"
 
 export async function AppSidebar() {
-  const result = await listPages();
-  const pages = result.ok ? result.data : [];
+  const result = await listPages()
+  const pages = result.ok ? result.data : []
 
   return (
     <Sidebar>
       <SidebarHeader>
-        <Link href="/" className="px-3 py-2 font-semibold text-sm">Mandala</Link>
+        <Link href="/" className="px-3 py-2 text-sm font-semibold">
+          Mandala
+        </Link>
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupContent>
             <NewPageMenu />
-            <PagesList pages={pages as { id: string; title: string; emoji: string | null; page_type: "dashboard" | "collection" }[]} />
+            <PagesList
+              pages={
+                pages as {
+                  id: string
+                  title: string
+                  emoji: string | null
+                  page_type: "dashboard" | "collection"
+                }[]
+              }
+            />
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
@@ -46,7 +57,12 @@ export async function AppSidebar() {
           </SidebarMenuItem>
           <SidebarMenuItem>
             <form action={signOut}>
-              <Button type="submit" variant="ghost" size="sm" className="w-full justify-start">
+              <Button
+                type="submit"
+                variant="ghost"
+                size="sm"
+                className="w-full justify-start"
+              >
                 <LogOut data-icon="inline-start" />
                 Sign out
               </Button>
@@ -55,5 +71,5 @@ export async function AppSidebar() {
         </SidebarMenu>
       </SidebarFooter>
     </Sidebar>
-  );
+  )
 }

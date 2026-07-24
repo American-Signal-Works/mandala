@@ -1,21 +1,21 @@
-'use client';
+"use client"
 
-import * as React from 'react';
+import * as React from "react"
 
-import { AIChatPlugin } from '@platejs/ai/react';
+import { AIChatPlugin } from "@platejs/ai/react"
 import {
   type CursorData,
   type CursorOverlayState,
   useCursorOverlay,
-} from '@platejs/selection/react';
-import { getTableGridAbove } from '@platejs/table';
-import { RangeApi } from 'platejs';
-import { useEditorRef, usePluginOption } from 'platejs/react';
+} from "@platejs/selection/react"
+import { getTableGridAbove } from "@platejs/table"
+import { RangeApi } from "platejs"
+import { useEditorRef, usePluginOption } from "platejs/react"
 
-import { cn } from '@workspace/ui/lib/utils';
+import { cn } from "@workspace/ui/lib/utils"
 
 export function CursorOverlay() {
-  const { cursors } = useCursorOverlay();
+  const { cursors } = useCursorOverlay()
 
   return (
     <>
@@ -23,7 +23,7 @@ export function CursorOverlay() {
         <Cursor key={cursor.id} {...cursor} />
       ))}
     </>
-  );
+  )
 }
 
 function Cursor({
@@ -33,22 +33,22 @@ function Cursor({
   selection,
   selectionRects,
 }: CursorOverlayState<CursorData>) {
-  const editor = useEditorRef();
-  const streaming = usePluginOption(AIChatPlugin, 'streaming');
-  const { style, selectionStyle = style } = data ?? ({} as CursorData);
-  const isCursor = RangeApi.isCollapsed(selection);
+  const editor = useEditorRef()
+  const streaming = usePluginOption(AIChatPlugin, "streaming")
+  const { style, selectionStyle = style } = data ?? ({} as CursorData)
+  const isCursor = RangeApi.isCollapsed(selection)
 
-  if (streaming) return null;
+  if (streaming) return null
 
   // Skip overlay for multi-cell table selection (table has its own selection UI)
-  if (id === 'selection' && selection) {
+  if (id === "selection" && selection) {
     const cellEntries = getTableGridAbove(editor, {
       at: selection,
-      format: 'cell',
-    });
+      format: "cell",
+    })
 
     if (cellEntries.length > 1) {
-      return null;
+      return null
     }
   }
 
@@ -58,9 +58,9 @@ function Cursor({
         <div
           key={i}
           className={cn(
-            'pointer-events-none absolute z-10',
-            id === 'selection' && 'bg-brand/25',
-            id === 'selection' && isCursor && 'bg-primary'
+            "pointer-events-none absolute z-10",
+            id === "selection" && "bg-brand/25",
+            id === "selection" && isCursor && "bg-primary"
           )}
           style={{
             ...selectionStyle,
@@ -71,12 +71,12 @@ function Cursor({
       {caretPosition && (
         <div
           className={cn(
-            'pointer-events-none absolute z-10 w-0.5',
-            id === 'drag' && 'w-px bg-brand'
+            "pointer-events-none absolute z-10 w-0.5",
+            id === "drag" && "bg-brand w-px"
           )}
           style={{ ...caretPosition, ...style }}
         />
       )}
     </>
-  );
+  )
 }

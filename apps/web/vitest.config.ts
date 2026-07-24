@@ -1,7 +1,7 @@
 // apps/web/vitest.config.ts
-import { defineConfig } from "vitest/config";
-import react from "@vitejs/plugin-react";
-import path from "node:path";
+import { defineConfig } from "vitest/config"
+import react from "@vitejs/plugin-react"
+import path from "node:path"
 
 export default defineConfig({
   plugins: [react()],
@@ -16,4 +16,4 @@ export default defineConfig({
       "server-only": path.resolve(__dirname, "test/server-only.ts"),
     },
   },
-});
+})

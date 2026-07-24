@@ -41,8 +41,7 @@ export async function middleware(request: NextRequest) {
     path === "/login" && request.nextUrl.searchParams.get("auth") === "success"
   const isSessionReplacementRoute =
     isAuthRoute &&
-    request.nextUrl.searchParams.get("error") ===
-      "session_replacement_required"
+    request.nextUrl.searchParams.get("error") === "session_replacement_required"
   const isInvitationAuthRoute =
     isAuthRoute && request.nextUrl.searchParams.get("invitation") === "pending"
 

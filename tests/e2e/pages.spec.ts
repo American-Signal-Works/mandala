@@ -1,5 +1,5 @@
-import { test } from "@playwright/test";
+import { test } from "@playwright/test"
 
-test.skip("create blank dashboard and rename", async () => {});
+test.skip("create blank dashboard and rename", async () => {})
 
-test.skip("create collection, add a field, add a row", async () => {});
+test.skip("create collection, add a field, add a row", async () => {})

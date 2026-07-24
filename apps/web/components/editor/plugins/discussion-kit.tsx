@@ -1,166 +1,166 @@
-'use client';
+"use client"
 
-import { createPlatePlugin } from 'platejs/react';
+import { createPlatePlugin } from "platejs/react"
 
-import { BlockDiscussion } from '@workspace/ui/components/block-discussion';
+import { BlockDiscussion } from "@workspace/ui/components/block-discussion"
 
 // Re-export from the dedicated types file so existing consumers keep working.
-export type { TDiscussion } from '@workspace/ui/components/editor/plugins/discussion-types';
-import type { TDiscussion } from '@workspace/ui/components/editor/plugins/discussion-types';
+export type { TDiscussion } from "@workspace/ui/components/editor/plugins/discussion-types"
+import type { TDiscussion } from "@workspace/ui/components/editor/plugins/discussion-types"
 
-const BLOCK_SUGGESTION_SELECTOR = '[data-block-suggestion="true"]';
+const BLOCK_SUGGESTION_SELECTOR = '[data-block-suggestion="true"]'
 
 const getTargetElement = (target: EventTarget | null) => {
-  if (target instanceof HTMLElement) return target;
-  if (target instanceof Node) return target.parentElement;
+  if (target instanceof HTMLElement) return target
+  if (target instanceof Node) return target.parentElement
 
-  return null;
-};
+  return null
+}
 
 export const getDiscussionClickTarget = ({
   selector,
   target,
 }: {
-  selector: string;
-  target: EventTarget | null;
+  selector: string
+  target: EventTarget | null
 }) => {
-  const element = getTargetElement(target);
+  const element = getTargetElement(target)
 
-  if (!element) return null;
+  if (!element) return null
 
-  return element.closest(selector) as HTMLElement | null;
-};
+  return element.closest(selector) as HTMLElement | null
+}
 
 export const getDiscussionBlockClickTarget = ({
   selector = BLOCK_SUGGESTION_SELECTOR,
   target,
 }: {
-  selector?: string;
-  target: EventTarget | null;
+  selector?: string
+  target: EventTarget | null
 }) =>
   getDiscussionClickTarget({
     selector,
     target,
-  });
+  })
 
 const discussionsData: TDiscussion[] = [
   {
-    id: 'discussion1',
+    id: "discussion1",
     comments: [
       {
-        id: 'comment1',
+        id: "comment1",
         contentRich: [
           {
             children: [
               {
-                text: 'Comments are a great way to provide feedback and discuss changes.',
+                text: "Comments are a great way to provide feedback and discuss changes.",
               },
             ],
-            type: 'p',
+            type: "p",
           },
         ],
         createdAt: new Date(Date.now() - 600_000),
-        discussionId: 'discussion1',
+        discussionId: "discussion1",
         isEdited: false,
-        userId: 'charlie',
+        userId: "charlie",
       },
       {
-        id: 'comment2',
+        id: "comment2",
         contentRich: [
           {
             children: [
               {
-                text: 'Agreed! The link to the docs makes it easy to learn more.',
+                text: "Agreed! The link to the docs makes it easy to learn more.",
               },
             ],
-            type: 'p',
+            type: "p",
           },
         ],
         createdAt: new Date(Date.now() - 500_000),
-        discussionId: 'discussion1',
+        discussionId: "discussion1",
         isEdited: false,
-        userId: 'bob',
+        userId: "bob",
       },
     ],
     createdAt: new Date(),
-    documentContent: 'comments',
+    documentContent: "comments",
     isResolved: false,
-    userId: 'charlie',
+    userId: "charlie",
   },
   {
-    id: 'discussion2',
+    id: "discussion2",
     comments: [
       {
-        id: 'comment1',
+        id: "comment1",
         contentRich: [
           {
             children: [
               {
-                text: 'Nice demonstration of overlapping annotations with both comments and suggestions!',
+                text: "Nice demonstration of overlapping annotations with both comments and suggestions!",
               },
             ],
-            type: 'p',
+            type: "p",
           },
         ],
         createdAt: new Date(Date.now() - 300_000),
-        discussionId: 'discussion2',
+        discussionId: "discussion2",
         isEdited: false,
-        userId: 'bob',
+        userId: "bob",
       },
       {
-        id: 'comment2',
+        id: "comment2",
         contentRich: [
           {
             children: [
               {
-                text: 'This helps users understand how powerful the editor can be.',
+                text: "This helps users understand how powerful the editor can be.",
               },
             ],
-            type: 'p',
+            type: "p",
           },
         ],
         createdAt: new Date(Date.now() - 200_000),
-        discussionId: 'discussion2',
+        discussionId: "discussion2",
         isEdited: false,
-        userId: 'charlie',
+        userId: "charlie",
       },
     ],
     createdAt: new Date(),
-    documentContent: 'overlapping',
+    documentContent: "overlapping",
     isResolved: false,
-    userId: 'bob',
+    userId: "bob",
   },
-];
+]
 
 const avatarUrl = (seed: string) =>
-  `https://api.dicebear.com/9.x/glass/svg?seed=${seed}`;
+  `https://api.dicebear.com/9.x/glass/svg?seed=${seed}`
 
 const usersData: Record<
   string,
   { id: string; avatarUrl: string; name: string; hue?: number }
 > = {
   alice: {
-    id: 'alice',
-    avatarUrl: avatarUrl('alice6'),
-    name: 'Alice',
+    id: "alice",
+    avatarUrl: avatarUrl("alice6"),
+    name: "Alice",
   },
   bob: {
-    id: 'bob',
-    avatarUrl: avatarUrl('bob4'),
-    name: 'Bob',
+    id: "bob",
+    avatarUrl: avatarUrl("bob4"),
+    name: "Bob",
   },
   charlie: {
-    id: 'charlie',
-    avatarUrl: avatarUrl('charlie2'),
-    name: 'Charlie',
+    id: "charlie",
+    avatarUrl: avatarUrl("charlie2"),
+    name: "Charlie",
   },
-};
+}
 
 // This plugin is purely UI. It's only used to store the discussions and users data
 export const discussionPlugin = createPlatePlugin({
-  key: 'discussion',
+  key: "discussion",
   options: {
-    currentUserId: 'alice',
+    currentUserId: "alice",
     discussions: discussionsData,
     users: usersData,
   },
@@ -169,8 +169,8 @@ export const discussionPlugin = createPlatePlugin({
     render: { aboveNodes: BlockDiscussion },
   })
   .extendSelectors(({ getOption }) => ({
-    currentUser: () => getOption('users')[getOption('currentUserId')],
-    user: (id: string) => getOption('users')[id],
-  }));
+    currentUser: () => getOption("users")[getOption("currentUserId")],
+    user: (id: string) => getOption("users")[id],
+  }))
 
-export const DiscussionKit = [discussionPlugin];
+export const DiscussionKit = [discussionPlugin]

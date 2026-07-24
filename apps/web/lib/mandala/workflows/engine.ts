@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from "node:crypto";
+import { createHash, randomBytes } from "node:crypto"
 import {
   authorizeCompanyRole,
   permissionForWorkflowDecision,
@@ -6,33 +6,42 @@ import {
   type ContextPacketProvenance,
   type ValidationResult,
   type ValidationStatus,
-} from "@workspace/control-plane";
-import type { WorkflowSpec } from "./schema";
-import { hashWorkflowValue, workflowUuidFor } from "./hash";
+} from "@workspace/control-plane"
+import type { WorkflowSpec } from "./schema"
+import { hashWorkflowValue, workflowUuidFor } from "./hash"
 
-export type { CompanyRole } from "@workspace/control-plane";
-export type { ValidationIssue, ValidationResult } from "@workspace/control-plane";
-export type ActorType = "user" | "system_agent";
-export type { ValidationStatus } from "@workspace/control-plane";
-export type WorkflowItemStatus = "active" | "blocked" | "approved" | "rejected" | "executed" | "resolved";
-export type DecisionKind = "approve" | "edit" | "reject" | "request_rework";
+export type { CompanyRole } from "@workspace/control-plane"
+export type {
+  ValidationIssue,
+  ValidationResult,
+} from "@workspace/control-plane"
+export type ActorType = "user" | "system_agent"
+export type { ValidationStatus } from "@workspace/control-plane"
+export type WorkflowItemStatus =
+  | "active"
+  | "blocked"
+  | "approved"
+  | "rejected"
+  | "executed"
+  | "resolved"
+export type DecisionKind = "approve" | "edit" | "reject" | "request_rework"
 
 export type WorkflowDefinitionRecord = {
-  id: string;
-  companyId: string;
-  workflowKey: string;
-  workflowType: string;
-  version: string;
-  status: WorkflowSpec["status"];
-  spec: WorkflowSpec;
-  skillMarkdown: string;
-};
+  id: string
+  companyId: string
+  workflowKey: string
+  workflowType: string
+  version: string
+  status: WorkflowSpec["status"]
+  spec: WorkflowSpec
+  skillMarkdown: string
+}
 
 export type WorkflowRunRecord = {
-  id: string;
-  companyId: string;
-  workflowDefinitionId: string;
-  workflowType: string;
+  id: string
+  companyId: string
+  workflowDefinitionId: string
+  workflowType: string
   status:
     | "started"
     | "suppressed"
@@ -42,303 +51,339 @@ export type WorkflowRunRecord = {
     | "rejected"
     | "rework_requested"
     | "executed"
-    | "failed";
-  input: Record<string, unknown>;
-  langGraphThreadId: string | null;
-  langGraphCheckpointId: string | null;
-  langSmithTraceId: string | null;
-  langSmithRunId: string | null;
-  startedBy: string;
-  startedAt: string;
-  completedAt: string | null;
-};
+    | "failed"
+  input: Record<string, unknown>
+  langGraphThreadId: string | null
+  langGraphCheckpointId: string | null
+  langSmithTraceId: string | null
+  langSmithRunId: string | null
+  startedBy: string
+  startedAt: string
+  completedAt: string | null
+}
 
 export type WorkflowEventRecord = {
-  id: string;
-  companyId: string;
-  workflowRunId: string;
-  workflowDefinitionId: string;
-  eventKey: string;
-  eventType: string;
-  origin: "fixture" | "manual" | "connector" | "schedule" | "webhook";
-  sourceRef: Record<string, unknown>;
-  payload: Record<string, unknown>;
-  freshnessState: "fresh" | "stale" | "unknown";
-  validationStatus: ValidationStatus;
-  validationResult: ValidationResult;
-  createdAt: string;
-};
+  id: string
+  companyId: string
+  workflowRunId: string
+  workflowDefinitionId: string
+  eventKey: string
+  eventType: string
+  origin: "fixture" | "manual" | "connector" | "schedule" | "webhook"
+  sourceRef: Record<string, unknown>
+  payload: Record<string, unknown>
+  freshnessState: "fresh" | "stale" | "unknown"
+  validationStatus: ValidationStatus
+  validationResult: ValidationResult
+  createdAt: string
+}
 
 export type WorkflowItemRecord = {
-  id: string;
-  companyId: string;
-  workflowRunId: string;
-  workflowEventId: string;
-  workflowDefinitionId: string;
-  itemKey: string;
-  itemType: string;
-  title: string;
-  status: WorkflowItemStatus;
-  priority: number;
-  relatedRecords: Record<string, unknown>;
-  resolutionState: Record<string, unknown>;
-  createdAt: string;
-  updatedAt: string;
-};
+  id: string
+  companyId: string
+  workflowRunId: string
+  workflowEventId: string
+  workflowDefinitionId: string
+  itemKey: string
+  itemType: string
+  title: string
+  status: WorkflowItemStatus
+  priority: number
+  relatedRecords: Record<string, unknown>
+  resolutionState: Record<string, unknown>
+  createdAt: string
+  updatedAt: string
+}
 
 export type WorkflowContextPacketRecord = {
-  id: string;
-  companyId: string;
-  workflowRunId: string;
-  workflowItemId: string;
-  sources: Array<Record<string, unknown>>;
-  facts: Record<string, unknown>;
-  memoryRefs: Array<Record<string, unknown>>;
-  operationalContext?: ContextPacketProvenance;
-  freshnessState: "fresh" | "stale" | "unknown";
-  warnings: string[];
-  createdAt: string;
-};
+  id: string
+  companyId: string
+  workflowRunId: string
+  workflowItemId: string
+  sources: Array<Record<string, unknown>>
+  facts: Record<string, unknown>
+  memoryRefs: Array<Record<string, unknown>>
+  operationalContext?: ContextPacketProvenance
+  freshnessState: "fresh" | "stale" | "unknown"
+  warnings: string[]
+  createdAt: string
+}
 
 export type WorkflowRecommendationRecord = {
-  id: string;
-  companyId: string;
-  workflowRunId: string;
-  workflowItemId: string;
-  contextPacketId: string;
-  status: "ready_for_review" | "blocked";
-  rationaleSummary: string;
-  warningState: ValidationStatus;
-  warnings: string[];
-  confidence: number;
-  freshnessState: "fresh" | "stale" | "unknown";
-  input: Record<string, unknown>;
-  output: Record<string, unknown>;
-  langSmithTraceId: string | null;
-  langSmithRunId: string | null;
-  createdAt: string;
-};
+  id: string
+  companyId: string
+  workflowRunId: string
+  workflowItemId: string
+  contextPacketId: string
+  status: "ready_for_review" | "blocked"
+  rationaleSummary: string
+  warningState: ValidationStatus
+  warnings: string[]
+  confidence: number
+  freshnessState: "fresh" | "stale" | "unknown"
+  input: Record<string, unknown>
+  output: Record<string, unknown>
+  langSmithTraceId: string | null
+  langSmithRunId: string | null
+  createdAt: string
+}
 
 export type WorkflowEvidenceRecord = {
-  id: string;
-  companyId: string;
-  workflowRunId: string;
-  workflowItemId: string;
-  recommendationRunId: string;
-  sourceRefs: Array<Record<string, unknown>>;
-  assumptions: string[];
-  warnings: string[];
-  evidence: Array<Record<string, unknown>>;
-  createdAt: string;
-};
+  id: string
+  companyId: string
+  workflowRunId: string
+  workflowItemId: string
+  recommendationRunId: string
+  sourceRefs: Array<Record<string, unknown>>
+  assumptions: string[]
+  warnings: string[]
+  evidence: Array<Record<string, unknown>>
+  createdAt: string
+}
 
 export type WorkflowActionDraftRecord = {
-  id: string;
-  companyId: string;
-  workflowRunId: string;
-  workflowItemId: string;
-  recommendationRunId: string;
-  evidenceSnapshotId: string;
-  actionType: string;
-  status: "pending_review" | "approved" | "rejected" | "rework_requested" | "executed";
-  payload: WorkflowActionPayload;
-  payloadHash: string;
-  editPolicy: WorkflowEditPolicy;
-  createdAt: string;
-  updatedAt: string;
-};
+  id: string
+  companyId: string
+  workflowRunId: string
+  workflowItemId: string
+  recommendationRunId: string
+  evidenceSnapshotId: string
+  actionType: string
+  status:
+    | "pending_review"
+    | "approved"
+    | "rejected"
+    | "rework_requested"
+    | "executed"
+  payload: WorkflowActionPayload
+  payloadHash: string
+  editPolicy: WorkflowEditPolicy
+  createdAt: string
+  updatedAt: string
+}
 
 export type WorkflowEditPolicy = {
-  editable: boolean;
-  requireReason: boolean;
-  immutablePaths: string[][];
-  arrayLengthPaths: string[][];
-  positiveIntegerPaths: string[][];
-  nonEmptyStringPaths: string[][];
-};
+  editable: boolean
+  requireReason: boolean
+  immutablePaths: string[][]
+  arrayLengthPaths: string[][]
+  positiveIntegerPaths: string[][]
+  nonEmptyStringPaths: string[][]
+}
 
-export type WorkflowActionPayload = Record<string, unknown>;
+export type WorkflowActionPayload = Record<string, unknown>
 
 export type WorkflowDecisionRecord = {
-  id: string;
-  companyId: string;
-  workflowRunId: string;
-  workflowItemId: string;
-  actionDraftId: string;
-  decision: DecisionKind;
-  actorType: ActorType;
-  decidedBy: string;
-  reason: string | null;
-  warningsAcknowledged: boolean;
-  editedPayload: WorkflowActionPayload | null;
-  createdAt: string;
-};
+  id: string
+  companyId: string
+  workflowRunId: string
+  workflowItemId: string
+  actionDraftId: string
+  decision: DecisionKind
+  actorType: ActorType
+  decidedBy: string
+  reason: string | null
+  warningsAcknowledged: boolean
+  editedPayload: WorkflowActionPayload | null
+  createdAt: string
+}
 
 export type WorkflowExecutionTokenRecord = {
-  id: string;
-  companyId: string;
-  actionDraftId: string;
-  actionType: string;
-  tokenHash: string;
-  payloadHash: string;
-  expiresAt: string;
-  consumedAt: string | null;
-  createdBy: string;
-  createdAt: string;
-};
+  id: string
+  companyId: string
+  actionDraftId: string
+  actionType: string
+  tokenHash: string
+  payloadHash: string
+  expiresAt: string
+  consumedAt: string | null
+  createdBy: string
+  createdAt: string
+}
 
 export type WorkflowActionAttemptRecord = {
-  id: string;
-  companyId: string;
-  workflowRunId: string;
-  workflowItemId: string;
-  actionDraftId: string;
-  decisionId: string;
-  executionTokenId: string;
-  idempotencyKey: string;
-  actionType: string;
-  mode: "mock";
-  status: "succeeded" | "failed";
-  requestPayload: WorkflowActionPayload;
-  resultPayload: Record<string, unknown>;
-  mockExternalId: string | null;
-  errorMessage: string | null;
-  createdAt: string;
-  completedAt: string | null;
-};
+  id: string
+  companyId: string
+  workflowRunId: string
+  workflowItemId: string
+  actionDraftId: string
+  decisionId: string
+  executionTokenId: string
+  idempotencyKey: string
+  actionType: string
+  mode: "mock"
+  status: "succeeded" | "failed"
+  requestPayload: WorkflowActionPayload
+  resultPayload: Record<string, unknown>
+  mockExternalId: string | null
+  errorMessage: string | null
+  createdAt: string
+  completedAt: string | null
+}
 
 export type WorkflowAuditEventRecord = {
-  id: string;
-  companyId: string;
-  actorType: ActorType;
-  actorId: string | null;
-  workflowRunId: string;
-  workflowItemId: string | null;
-  eventType: string;
-  summary: string;
-  payload: Record<string, unknown>;
+  id: string
+  companyId: string
+  actorType: ActorType
+  actorId: string | null
+  workflowRunId: string
+  workflowItemId: string | null
+  eventType: string
+  summary: string
+  payload: Record<string, unknown>
   trace: {
-    langGraphThreadId: string | null;
-    langGraphCheckpointId: string | null;
-    langSmithTraceId: string | null;
-    langSmithRunId: string | null;
-  };
-  createdAt: string;
-};
+    langGraphThreadId: string | null
+    langGraphCheckpointId: string | null
+    langSmithTraceId: string | null
+    langSmithRunId: string | null
+  }
+  createdAt: string
+}
 
 export type WorkflowFixtureRunResult = {
-  definition: WorkflowDefinitionRecord;
-  run: WorkflowRunRecord;
-  event: WorkflowEventRecord;
-  item: WorkflowItemRecord | null;
-  contextPacket: WorkflowContextPacketRecord | null;
-  recommendation: WorkflowRecommendationRecord | null;
-  evidence: WorkflowEvidenceRecord | null;
-  draft: WorkflowActionDraftRecord | null;
-  auditEvents: WorkflowAuditEventRecord[];
-};
+  definition: WorkflowDefinitionRecord
+  run: WorkflowRunRecord
+  event: WorkflowEventRecord
+  item: WorkflowItemRecord | null
+  contextPacket: WorkflowContextPacketRecord | null
+  recommendation: WorkflowRecommendationRecord | null
+  evidence: WorkflowEvidenceRecord | null
+  draft: WorkflowActionDraftRecord | null
+  auditEvents: WorkflowAuditEventRecord[]
+}
 
 export type DecisionResult = {
-  decision: WorkflowDecisionRecord;
-  item: WorkflowItemRecord;
-  draft: WorkflowActionDraftRecord;
+  decision: WorkflowDecisionRecord
+  item: WorkflowItemRecord
+  draft: WorkflowActionDraftRecord
   executionToken: {
-    token: WorkflowExecutionTokenRecord;
-    rawToken: string;
-  } | null;
-  auditEvent: WorkflowAuditEventRecord;
-};
+    token: WorkflowExecutionTokenRecord
+    rawToken: string
+  } | null
+  auditEvent: WorkflowAuditEventRecord
+}
 
 export type MockExecutionResult = {
-  attempt: WorkflowActionAttemptRecord;
-  item: WorkflowItemRecord;
-  draft: WorkflowActionDraftRecord;
-  auditEvent: WorkflowAuditEventRecord | null;
-  duplicate: boolean;
-};
+  attempt: WorkflowActionAttemptRecord
+  item: WorkflowItemRecord
+  draft: WorkflowActionDraftRecord
+  auditEvent: WorkflowAuditEventRecord | null
+  duplicate: boolean
+}
 
 export class WorkflowMemoryStore {
-  definitions: WorkflowDefinitionRecord[] = [];
-  runs: WorkflowRunRecord[] = [];
-  events: WorkflowEventRecord[] = [];
-  items: WorkflowItemRecord[] = [];
-  contextPackets: WorkflowContextPacketRecord[] = [];
-  recommendations: WorkflowRecommendationRecord[] = [];
-  evidenceSnapshots: WorkflowEvidenceRecord[] = [];
-  drafts: WorkflowActionDraftRecord[] = [];
-  decisions: WorkflowDecisionRecord[] = [];
-  executionTokens: WorkflowExecutionTokenRecord[] = [];
-  actionAttempts: WorkflowActionAttemptRecord[] = [];
-  auditEvents: WorkflowAuditEventRecord[] = [];
+  definitions: WorkflowDefinitionRecord[] = []
+  runs: WorkflowRunRecord[] = []
+  events: WorkflowEventRecord[] = []
+  items: WorkflowItemRecord[] = []
+  contextPackets: WorkflowContextPacketRecord[] = []
+  recommendations: WorkflowRecommendationRecord[] = []
+  evidenceSnapshots: WorkflowEvidenceRecord[] = []
+  drafts: WorkflowActionDraftRecord[] = []
+  decisions: WorkflowDecisionRecord[] = []
+  executionTokens: WorkflowExecutionTokenRecord[] = []
+  actionAttempts: WorkflowActionAttemptRecord[] = []
+  auditEvents: WorkflowAuditEventRecord[] = []
 
-  findActiveItem(itemKey: string, companyId: string): WorkflowItemRecord | null {
+  findActiveItem(
+    itemKey: string,
+    companyId: string
+  ): WorkflowItemRecord | null {
     return (
       this.items.find(
         (item) =>
           item.companyId === companyId &&
           item.itemKey === itemKey &&
-          (item.status === "active" || item.status === "blocked" || item.status === "approved"),
+          (item.status === "active" ||
+            item.status === "blocked" ||
+            item.status === "approved")
       ) ?? null
-    );
+    )
   }
 
   latestDraftForItem(itemId: string): WorkflowActionDraftRecord | null {
-    return findLast(this.drafts, (draft) => draft.workflowItemId === itemId);
+    return findLast(this.drafts, (draft) => draft.workflowItemId === itemId)
   }
 }
 
 // Fixture-only domain simulation. Production authorization stays in checked RPCs.
 export function recordWorkflowDecision(input: {
-  store: WorkflowMemoryStore;
-  companyId: string;
-  actionDraftId: string;
-  decision: DecisionKind;
-  actorType: ActorType;
-  actorId: string;
-  actorRole: CompanyRole;
-  reason?: string;
-  warningsAcknowledged?: boolean;
-  editedPayload?: WorkflowActionPayload;
-  now?: Date;
+  store: WorkflowMemoryStore
+  companyId: string
+  actionDraftId: string
+  decision: DecisionKind
+  actorType: ActorType
+  actorId: string
+  actorRole: CompanyRole
+  reason?: string
+  warningsAcknowledged?: boolean
+  editedPayload?: WorkflowActionPayload
+  now?: Date
 }): DecisionResult {
-  const now = input.now ?? new Date();
-  const createdAt = now.toISOString();
-  const draft = input.store.drafts.find((candidate) => candidate.id === input.actionDraftId && candidate.companyId === input.companyId);
-  if (!draft) throw new Error("Action draft not found.");
-  if (draft.status !== "pending_review") throw new Error("Action draft is not pending review.");
-  if (input.decision === "edit" && !input.editedPayload) throw new Error("Edit decisions require an edited payload.");
-  if (input.decision === "edit" && !draft.editPolicy.editable) throw new Error("Action draft cannot be edited.");
-  if (input.decision === "edit" && draft.editPolicy.requireReason && !input.reason?.trim()) {
-    throw new Error("Edit decisions require a reason.");
+  const now = input.now ?? new Date()
+  const createdAt = now.toISOString()
+  const draft = input.store.drafts.find(
+    (candidate) =>
+      candidate.id === input.actionDraftId &&
+      candidate.companyId === input.companyId
+  )
+  if (!draft) throw new Error("Action draft not found.")
+  if (draft.status !== "pending_review")
+    throw new Error("Action draft is not pending review.")
+  if (input.decision === "edit" && !input.editedPayload)
+    throw new Error("Edit decisions require an edited payload.")
+  if (input.decision === "edit" && !draft.editPolicy.editable)
+    throw new Error("Action draft cannot be edited.")
+  if (
+    input.decision === "edit" &&
+    draft.editPolicy.requireReason &&
+    !input.reason?.trim()
+  ) {
+    throw new Error("Edit decisions require a reason.")
   }
-  if (input.decision !== "edit" && input.editedPayload) throw new Error("Edited payload is only allowed for edit decisions.");
+  if (input.decision !== "edit" && input.editedPayload)
+    throw new Error("Edited payload is only allowed for edit decisions.")
 
-  const item = input.store.items.find((candidate) => candidate.id === draft.workflowItemId && candidate.companyId === input.companyId);
-  if (!item) throw new Error("Workflow item not found.");
+  const item = input.store.items.find(
+    (candidate) =>
+      candidate.id === draft.workflowItemId &&
+      candidate.companyId === input.companyId
+  )
+  if (!item) throw new Error("Workflow item not found.")
 
-  const run = input.store.runs.find((candidate) => candidate.id === draft.workflowRunId && candidate.companyId === input.companyId);
-  if (!run) throw new Error("Workflow run not found.");
+  const run = input.store.runs.find(
+    (candidate) =>
+      candidate.id === draft.workflowRunId &&
+      candidate.companyId === input.companyId
+  )
+  if (!run) throw new Error("Workflow run not found.")
 
   const recommendation = input.store.recommendations.find(
-    (candidate) => candidate.id === draft.recommendationRunId && candidate.companyId === input.companyId,
-  );
-  if (!recommendation) throw new Error("Recommendation not found.");
+    (candidate) =>
+      candidate.id === draft.recommendationRunId &&
+      candidate.companyId === input.companyId
+  )
+  if (!recommendation) throw new Error("Recommendation not found.")
 
-  const decisionPermission = permissionForWorkflowDecision(input.decision);
-  const decisionAuthorization = authorizeCompanyRole(input.actorRole, decisionPermission);
+  const decisionPermission = permissionForWorkflowDecision(input.decision)
+  const decisionAuthorization = authorizeCompanyRole(
+    input.actorRole,
+    decisionPermission
+  )
   if (decisionAuthorization.effect === "deny") {
-    throw new Error("Actor is not allowed to record this workflow decision.");
+    throw new Error("Actor is not allowed to record this workflow decision.")
   }
 
   if (input.actorType !== "user") {
-    throw new Error("System agents cannot record workflow decisions.");
+    throw new Error("System agents cannot record workflow decisions.")
   }
 
   if (
     (input.decision === "approve" || input.decision === "edit") &&
-    authorizeCompanyRole(input.actorRole, "workflow.execution_token.issue").effect === "deny"
+    authorizeCompanyRole(input.actorRole, "workflow.execution_token.issue")
+      .effect === "deny"
   ) {
-    throw new Error("Actor is not allowed to issue execution tokens.");
+    throw new Error("Actor is not allowed to issue execution tokens.")
   }
 
   if (
@@ -346,13 +391,20 @@ export function recordWorkflowDecision(input: {
     recommendation.warnings.length > 0 &&
     input.warningsAcknowledged !== true
   ) {
-    throw new Error("Warnings must be acknowledged before approval.");
+    throw new Error("Warnings must be acknowledged before approval.")
   }
 
   if (input.decision === "edit" && input.editedPayload) {
-    assertEditedPayloadMatchesPolicy(draft.payload, input.editedPayload, draft.editPolicy);
+    assertEditedPayloadMatchesPolicy(
+      draft.payload,
+      input.editedPayload,
+      draft.editPolicy
+    )
   }
-  const payload = input.decision === "edit" && input.editedPayload ? input.editedPayload : draft.payload;
+  const payload =
+    input.decision === "edit" && input.editedPayload
+      ? input.editedPayload
+      : draft.payload
   const updatedDraft: WorkflowActionDraftRecord = {
     ...draft,
     status:
@@ -364,8 +416,8 @@ export function recordWorkflowDecision(input: {
     payload,
     payloadHash: hashWorkflowValue(payload),
     updatedAt: createdAt,
-  };
-  replaceById(input.store.drafts, updatedDraft);
+  }
+  replaceById(input.store.drafts, updatedDraft)
 
   const updatedItem: WorkflowItemRecord = {
     ...item,
@@ -382,19 +434,25 @@ export function recordWorkflowDecision(input: {
       warningsAcknowledged: input.warningsAcknowledged === true,
     },
     updatedAt: createdAt,
-  };
-  replaceById(input.store.items, updatedItem);
+  }
+  replaceById(input.store.items, updatedItem)
 
   run.status =
     input.decision === "approve" || input.decision === "edit"
       ? "approved"
       : input.decision === "reject"
         ? "rejected"
-        : "rework_requested";
-  if (input.decision === "reject") run.completedAt = createdAt;
+        : "rework_requested"
+  if (input.decision === "reject") run.completedAt = createdAt
 
   const decision: WorkflowDecisionRecord = {
-    id: idFor("decision", input.companyId, input.actionDraftId, input.decision, String(input.store.decisions.length + 1)),
+    id: idFor(
+      "decision",
+      input.companyId,
+      input.actionDraftId,
+      input.decision,
+      String(input.store.decisions.length + 1)
+    ),
     companyId: input.companyId,
     workflowRunId: draft.workflowRunId,
     workflowItemId: draft.workflowItemId,
@@ -406,13 +464,19 @@ export function recordWorkflowDecision(input: {
     warningsAcknowledged: input.warningsAcknowledged === true,
     editedPayload: input.decision === "edit" ? payload : null,
     createdAt,
-  };
-  input.store.decisions.push(decision);
+  }
+  input.store.decisions.push(decision)
 
   const executionToken =
     input.decision === "approve" || input.decision === "edit"
-      ? issueExecutionToken(input.store, input.companyId, updatedDraft, input.actorId, now)
-      : null;
+      ? issueExecutionToken(
+          input.store,
+          input.companyId,
+          updatedDraft,
+          input.actorId,
+          now
+        )
+      : null
 
   const auditEvent = createAuditEvent(input.store, {
     companyId: input.companyId,
@@ -428,41 +492,64 @@ export function recordWorkflowDecision(input: {
       warningsAcknowledged: decision.warningsAcknowledged,
     },
     createdAt,
-  });
+  })
 
-  return { decision, item: updatedItem, draft: updatedDraft, executionToken, auditEvent };
+  return {
+    decision,
+    item: updatedItem,
+    draft: updatedDraft,
+    executionToken,
+    auditEvent,
+  }
 }
 
 export function executeMockAction(input: {
-  store: WorkflowMemoryStore;
-  companyId: string;
-  actionDraftId: string;
-  rawToken: string;
-  idempotencyKey: string;
-  actorUserId: string;
-  actorRole: CompanyRole;
-  payload: WorkflowActionPayload;
-  now?: Date;
+  store: WorkflowMemoryStore
+  companyId: string
+  actionDraftId: string
+  rawToken: string
+  idempotencyKey: string
+  actorUserId: string
+  actorRole: CompanyRole
+  payload: WorkflowActionPayload
+  now?: Date
 }): MockExecutionResult {
-  const now = input.now ?? new Date();
-  const createdAt = now.toISOString();
-  const executionAuthorization = authorizeCompanyRole(input.actorRole, "workflow.execution.mock");
+  const now = input.now ?? new Date()
+  const createdAt = now.toISOString()
+  const executionAuthorization = authorizeCompanyRole(
+    input.actorRole,
+    "workflow.execution.mock"
+  )
   if (executionAuthorization.effect === "deny") {
-    throw new Error("Actor is not allowed to execute workflow actions.");
+    throw new Error("Actor is not allowed to execute workflow actions.")
   }
   const existingAttempt = input.store.actionAttempts.find(
-    (attempt) => attempt.companyId === input.companyId && attempt.idempotencyKey === input.idempotencyKey,
-  );
+    (attempt) =>
+      attempt.companyId === input.companyId &&
+      attempt.idempotencyKey === input.idempotencyKey
+  )
   if (existingAttempt) {
     if (
       existingAttempt.actionDraftId !== input.actionDraftId ||
-      hashWorkflowValue(existingAttempt.requestPayload) !== hashWorkflowValue(input.payload)
+      hashWorkflowValue(existingAttempt.requestPayload) !==
+        hashWorkflowValue(input.payload)
     ) {
-      throw new Error("Idempotency key was already used for a different request.");
+      throw new Error(
+        "Idempotency key was already used for a different request."
+      )
     }
-    const existingItem = mustFind(input.store.items, existingAttempt.workflowItemId);
-    const existingDraft = mustFind(input.store.drafts, existingAttempt.actionDraftId);
-    const existingRun = mustFind(input.store.runs, existingAttempt.workflowRunId);
+    const existingItem = mustFind(
+      input.store.items,
+      existingAttempt.workflowItemId
+    )
+    const existingDraft = mustFind(
+      input.store.drafts,
+      existingAttempt.actionDraftId
+    )
+    const existingRun = mustFind(
+      input.store.runs,
+      existingAttempt.workflowRunId
+    )
     const auditEvent = createAuditEvent(input.store, {
       companyId: input.companyId,
       actorType: "user",
@@ -476,42 +563,57 @@ export function executeMockAction(input: {
         idempotencyKey: input.idempotencyKey,
       },
       createdAt,
-    });
-    return { attempt: existingAttempt, item: existingItem, draft: existingDraft, auditEvent, duplicate: true };
+    })
+    return {
+      attempt: existingAttempt,
+      item: existingItem,
+      draft: existingDraft,
+      auditEvent,
+      duplicate: true,
+    }
   }
 
-  const draft = input.store.drafts.find((candidate) => candidate.id === input.actionDraftId && candidate.companyId === input.companyId);
-  if (!draft) throw new Error("Action draft not found.");
-  if (draft.status !== "approved") throw new Error("Action draft is not approved.");
+  const draft = input.store.drafts.find(
+    (candidate) =>
+      candidate.id === input.actionDraftId &&
+      candidate.companyId === input.companyId
+  )
+  if (!draft) throw new Error("Action draft not found.")
+  if (draft.status !== "approved")
+    throw new Error("Action draft is not approved.")
 
-  const tokenHash = hashExecutionToken(input.rawToken);
+  const tokenHash = hashExecutionToken(input.rawToken)
   const token = input.store.executionTokens.find(
     (candidate) =>
       candidate.actionDraftId === draft.id &&
       candidate.companyId === input.companyId &&
       candidate.actionType === draft.actionType &&
-      candidate.tokenHash === tokenHash,
-  );
-  if (!token) throw new Error("Execution token not found.");
-  if (token.consumedAt) throw new Error("Execution token has already been consumed.");
-  if (new Date(token.expiresAt).getTime() <= now.getTime()) throw new Error("Execution token has expired.");
+      candidate.tokenHash === tokenHash
+  )
+  if (!token) throw new Error("Execution token not found.")
+  if (token.consumedAt)
+    throw new Error("Execution token has already been consumed.")
+  if (new Date(token.expiresAt).getTime() <= now.getTime())
+    throw new Error("Execution token has expired.")
 
-  const payloadHash = hashWorkflowValue(input.payload);
+  const payloadHash = hashWorkflowValue(input.payload)
   if (payloadHash !== token.payloadHash || payloadHash !== draft.payloadHash) {
-    throw new Error("Execution payload does not match the approved draft.");
+    throw new Error("Execution payload does not match the approved draft.")
   }
 
-  const item = mustFind(input.store.items, draft.workflowItemId);
-  const run = mustFind(input.store.runs, draft.workflowRunId);
+  const item = mustFind(input.store.items, draft.workflowItemId)
+  const run = mustFind(input.store.runs, draft.workflowRunId)
   const decision = findLast(
     input.store.decisions,
-    (candidate) => candidate.actionDraftId === draft.id && candidate.companyId === input.companyId,
-  );
-  if (!decision) throw new Error("Approved decision not found.");
+    (candidate) =>
+      candidate.actionDraftId === draft.id &&
+      candidate.companyId === input.companyId
+  )
+  if (!decision) throw new Error("Approved decision not found.")
 
-  token.consumedAt = createdAt;
-  const completedAt = createdAt;
-  const mockExternalId = `mock_action_${hashWorkflowValue([input.companyId, draft.id, input.idempotencyKey]).slice(0, 16)}`;
+  token.consumedAt = createdAt
+  const completedAt = createdAt
+  const mockExternalId = `mock_action_${hashWorkflowValue([input.companyId, draft.id, input.idempotencyKey]).slice(0, 16)}`
   const attempt: WorkflowActionAttemptRecord = {
     id: idFor("attempt", input.companyId, draft.id, input.idempotencyKey),
     companyId: input.companyId,
@@ -534,15 +636,15 @@ export function executeMockAction(input: {
     errorMessage: null,
     createdAt,
     completedAt,
-  };
-  input.store.actionAttempts.push(attempt);
+  }
+  input.store.actionAttempts.push(attempt)
 
   const updatedDraft: WorkflowActionDraftRecord = {
     ...draft,
     status: "executed",
     updatedAt: completedAt,
-  };
-  replaceById(input.store.drafts, updatedDraft);
+  }
+  replaceById(input.store.drafts, updatedDraft)
 
   const updatedItem: WorkflowItemRecord = {
     ...item,
@@ -552,11 +654,11 @@ export function executeMockAction(input: {
       mockExternalId,
     },
     updatedAt: completedAt,
-  };
-  replaceById(input.store.items, updatedItem);
+  }
+  replaceById(input.store.items, updatedItem)
 
-  run.status = "executed";
-  run.completedAt = completedAt;
+  run.status = "executed"
+  run.completedAt = completedAt
 
   const auditEvent = createAuditEvent(input.store, {
     companyId: input.companyId,
@@ -572,9 +674,15 @@ export function executeMockAction(input: {
       idempotencyKey: input.idempotencyKey,
     },
     createdAt,
-  });
+  })
 
-  return { attempt, item: updatedItem, draft: updatedDraft, auditEvent, duplicate: false };
+  return {
+    attempt,
+    item: updatedItem,
+    draft: updatedDraft,
+    auditEvent,
+    duplicate: false,
+  }
 }
 
 function issueExecutionToken(
@@ -582,11 +690,11 @@ function issueExecutionToken(
   companyId: string,
   draft: WorkflowActionDraftRecord,
   createdBy: string,
-  now: Date,
+  now: Date
 ): { token: WorkflowExecutionTokenRecord; rawToken: string } {
-  const rawToken = randomBytes(32).toString("hex");
-  const createdAt = now.toISOString();
-  const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString();
+  const rawToken = randomBytes(32).toString("hex")
+  const createdAt = now.toISOString()
+  const expiresAt = new Date(now.getTime() + 15 * 60 * 1000).toISOString()
   const token: WorkflowExecutionTokenRecord = {
     id: idFor("token", companyId, draft.id, draft.payloadHash),
     companyId,
@@ -598,27 +706,33 @@ function issueExecutionToken(
     consumedAt: null,
     createdBy,
     createdAt,
-  };
-  store.executionTokens.push(token);
-  return { token, rawToken };
+  }
+  store.executionTokens.push(token)
+  return { token, rawToken }
 }
 
 function createAuditEvent(
   store: WorkflowMemoryStore,
   input: {
-    companyId: string;
-    actorType: ActorType;
-    actorId: string | null;
-    run: WorkflowRunRecord;
-    item: WorkflowItemRecord | null;
-    eventType: string;
-    summary: string;
-    payload: Record<string, unknown>;
-    createdAt: string;
-  },
+    companyId: string
+    actorType: ActorType
+    actorId: string | null
+    run: WorkflowRunRecord
+    item: WorkflowItemRecord | null
+    eventType: string
+    summary: string
+    payload: Record<string, unknown>
+    createdAt: string
+  }
 ): WorkflowAuditEventRecord {
   const event: WorkflowAuditEventRecord = {
-    id: idFor("audit", input.companyId, input.run.id, input.eventType, String(store.auditEvents.length + 1)),
+    id: idFor(
+      "audit",
+      input.companyId,
+      input.run.id,
+      input.eventType,
+      String(store.auditEvents.length + 1)
+    ),
     companyId: input.companyId,
     actorType: input.actorType,
     actorId: input.actorId,
@@ -634,47 +748,54 @@ function createAuditEvent(
       langSmithRunId: input.run.langSmithRunId,
     },
     createdAt: input.createdAt,
-  };
-  store.auditEvents.push(event);
-  return event;
+  }
+  store.auditEvents.push(event)
+  return event
 }
 
 function assertEditedPayloadMatchesPolicy(
   original: WorkflowActionPayload,
   edited: WorkflowActionPayload,
-  policy: WorkflowEditPolicy,
+  policy: WorkflowEditPolicy
 ): void {
-  const originalKeys = Object.keys(original).sort();
-  const editedKeys = Object.keys(edited).sort();
+  const originalKeys = Object.keys(original).sort()
+  const editedKeys = Object.keys(edited).sort()
   if (hashWorkflowValue(originalKeys) !== hashWorkflowValue(editedKeys)) {
-    throw new Error("Edited payload shape changed.");
+    throw new Error("Edited payload shape changed.")
   }
 
   for (const path of policy.immutablePaths) {
-    if (hashWorkflowValue(valueAtPath(original, path)) !== hashWorkflowValue(valueAtPath(edited, path))) {
-      throw new Error("Edited payload changed an immutable value.");
+    if (
+      hashWorkflowValue(valueAtPath(original, path)) !==
+      hashWorkflowValue(valueAtPath(edited, path))
+    ) {
+      throw new Error("Edited payload changed an immutable value.")
     }
   }
 
   for (const path of policy.arrayLengthPaths) {
-    const originalValue = valueAtPath(original, path);
-    const editedValue = valueAtPath(edited, path);
-    if (!Array.isArray(originalValue) || !Array.isArray(editedValue) || originalValue.length !== editedValue.length) {
-      throw new Error("Edited payload shape changed.");
+    const originalValue = valueAtPath(original, path)
+    const editedValue = valueAtPath(edited, path)
+    if (
+      !Array.isArray(originalValue) ||
+      !Array.isArray(editedValue) ||
+      originalValue.length !== editedValue.length
+    ) {
+      throw new Error("Edited payload shape changed.")
     }
   }
 
   for (const path of policy.positiveIntegerPaths) {
-    const value = valueAtPath(edited, path);
+    const value = valueAtPath(edited, path)
     if (!Number.isInteger(value) || (value as number) <= 0) {
-      throw new Error("Edited payload contains an invalid positive integer.");
+      throw new Error("Edited payload contains an invalid positive integer.")
     }
   }
 
   for (const path of policy.nonEmptyStringPaths) {
-    const value = valueAtPath(edited, path);
+    const value = valueAtPath(edited, path)
     if (typeof value !== "string" || value.trim().length === 0) {
-      throw new Error("Edited payload contains an invalid string.");
+      throw new Error("Edited payload contains an invalid string.")
     }
   }
 }
@@ -682,40 +803,46 @@ function assertEditedPayloadMatchesPolicy(
 function valueAtPath(value: unknown, path: string[]): unknown {
   return path.reduce<unknown>((current, segment) => {
     if (Array.isArray(current)) {
-      const index = Number(segment);
-      return Number.isInteger(index) ? current[index] : undefined;
+      const index = Number(segment)
+      return Number.isInteger(index) ? current[index] : undefined
     }
     if (current && typeof current === "object") {
-      return (current as Record<string, unknown>)[segment];
+      return (current as Record<string, unknown>)[segment]
     }
-    return undefined;
-  }, value);
+    return undefined
+  }, value)
 }
 
-function replaceById<T extends { id: string }>(records: T[], replacement: T): void {
-  const index = records.findIndex((record) => record.id === replacement.id);
-  if (index === -1) throw new Error(`Record not found: ${replacement.id}`);
-  records[index] = replacement;
+function replaceById<T extends { id: string }>(
+  records: T[],
+  replacement: T
+): void {
+  const index = records.findIndex((record) => record.id === replacement.id)
+  if (index === -1) throw new Error(`Record not found: ${replacement.id}`)
+  records[index] = replacement
 }
 
-function findLast<T>(records: T[], predicate: (record: T) => boolean): T | null {
+function findLast<T>(
+  records: T[],
+  predicate: (record: T) => boolean
+): T | null {
   for (let index = records.length - 1; index >= 0; index -= 1) {
-    const record = records[index]!;
-    if (predicate(record)) return record;
+    const record = records[index]!
+    if (predicate(record)) return record
   }
-  return null;
+  return null
 }
 
 function mustFind<T extends { id: string }>(records: T[], id: string): T {
-  const record = records.find((candidate) => candidate.id === id);
-  if (!record) throw new Error(`Record not found: ${id}`);
-  return record;
+  const record = records.find((candidate) => candidate.id === id)
+  if (!record) throw new Error(`Record not found: ${id}`)
+  return record
 }
 
 function idFor(prefix: string, ...parts: string[]): string {
-  return workflowUuidFor(prefix, ...parts);
+  return workflowUuidFor(prefix, ...parts)
 }
 
 function hashExecutionToken(rawToken: string): string {
-  return createHash("sha256").update(rawToken).digest("hex");
+  return createHash("sha256").update(rawToken).digest("hex")
 }

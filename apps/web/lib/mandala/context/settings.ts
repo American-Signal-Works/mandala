@@ -155,7 +155,7 @@ export function projectContextWorkspaceStatus(
       detailCode: providerOff
         ? "context_off"
         : operational
-          ? evidence?.providerHealthDetailCode ?? "provider_ready"
+          ? (evidence?.providerHealthDetailCode ?? "provider_ready")
           : readiness === "error"
             ? "provider_error"
             : "provider_not_operational",

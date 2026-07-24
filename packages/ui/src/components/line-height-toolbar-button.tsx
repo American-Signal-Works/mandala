@@ -1,13 +1,13 @@
-'use client';
+"use client"
 
-import * as React from 'react';
+import * as React from "react"
 
-import type { DropdownMenuProps } from '@radix-ui/react-dropdown-menu';
+import type { DropdownMenuProps } from "@radix-ui/react-dropdown-menu"
 
-import { LineHeightPlugin } from '@platejs/basic-styles/react';
-import { DropdownMenuItemIndicator } from '@radix-ui/react-dropdown-menu';
-import { CheckIcon, WrapText } from 'lucide-react';
-import { useEditorRef, useSelectionFragmentProp } from 'platejs/react';
+import { LineHeightPlugin } from "@platejs/basic-styles/react"
+import { DropdownMenuItemIndicator } from "@radix-ui/react-dropdown-menu"
+import { CheckIcon, WrapText } from "lucide-react"
+import { useEditorRef, useSelectionFragmentProp } from "platejs/react"
 
 import {
   DropdownMenu,
@@ -15,21 +15,21 @@ import {
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
-} from '@workspace/ui/components/dropdown-menu';
+} from "@workspace/ui/components/dropdown-menu"
 
-import { ToolbarButton } from './toolbar';
+import { ToolbarButton } from "./toolbar"
 
 export function LineHeightToolbarButton(props: DropdownMenuProps) {
-  const editor = useEditorRef();
+  const editor = useEditorRef()
   const { defaultNodeValue, validNodeValues: values = [] } =
-    editor.getInjectProps(LineHeightPlugin);
+    editor.getInjectProps(LineHeightPlugin)
 
   const value = useSelectionFragmentProp({
     defaultValue: defaultNodeValue,
     getProp: (node) => node.lineHeight,
-  });
+  })
 
-  const [open, setOpen] = React.useState(false);
+  const [open, setOpen] = React.useState(false)
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen} modal={false} {...props}>
@@ -45,8 +45,8 @@ export function LineHeightToolbarButton(props: DropdownMenuProps) {
           onValueChange={(newValue) => {
             editor
               .getTransforms(LineHeightPlugin)
-              .lineHeight.setNodes(Number(newValue));
-            editor.tf.focus();
+              .lineHeight.setNodes(Number(newValue))
+            editor.tf.focus()
           }}
         >
           {values.map((value) => (
@@ -66,5 +66,5 @@ export function LineHeightToolbarButton(props: DropdownMenuProps) {
         </DropdownMenuRadioGroup>
       </DropdownMenuContent>
     </DropdownMenu>
-  );
+  )
 }

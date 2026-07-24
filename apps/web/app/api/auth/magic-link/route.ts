@@ -51,9 +51,7 @@ export async function POST(request: Request) {
     await supabase.auth.signInWithOtp({
       email: normalizeEmail(parsed.data.email),
       options: {
-        emailRedirectTo: getEmailRedirectTo(
-          continuation
-        ),
+        emailRedirectTo: getEmailRedirectTo(continuation),
         shouldCreateUser: parsed.data.shouldCreateUser,
       },
     })

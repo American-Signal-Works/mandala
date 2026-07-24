@@ -1,4 +1,4 @@
-'use client';
+"use client"
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import type {
@@ -7,57 +7,57 @@ import type {
   TInlineSuggestionData,
   TSuggestionData,
   TSuggestionText,
-} from 'platejs';
+} from "platejs"
 
-import { KEYS, TextApi, TrailingBlockPlugin } from 'platejs';
+import { KEYS, TextApi, TrailingBlockPlugin } from "platejs"
 import {
   type BaseSuggestionConfig,
   BaseSuggestionPlugin,
-} from '@platejs/suggestion';
-import { toTPlatePlugin } from 'platejs/react';
+} from "@platejs/suggestion"
+import { toTPlatePlugin } from "platejs/react"
 
 import {
   SuggestionLeaf,
   SuggestionLineBreak,
   VoidRemoveSuggestionOverlay,
-} from '@workspace/ui/components/suggestion-node';
+} from "@workspace/ui/components/suggestion-node"
 import {
   discussionPlugin,
   getDiscussionBlockClickTarget,
   getDiscussionClickTarget,
-} from './discussion-kit';
+} from "./discussion-kit"
 
 export type SuggestionConfig = ExtendConfig<
   BaseSuggestionConfig,
   {
-    activeId: string | null;
-    hoverId: string | null;
+    activeId: string | null
+    hoverId: string | null
   }
->;
+>
 
 const INLINE_SUGGESTION_TARGET_PLUGINS = [
   KEYS.date,
   KEYS.inlineEquation,
   KEYS.link,
   KEYS.mention,
-];
+]
 
 function getInlineSuggestionData(editor: any, element: TElement) {
-  const suggestionApi = editor.getApi(BaseSuggestionPlugin).suggestion;
+  const suggestionApi = editor.getApi(BaseSuggestionPlugin).suggestion
   const data = suggestionApi.suggestionData(element) as
     | TSuggestionData
     | TInlineSuggestionData
-    | undefined;
+    | undefined
 
-  if (data) return data;
-  if (typeof suggestionApi.dataList !== 'function') return;
+  if (data) return data
+  if (typeof suggestionApi.dataList !== "function") return
 
   for (const child of element.children) {
-    if (!TextApi.isText(child)) continue;
+    if (!TextApi.isText(child)) continue
 
-    const childData = suggestionApi.dataList(child as TSuggestionText).at(-1);
+    const childData = suggestionApi.dataList(child as TSuggestionText).at(-1)
 
-    if (childData) return childData;
+    if (childData) return childData
   }
 }
 
@@ -66,7 +66,7 @@ export const suggestionPlugin = toTPlatePlugin<SuggestionConfig>(
   ({ editor }) => ({
     options: {
       activeId: null,
-      currentUserId: editor.getOption(discussionPlugin, 'currentUserId'),
+      currentUserId: editor.getOption(discussionPlugin, "currentUserId"),
       hoverId: null,
     },
   })
@@ -77,46 +77,46 @@ export const suggestionPlugin = toTPlatePlugin<SuggestionConfig>(
       const markTarget = getDiscussionClickTarget({
         selector: `.slate-${type}`,
         target: event.target,
-      });
+      })
       const blockTarget = markTarget
         ? null
         : getDiscussionBlockClickTarget({
             target: event.target,
-          });
+          })
 
       if (!markTarget && !blockTarget) {
-        setOption('activeId', null);
-        return;
+        setOption("activeId", null)
+        return
       }
 
       const suggestionEntry = api.suggestion?.node({
         isText: !blockTarget,
-      });
+      })
 
       setOption(
-        'activeId',
+        "activeId",
         suggestionEntry
           ? (api.suggestion?.nodeId(suggestionEntry[0]) ?? null)
           : null
-      );
+      )
     },
   },
   inject: {
     isElement: true,
     nodeProps: {
-      nodeKey: '',
-      styleKey: 'cssText',
+      nodeKey: "",
+      styleKey: "cssText",
       transformProps: ({ editor, element, props }) => {
-        if (!element) return props;
+        if (!element) return props
 
-        const suggestionData = getInlineSuggestionData(editor, element);
+        const suggestionData = getInlineSuggestionData(editor, element)
 
-        if (!suggestionData) return props;
+        if (!suggestionData) return props
 
         return {
           ...props,
-          'data-inline-suggestion': suggestionData.type,
-        };
+          "data-inline-suggestion": suggestionData.type,
+        }
       },
       transformStyle: () => ({}) as CSSStyleDeclaration,
     },
@@ -127,14 +127,14 @@ export const suggestionPlugin = toTPlatePlugin<SuggestionConfig>(
     belowRootNodes: VoidRemoveSuggestionOverlay as any,
     node: SuggestionLeaf,
   },
-});
+})
 
 const trailingBlockPlugin = TrailingBlockPlugin.configure({
   options: {
     insert: (editor, { insert }) => {
-      editor.getApi(suggestionPlugin).suggestion.withoutSuggestions(insert);
+      editor.getApi(suggestionPlugin).suggestion.withoutSuggestions(insert)
     },
   },
-});
+})
 
-export const SuggestionKit = [suggestionPlugin, trailingBlockPlugin];
+export const SuggestionKit = [suggestionPlugin, trailingBlockPlugin]
